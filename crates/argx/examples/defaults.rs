@@ -18,5 +18,10 @@ struct Cli {
 }
 
 fn main() {
-    let Cli { port: _port, profile: _profile } = Cli::parse();
+    let cli = Cli::parse();
+
+    eprintln!("port: {}", cli.port);
+    if let Some(profile) = cli.profile {
+        eprintln!("profile: {profile}");
+    }
 }
