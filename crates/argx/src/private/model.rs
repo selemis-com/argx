@@ -168,7 +168,7 @@ pub const fn key_base(module: &str, declaration: u32) -> Key {
     let mut state = declaration;
     let mut index = 0;
     while index < bytes.len() {
-        state = (state ^ bytes[index] as u32).rotate_left(5).wrapping_mul(0x9e37_79b1);
+        state = (state ^ bytes[index] as u32).wrapping_mul(0x0100_0193);
         index += 1;
     }
     (state as Key) << 32
@@ -180,7 +180,7 @@ mod tests {
 
     #[test]
     fn key_base_is_stable() {
-        assert_eq!(key_base("argx::tests", 0x1234_5678), 0xfb07_66cd_0000_0000);
+        assert_eq!(key_base("argx::tests", 0x1234_5678), 0x6570_cc45_0000_0000);
     }
 
     #[test]

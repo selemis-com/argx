@@ -14,12 +14,12 @@ const KIND_COMMAND: u64 = 2 << 30;
 ///
 /// The module component is added by generated code, where `module_path!()` is available.
 pub(crate) fn declaration_hash(fingerprint: &str) -> u32 {
-    fingerprint.as_bytes().iter().fold(0x6a09_e667_u32, |state, byte| hash_step(state, *byte))
+    fingerprint.as_bytes().iter().fold(0x811c_9dc5_u32, |state, byte| hash_step(state, *byte))
 }
 
-/// Advances the fixed key hash by one byte.
+/// Advances the fixed FNV-1a key hash by one byte.
 fn hash_step(state: u32, byte: u8) -> u32 {
-    (state ^ u32::from(byte)).rotate_left(5).wrapping_mul(0x9e37_79b1)
+    (state ^ u32::from(byte)).wrapping_mul(0x0100_0193)
 }
 
 /// Emits semantic identity constants for one generated command declaration.
@@ -86,7 +86,7 @@ pub(crate) fn ident(kind: &str, index: Option<usize>) -> Ident {
 mod tests {
     #[test]
     fn declaration_hash_is_stable() {
-        assert_eq!(super::declaration_hash("struct Cli ;"), 0x2ace_2f3a);
+        assert_eq!(super::declaration_hash("struct Cli ;"), 0xdef1_ee77);
     }
 
     #[test]
