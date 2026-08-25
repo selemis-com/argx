@@ -1,0 +1,24 @@
+[package]
+name = "argx"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Command line argument parser for Rust."
+license.workspace = true
+readme.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/argx"
+keywords = ["cli", "schema"]
+categories = ["command-line-interface", "development-tools"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = [
+  "-Zunstable-options",
+  "--generate-link-to-definition",
+  "--show-type-layout",
+]
+
+[lints]
+workspace = true
