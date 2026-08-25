@@ -2,13 +2,25 @@
 
 use std::fmt::Write as _;
 
-use crate::__private::{Action, Arg, Command, Flag};
+use crate::__private::{Action, Arg, Command, Flag, Named, resolve_long, resolve_short};
+
+/// One flag as visible from the selected command scope.
+struct VisibleFlag<'a> {
+    /// Original declaration metadata used for help text and value behavior.
+    flag: &'a Flag<'a>,
+    /// Long spellings that remain visible after lexical shadowing.
+    longs: Vec<&'a str>,
+    /// Short spellings that remain visible after lexical shadowing.
+    shorts: Vec<u8>,
+}
 
 /// Renders short help for one selected command path.
 pub(crate) fn render(path: &[&Command<'_>]) -> String {
     let Some(&command) = path.last() else {
         return String::new();
     };
+
+    let visible_flags = visible_flags(path);
 
     let mut output = String::new();
     if let Some(about) = command.about.filter(|about| !about.is_empty()) {
@@ -22,7 +34,7 @@ pub(crate) fn render(path: &[&Command<'_>]) -> String {
         output.push_str(command.name);
     }
     output.push_str(" [OPTIONS]");
-    for flag in command.flags.iter().copied().filter(|flag| flag.required) {
+    for flag in visible_flags.iter().filter(|flag| flag.flag.required) {
         output.push(' ');
         output.push_str(&required_flag_usage(flag));
     }
@@ -56,14 +68,63 @@ pub(crate) fn render(path: &[&Command<'_>]) -> String {
     }
 
     output.push_str("\nOptions:\n");
-    let mut rows =
-        command.flags.iter().map(|flag| (flag_label(flag), flag_help(flag))).collect::<Vec<_>>();
+    let mut rows = visible_flags
+        .iter()
+        .map(|flag| (flag_label(flag), flag_help(flag.flag)))
+        .collect::<Vec<_>>();
     rows.extend(
         command.actions.iter().map(|action| (action_label(action), action.help.to_owned())),
     );
     write_rows(&mut output, &rows);
 
     output
+}
+
+/// Resolves flags visible from the selected command using the parser's name resolver.
+fn visible_flags<'a>(path: &[&'a Command<'a>]) -> Vec<VisibleFlag<'a>> {
+    let Some((&command, ancestors)) = path.split_last() else {
+        return Vec::new();
+    };
+
+    let candidates = command.flags.iter().copied().chain(
+        ancestors
+            .iter()
+            .rev()
+            .flat_map(|command| command.flags.iter().copied().filter(|flag| flag.global)),
+    );
+
+    candidates
+        .filter_map(|flag| {
+            let longs = flag
+                .longs
+                .iter()
+                .copied()
+                .filter(|long| {
+                    matches!(
+                        resolve_long(command, ancestors, long.as_bytes()),
+                        Some(Named::Flag(resolved)) if ::std::ptr::eq(resolved, flag)
+                    )
+                })
+                .collect::<Vec<_>>();
+            let shorts = flag
+                .shorts
+                .iter()
+                .copied()
+                .filter(|short| {
+                    matches!(
+                        resolve_short(command, ancestors, *short),
+                        Some(Named::Flag(resolved)) if ::std::ptr::eq(resolved, flag)
+                    )
+                })
+                .collect::<Vec<_>>();
+
+            (!longs.is_empty() || !shorts.is_empty()).then_some(VisibleFlag {
+                flag,
+                longs,
+                shorts,
+            })
+        })
+        .collect()
 }
 
 /// Writes aligned help rows without terminal-width-dependent wrapping.
@@ -79,8 +140,12 @@ fn write_rows(output: &mut String, rows: &[(String, String)]) {
 }
 
 /// Renders one named flag in an options table.
-fn flag_label(flag: &Flag<'_>) -> String {
-    spellings_label(flag.shorts, flag.longs, flag.takes_value.then_some(flag.name))
+fn flag_label(flag: &VisibleFlag<'_>) -> String {
+    spellings_label(
+        &flag.shorts,
+        &flag.longs,
+        flag.flag.takes_value.then_some(flag.flag.name),
+    )
 }
 
 /// Renders help text plus the explicit environment fallback, when present.
@@ -128,11 +193,11 @@ fn spellings_label(shorts: &[u8], longs: &[&str], value_name: Option<&str>) -> S
 }
 
 /// Renders the canonical spelling of a required named flag for the usage line.
-fn required_flag_usage(flag: &Flag<'_>) -> String {
+fn required_flag_usage(flag: &VisibleFlag<'_>) -> String {
     let mut usage = flag.longs.first().map_or_else(
         || {
             flag.shorts.first().map_or_else(
-                || flag.name.to_owned(),
+                || flag.flag.name.to_owned(),
                 |short| {
                     let short = char::from(*short);
                     format!("-{short}")
@@ -141,9 +206,9 @@ fn required_flag_usage(flag: &Flag<'_>) -> String {
         },
         |long| format!("--{long}"),
     );
-    if flag.takes_value {
+    if flag.flag.takes_value {
         usage.push_str(" <");
-        usage.push_str(&metavar(flag.name));
+        usage.push_str(&metavar(flag.flag.name));
         usage.push('>');
     }
     usage
@@ -167,7 +232,7 @@ fn metavar(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::render;
-    use crate::__private::{Arg, Command, Flag};
+    use crate::__private::{Action, ActionKind, Arg, Command, Flag};
 
     static VERBOSE: Flag<'static> = Flag {
         key: 1,
@@ -246,4 +311,95 @@ Options:
 "#]],
         );
     }
+
+    #[test]
+    fn descendant_help_includes_visible_globals_with_parser_shadowing() {
+        static ROOT_SCOPE: Flag<'static> = Flag {
+            key: 10,
+            name: "root-scope",
+            help: Some("Root scope"),
+            longs: &["scope", "root-scope"],
+            shorts: b"s",
+            global: true,
+            ..Flag::BOOL
+        };
+        static ROOT_PROFILE: Flag<'static> = Flag {
+            key: 11,
+            name: "profile",
+            help: Some("Required profile"),
+            longs: &["profile"],
+            shorts: b"p",
+            global: true,
+            required: true,
+            ..Flag::VALUE
+        };
+        static ROOT_VERSION: Flag<'static> = Flag {
+            key: 12,
+            name: "root-version",
+            help: Some("Root version selector"),
+            longs: &["version", "root-version"],
+            global: true,
+            ..Flag::BOOL
+        };
+        static MID_SCOPE: Flag<'static> = Flag {
+            key: 13,
+            name: "mid-scope",
+            help: Some("Mid scope"),
+            longs: &["scope", "mid-scope"],
+            shorts: b"m",
+            global: true,
+            ..Flag::BOOL
+        };
+        static LOCAL_SCOPE: Flag<'static> = Flag {
+            key: 14,
+            name: "scope",
+            help: Some("Leaf scope"),
+            longs: &["scope"],
+            shorts: b"l",
+            ..Flag::BOOL
+        };
+        static VERSION: Action<'static> = Action {
+            name: "version",
+            help: "Print version",
+            longs: &["version"],
+            shorts: b"V",
+            kind: ActionKind::Version { short: "1", long: "1" },
+        };
+        static LEAF: Command<'static> = Command {
+            name: "leaf",
+            actions: &[&crate::__private::HELP_ACTION, &VERSION],
+            flags: &[&LOCAL_SCOPE],
+            ..Command::EMPTY
+        };
+        static MID: Command<'static> = Command {
+            name: "mid",
+            flags: &[&MID_SCOPE],
+            subcommands: &[&LEAF],
+            ..Command::EMPTY
+        };
+        static GLOBAL_ROOT: Command<'static> = Command {
+            name: "tool",
+            flags: &[&ROOT_SCOPE, &ROOT_PROFILE, &ROOT_VERSION],
+            subcommands: &[&MID],
+            ..Command::EMPTY
+        };
+
+        snapbox::Assert::new().action_env("SNAPSHOTS").eq(
+            render(&[&GLOBAL_ROOT, &MID, &LEAF]),
+            snapbox::str![[r#"
+Usage: tool mid leaf [OPTIONS] --profile <PROFILE>
+
+Options:
+  -l, --scope              Leaf scope
+  -m, --mid-scope          Mid scope
+  -s, --root-scope         Root scope
+  -p, --profile <PROFILE>  Required profile
+  --root-version           Root version selector
+  -h, --help               Print help
+  -V, --version            Print version
+
+"#]],
+        );
+    }
+
 }

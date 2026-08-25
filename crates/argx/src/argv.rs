@@ -2,7 +2,7 @@
 
 use std::ffi::OsStr;
 
-use crate::__private::{Action, Arg, Command, Flag};
+use crate::__private::{Action, Arg, Command, Flag, Named, resolve_long, resolve_short};
 
 /// One token binding produced by the raw argument parser.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -155,7 +155,11 @@ impl<'t, 'a, 'v> ArgvParser<'t, 'a, 'v> {
         }
 
         let declared_numeric_short = matches!(token, [b'-', short]
-            if short.is_ascii_digit() && self.find_short(*short).is_some());
+            if short.is_ascii_digit()
+                && matches!(
+                    resolve_short(self.command, &self.ancestors, *short),
+                    Some(Named::Flag(_))
+                ));
         if !declared_numeric_short
             && is_negative_number(token)
             && self.next_arg().is_some_and(|argument| argument.allow_negative_numbers)
@@ -186,15 +190,16 @@ impl<'t, 'a, 'v> ArgvParser<'t, 'a, 'v> {
             .iter()
             .position(|byte| *byte == b'=')
             .map_or((body, None), |index| (&body[..index], Some(&body[index + 1..])));
-        if let Some(action) = self.find_long_action(name) {
-            return if attached.is_some() {
-                Err(Error::UnexpectedActionValue { action })
-            } else {
-                Ok(Event::Action { action, long: true })
-            };
-        }
-        let Some(flag) = self.find_long(name) else {
-            return Err(Error::UnknownFlag { token });
+        let flag = match resolve_long(self.command, &self.ancestors, name) {
+            Some(Named::Action(action)) => {
+                return if attached.is_some() {
+                    Err(Error::UnexpectedActionValue { action })
+                } else {
+                    Ok(Event::Action { action, long: true })
+                };
+            }
+            Some(Named::Flag(flag)) => flag,
+            None => return Err(Error::UnknownFlag { token }),
         };
 
         let value = if flag.takes_value {
@@ -217,14 +222,11 @@ impl<'t, 'a, 'v> ArgvParser<'t, 'a, 'v> {
     fn check_short_bundle(&self, token: &'v [u8]) -> Result<(), Error<'t, 'v>> {
         let mut remaining = &token[1..];
         while let Some((&short, tail)) = remaining.split_first() {
-            if self.find_short_action(short).is_some() {
-                remaining = tail;
-                continue;
-            }
-            match self.find_short(short) {
+            match resolve_short(self.command, &self.ancestors, short) {
+                Some(Named::Action(_)) => remaining = tail,
+                Some(Named::Flag(flag)) if flag.takes_value => return Ok(()),
+                Some(Named::Flag(_)) => remaining = tail,
                 None => return Err(Error::UnknownFlag { token }),
-                Some(flag) if flag.takes_value => return Ok(()),
-                Some(_) => remaining = tail,
             }
         }
         Ok(())
@@ -235,13 +237,16 @@ impl<'t, 'a, 'v> ArgvParser<'t, 'a, 'v> {
         let Some((&short, rest)) = self.bundle.split_first() else {
             return Err(Error::UnknownFlag { token: self.bundle_token });
         };
-        if let Some(action) = self.find_short_action(short) {
-            self.bundle = &[];
-            return Ok(Event::Action { action, long: false });
-        }
-        let Some(flag) = self.find_short(short) else {
-            self.bundle = &[];
-            return Err(Error::UnknownFlag { token: self.bundle_token });
+        let flag = match resolve_short(self.command, &self.ancestors, short) {
+            Some(Named::Action(action)) => {
+                self.bundle = &[];
+                return Ok(Event::Action { action, long: false });
+            }
+            Some(Named::Flag(flag)) => flag,
+            None => {
+                self.bundle = &[];
+                return Err(Error::UnknownFlag { token: self.bundle_token });
+            }
         };
 
         if !flag.takes_value {
@@ -305,52 +310,6 @@ impl<'t, 'a, 'v> ArgvParser<'t, 'a, 'v> {
     /// Looks up one child command by exact command-line spelling.
     fn find_subcommand(&self, name: &[u8]) -> Option<&'t Command<'t>> {
         self.command.subcommands.iter().copied().find(|command| command.name.as_bytes() == name)
-    }
-
-    /// Looks up one long built-in action in the current command scope.
-    fn find_long_action(&self, name: &[u8]) -> Option<&'t Action<'t>> {
-        self.command
-            .actions
-            .iter()
-            .copied()
-            .find(|action| action.longs.iter().any(|long| long.as_bytes() == name))
-    }
-
-    /// Looks up one short built-in action in the current command scope.
-    fn find_short_action(&self, short: u8) -> Option<&'t Action<'t>> {
-        self.command.actions.iter().copied().find(|action| action.shorts.contains(&short))
-    }
-
-    /// Looks up a long flag using the current command before inherited globals.
-    ///
-    /// Ancestors are searched nearest-first. This gives descendant declarations normal lexical
-    /// shadowing behavior while globals remain owned by the command that declared them.
-    fn find_long(&self, name: &[u8]) -> Option<&'t Flag<'t>> {
-        self.command
-            .flags
-            .iter()
-            .copied()
-            .find(|flag| flag.longs.iter().any(|long| long.as_bytes() == name))
-            .or_else(|| {
-                self.ancestors.iter().rev().find_map(|command| {
-                    command.flags.iter().copied().find(|flag| {
-                        flag.global && flag.longs.iter().any(|long| long.as_bytes() == name)
-                    })
-                })
-            })
-    }
-
-    /// Looks up one short spelling using the current command before inherited globals.
-    fn find_short(&self, short: u8) -> Option<&'t Flag<'t>> {
-        self.command.flags.iter().copied().find(|flag| flag.shorts.contains(&short)).or_else(|| {
-            self.ancestors.iter().rev().find_map(|command| {
-                command
-                    .flags
-                    .iter()
-                    .copied()
-                    .find(|flag| flag.global && flag.shorts.contains(&short))
-            })
-        })
     }
 
     /// Returns the selected command chain from the root through the current command.

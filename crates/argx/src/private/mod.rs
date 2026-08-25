@@ -5,6 +5,7 @@
 
 mod compose;
 mod model;
+mod scope;
 mod traits;
 mod value;
 
@@ -13,6 +14,7 @@ pub use compose::{
     flag_spellings_unique, positional_layout_valid, table_len,
 };
 pub use model::{Action, ActionKind, Arg, Command, Flag, HELP_ACTION, Key, key_base};
+pub(crate) use scope::{Named, long as resolve_long, short as resolve_short};
 pub use traits::{CommandArgs, Subcommands};
 pub use value::{
     RawValue, os_value, os_values, parsed_value, parsed_values, text_value, text_values,

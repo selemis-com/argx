@@ -1143,6 +1143,19 @@ Options:
     }
 
     #[test]
+    fn descendant_help_uses_the_same_global_shadowing_as_parsing() {
+        assert_eq!(
+            GlobalCli::try_parse_args(["outer", "leaf", "--help"]),
+            Err(Error::DisplayHelp {
+                help: String::from(
+                    "Usage: global-cli outer leaf [OPTIONS]\n\n\
+Options:\n  --verbose\n  --region\n  --profile\n  -h, --help  Print help\n",
+                ),
+            }),
+        );
+    }
+
+    #[test]
     fn globals_bind_to_their_declaring_fields_across_nested_commands() {
         for argv in [
             ["--profile", "dev", "outer", "--region", "eu", "leaf"],
