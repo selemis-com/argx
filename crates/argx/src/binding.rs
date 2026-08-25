@@ -18,7 +18,7 @@ use crate::{
 /// # Panics
 ///
 /// Panics only when an implementation of the hidden generated-code contract exposes parse metadata
-/// whose keys it then refuses to bind. Derived implementations cannot violate this invariant.
+/// that it then refuses to bind. Derived implementations cannot violate this invariant.
 pub(crate) fn parse_refs<T: CommandArgs>(argv: &[&std::ffi::OsStr]) -> Result<T, Error> {
     let mut partial = T::start();
     let mut parser: crate::argv::ArgvParser<'static, '_, '_> =

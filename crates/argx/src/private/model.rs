@@ -1,9 +1,6 @@
 //! Private runtime projection of normalized command semantics.
 
 /// Stable semantic identity assigned to one command or argument declaration.
-///
-/// The raw parser also echoes this identity so generated binding code can dispatch without
-/// comparing user-visible spellings.
 pub type Key = u64;
 
 /// Built-in parser action available in one command scope.

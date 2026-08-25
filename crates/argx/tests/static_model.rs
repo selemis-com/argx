@@ -3,7 +3,7 @@
 #[cfg(test)]
 #[cfg(feature = "derive")]
 mod tests {
-    use argx::__private::CommandArgs as _;
+    use argx::__private::{Arg, Command, CommandArgs as _, Event, Flag};
 
     /// Documentation that is overridden by explicit command help.
     #[derive(argx::Parser)]
@@ -344,5 +344,32 @@ mod tests {
         let second = command_b::Action::COMMANDS[0];
         assert_ne!(first.key, second.key);
         assert_eq!(first.key & 0xffff_ffff, second.key & 0xffff_ffff);
+    }
+
+    #[test]
+    fn binding_uses_exact_metadata_identity_instead_of_semantic_keys() {
+        let command = Cli::COMMAND;
+        let real_flag = command.flags[0];
+        let fake_flag = Flag { key: real_flag.key, ..Flag::BOOL };
+        let mut command_partial = <Cli as argx::__private::CommandArgs>::start();
+        assert!(!<Cli as argx::__private::CommandArgs>::apply(
+            &mut command_partial,
+            &Event::Flag { flag: &fake_flag, value: None },
+        ));
+
+        let real_arg = command.args[0];
+        let fake_arg = Arg { key: real_arg.key, ..Arg::REQUIRED };
+        assert!(!<Cli as argx::__private::CommandArgs>::apply(
+            &mut command_partial,
+            &Event::Arg { arg: &fake_arg, value: b"value" },
+        ));
+
+        let real_command = <Commands as argx::__private::Subcommands>::COMMANDS[0];
+        let fake_command = Command { key: real_command.key, ..Command::EMPTY };
+        let mut subcommand_partial = <Commands as argx::__private::Subcommands>::start();
+        assert!(!<Commands as argx::__private::Subcommands>::apply(
+            &mut subcommand_partial,
+            &Event::Command { command: &fake_command },
+        ));
     }
 }

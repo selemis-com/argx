@@ -109,25 +109,25 @@ pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
             },
         )
     });
-    let select_arms = subcommand.variants.iter().enumerate().map(|(index, variant)| {
-        let key = key::ident("SUBCOMMAND", Some(index));
+    let select_branches = subcommand.variants.iter().enumerate().map(|(index, variant)| {
+        let table = format_ident!("ARGX_SUBCOMMAND_{index}");
         let partial_variant = format_ident!("V{index}");
         variant.binding.payload.as_ref().map_or_else(
             || {
                 quote! {
-                    #key => {
+                    if ::std::ptr::eq(command, &#table) {
                         *partial = Partial::#partial_variant;
-                        true
+                        return true;
                     }
                 }
             },
             |ty| {
                 quote! {
-                    #key => {
+                    if ::std::ptr::eq(command, &#table) {
                         *partial = Partial::#partial_variant(
                             <#ty as #facade::__private::CommandArgs>::start(),
                         );
-                        true
+                        return true;
                     }
                 }
             },
@@ -278,10 +278,8 @@ pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
                     let #facade::__private::Event::Command { command } = *event else {
                         return false;
                     };
-                    match command.key {
-                        #(#select_arms,)*
-                        _ => false,
-                    }
+                    #(#select_branches)*
+                    false
                 }
 
                 fn apply_env(#env_partial: &mut Self::Partial) {

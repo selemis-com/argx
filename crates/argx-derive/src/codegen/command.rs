@@ -160,12 +160,12 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
         if command.fields.is_empty() { TokenStream::new() } else { quote!((#(#partial_start,)*)) };
 
     let flag_apply = flags.iter().enumerate().map(|(index, (field_index, field))| {
-        let key = key::ident("FLAG", Some(index));
-        apply_arm(field, *field_index, &key, true, &facade)
+        let table = format_ident!("ARGX_FLAG_{index}");
+        apply_branch(field, *field_index, &table, true, &facade)
     });
     let arg_apply = args.iter().enumerate().map(|(index, (field_index, field))| {
-        let key = key::ident("ARG", Some(index));
-        apply_arm(field, *field_index, &key, false, &facade)
+        let table = format_ident!("ARGX_ARG_{index}");
+        apply_branch(field, *field_index, &table, false, &facade)
     });
     let flattened_apply = command.fields.iter().enumerate().filter_map(|(field_index, field)| {
         if !matches!(&field.semantics, model::FieldSemantics::Flatten) {
@@ -467,17 +467,13 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                     let matched = match *event {
                         #facade::__private::Event::Flag { flag, value } => {
                             let _ = value;
-                            match flag.key {
-                                #(#flag_apply)*
-                                _ => false,
-                            }
+                            #(#flag_apply)*
+                            false
                         },
                         #facade::__private::Event::Arg { arg, value } => {
                             let _ = value;
-                            match arg.key {
-                                #(#arg_apply)*
-                                _ => false,
-                            }
+                            #(#arg_apply)*
+                            false
                         },
                         #facade::__private::Event::Command { .. } => false,
                         #facade::__private::Event::Action { .. } => false,
@@ -687,26 +683,27 @@ fn binding_generics(command: &model::Command, facade: &TokenStream) -> Generics 
     generics
 }
 
-/// Generates one event-dispatch arm for a field.
-fn apply_arm(
+/// Generates one exact-metadata event-dispatch branch for a field.
+fn apply_branch(
     field: &model::Field,
     field_index: usize,
-    key: &proc_macro2::Ident,
+    table: &proc_macro2::Ident,
     flag: bool,
     facade: &TokenStream,
 ) -> TokenStream {
     let slot = syn::Index::from(field_index);
+    let event_meta = if flag { quote!(flag) } else { quote!(arg) };
 
     if field.is_switch() {
         return quote! {
-            #key => {
+            if ::std::ptr::eq(#event_meta, &#table) {
                 if partial.#slot.0 {
                     partial.#slot.1 = true;
                 } else {
                     partial.#slot.0 = true;
                 }
-                true
-            },
+                return true;
+            }
         };
     }
 
@@ -722,15 +719,15 @@ fn apply_arm(
 
     if field.argument().is_some_and(|argument| argument.shape == model::Shape::Many) {
         quote! {
-            #key => {
+            if ::std::ptr::eq(#event_meta, &#table) {
                 #raw_value
                 partial.#slot.push(value.to_vec());
-                true
-            },
+                return true;
+            }
         }
     } else {
         quote! {
-            #key => {
+            if ::std::ptr::eq(#event_meta, &#table) {
                 #raw_value
                 if partial.#slot.0.is_some() {
                     partial.#slot.1 = true;
@@ -739,8 +736,8 @@ fn apply_arm(
                         #facade::__private::RawValue::Argv(value.to_vec()),
                     );
                 }
-                true
-            },
+                return true;
+            }
         }
     }
 }
