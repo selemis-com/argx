@@ -5,7 +5,7 @@
 </picture>
 
 <p align="center">
-  Command line argument parser for Rust
+  Expressive command line argument parser for Rust
 </p>
 
 <br/>
