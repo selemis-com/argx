@@ -1,10 +1,12 @@
-//! Static command metadata and derive-assigned identities.
+//! Private runtime projection of normalized command semantics.
 
-/// Identifier echoed by the parser so generated binding code can dispatch without comparing
-/// argument names.
+/// Stable semantic identity assigned to one command or argument declaration.
+///
+/// The raw parser also echoes this identity so generated binding code can dispatch without
+/// comparing user-visible spellings.
 pub type Key = u64;
 
-/// Static parse metadata for one command.
+/// Static command semantics consumed by parsing and help generation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Command<'a> {
     /// Command name as exposed on the command line.
@@ -17,7 +19,7 @@ pub struct Command<'a> {
     pub args: &'a [&'a Arg<'a>],
     /// Child commands accepted by this command.
     pub subcommands: &'a [&'a Self],
-    /// Derive-assigned command identity.
+    /// Derive-assigned semantic command identity.
     pub key: Key,
 }
 
@@ -27,10 +29,10 @@ impl Command<'static> {
         Self { name: "", about: None, flags: &[], args: &[], subcommands: &[], key: 0 };
 }
 
-/// Static parse metadata for a named flag.
+/// Static semantics for one named argument.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Flag<'a> {
-    /// Derive-assigned field identity.
+    /// Derive-assigned semantic argument identity.
     pub key: Key,
     /// Canonical field name used by diagnostics and generated binding code.
     pub name: &'a str,
@@ -69,10 +71,10 @@ impl Flag<'static> {
     pub const VALUE: Self = Self { takes_value: true, ..Self::BOOL };
 }
 
-/// Static parse metadata for a positional argument.
+/// Static semantics for one positional argument.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Arg<'a> {
-    /// Derive-assigned field identity.
+    /// Derive-assigned semantic argument identity.
     pub key: Key,
     /// Canonical field name used by diagnostics and generated binding code.
     pub name: &'a str,

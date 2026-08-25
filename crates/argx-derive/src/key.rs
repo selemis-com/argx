@@ -1,4 +1,4 @@
-//! Stable declaration and field key generation.
+//! Stable semantic identity generation for commands and arguments.
 
 use proc_macro2::{Ident, TokenStream};
 use quote::{format_ident, quote};
@@ -22,10 +22,10 @@ fn hash_step(state: u32, byte: u8) -> u32 {
     (state ^ u32::from(byte)).rotate_left(5).wrapping_mul(0x9e37_79b1)
 }
 
-/// Emits the key constants needed by one generated command table.
+/// Emits semantic identity constants for one generated command declaration.
 ///
-/// Each complete key is a constant because generated binding code will eventually use these names
-/// as `match` patterns; a bitwise expression cannot be used there as a single pattern value.
+/// Each complete identity is a constant because generated binding code also uses these names as
+/// `match` patterns; a bitwise expression cannot be used there as a single pattern value.
 pub(crate) fn constants(
     facade: &TokenStream,
     fingerprint: &str,
@@ -54,7 +54,7 @@ pub(crate) fn constants(
     }
 }
 
-/// Emits command-kind keys for the variants of one derived subcommand enum.
+/// Emits semantic command identities for the variants of one derived subcommand enum.
 pub(crate) fn subcommand_constants(
     facade: &TokenStream,
     fingerprint: &str,

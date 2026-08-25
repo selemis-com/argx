@@ -21,7 +21,7 @@ struct Tables {
 /// Generates static parse metadata and typed binding for one command struct.
 pub(crate) fn command(command: &model::Command) -> TokenStream {
     let facade = crate_name::facade_path();
-    let ident = &command.ident;
+    let ident = &command.binding.ident;
     let binding_generics = binding_generics(command, &facade);
     let (impl_generics, ty_generics, where_clause) = binding_generics.split_for_impl();
 
@@ -29,34 +29,53 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
         .fields
         .iter()
         .enumerate()
-        .filter(|(_, field)| matches!(&field.kind, model::FieldKind::Flag { .. }))
+        .filter(|(_, field)| {
+            matches!(
+                &field.semantics,
+                model::FieldSemantics::Argument(model::Argument {
+                    kind: model::ArgumentKind::Flag { .. },
+                    ..
+                })
+            )
+        })
         .collect::<Vec<_>>();
     let args = command
         .fields
         .iter()
         .enumerate()
-        .filter(|(_, field)| matches!(&field.kind, model::FieldKind::Positional))
+        .filter(|(_, field)| {
+            matches!(
+                &field.semantics,
+                model::FieldSemantics::Argument(model::Argument {
+                    kind: model::ArgumentKind::Positional,
+                    ..
+                })
+            )
+        })
         .collect::<Vec<_>>();
     let subcommand = command
         .fields
         .iter()
         .enumerate()
-        .find(|(_, field)| matches!(&field.kind, model::FieldKind::Subcommand { .. }));
-    let keys = key::constants(&facade, &command.fingerprint, flags.len(), args.len());
+        .find(|(_, field)| matches!(&field.semantics, model::FieldSemantics::Subcommand));
+    let keys = key::constants(&facade, &command.binding.fingerprint, flags.len(), args.len());
     let command_key = key::ident("COMMAND", None);
 
     let flag_tables = flags.iter().enumerate().map(|(index, (_, field))| {
         let table = format_ident!("ARGX_FLAG_{index}");
         let key = key::ident("FLAG", Some(index));
-        let model::FieldKind::Flag { longs, shorts } = &field.kind else {
-            unreachable!("flag list only contains flag fields");
+        let Some(argument) = field.argument() else {
+            unreachable!("flag list only contains argument fields");
         };
-        let name = &field.name;
-        let help = option_str(field.help.as_deref());
+        let model::ArgumentKind::Flag { longs, shorts } = &argument.kind else {
+            unreachable!("flag list only contains named arguments");
+        };
+        let name = &field.binding.name;
+        let help = option_str(argument.help.as_deref());
         let takes_value = !field.is_switch();
-        let required = field.shape == model::Shape::Required;
-        let allow_hyphen_values = field.allow_hyphen_values;
-        let allow_negative_numbers = field.allow_negative_numbers;
+        let required = argument.shape == model::Shape::Required;
+        let allow_hyphen_values = argument.allow_hyphen_values;
+        let allow_negative_numbers = argument.allow_negative_numbers;
         quote! {
             static #table: #facade::__private::Flag<'static> = #facade::__private::Flag {
                 key: #key,
@@ -75,11 +94,14 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
     let arg_tables = args.iter().enumerate().map(|(index, (_, field))| {
         let table = format_ident!("ARGX_ARG_{index}");
         let key = key::ident("ARG", Some(index));
-        let name = &field.name;
-        let help = option_str(field.help.as_deref());
-        let required = matches!(field.shape, model::Shape::Bool | model::Shape::Required);
-        let variadic = field.shape == model::Shape::Many;
-        let allow_negative_numbers = field.allow_negative_numbers;
+        let Some(argument) = field.argument() else {
+            unreachable!("positional list only contains argument fields");
+        };
+        let name = &field.binding.name;
+        let help = option_str(argument.help.as_deref());
+        let required = matches!(argument.shape, model::Shape::Bool | model::Shape::Required);
+        let variadic = argument.shape == model::Shape::Many;
+        let allow_negative_numbers = argument.allow_negative_numbers;
         quote! {
             static #table: #facade::__private::Arg<'static> =
                 #facade::__private::Arg {
@@ -97,27 +119,33 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
     let command_flags = &tables.flags;
     let command_args = &tables.args;
 
-    let partial_types = command.fields.iter().map(|field| match &field.kind {
-        model::FieldKind::Flatten { ty } => {
+    let partial_types = command.fields.iter().map(|field| match &field.semantics {
+        model::FieldSemantics::Flatten => {
+            let ty = &field.binding.ty;
             quote!(<#ty as #facade::__private::CommandArgs>::Partial)
         }
-        model::FieldKind::Subcommand { ty } => {
+        model::FieldSemantics::Subcommand => {
+            let ty = &field.binding.ty;
             quote!(<#ty as #facade::__private::Subcommands>::Partial)
         }
-        _ if field.shape == model::Shape::Many => {
+        _ if field.argument().is_some_and(|argument| argument.shape == model::Shape::Many) => {
             quote!(::std::vec::Vec<::std::vec::Vec<u8>>)
         }
         _ if field.is_switch() => quote!((bool, bool)),
         _ => quote!((::std::option::Option<::std::vec::Vec<u8>>, bool)),
     });
-    let partial_start = command.fields.iter().map(|field| match &field.kind {
-        model::FieldKind::Flatten { ty } => {
+    let partial_start = command.fields.iter().map(|field| match &field.semantics {
+        model::FieldSemantics::Flatten => {
+            let ty = &field.binding.ty;
             quote!(<#ty as #facade::__private::CommandArgs>::start())
         }
-        model::FieldKind::Subcommand { ty } => {
+        model::FieldSemantics::Subcommand => {
+            let ty = &field.binding.ty;
             quote!(<#ty as #facade::__private::Subcommands>::start())
         }
-        _ if field.shape == model::Shape::Many => quote!(::std::vec::Vec::new()),
+        _ if field.argument().is_some_and(|argument| argument.shape == model::Shape::Many) => {
+            quote!(::std::vec::Vec::new())
+        }
         _ if field.is_switch() => quote!((false, false)),
         _ => quote!((::std::option::Option::None, false)),
     });
@@ -134,9 +162,10 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
         apply_arm(field, *field_index, &key, false)
     });
     let flattened_apply = command.fields.iter().enumerate().filter_map(|(field_index, field)| {
-        let model::FieldKind::Flatten { ty } = &field.kind else {
+        if !matches!(&field.semantics, model::FieldSemantics::Flatten) {
             return None;
-        };
+        }
+        let ty = &field.binding.ty;
         let slot = syn::Index::from(field_index);
         Some(quote! {
             if <#ty as #facade::__private::CommandArgs>::apply(&mut partial.#slot, event) {
@@ -145,9 +174,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
         })
     });
     let selected_subcommand_apply = subcommand.map(|(field_index, field)| {
-        let model::FieldKind::Subcommand { ty } = &field.kind else {
-            unreachable!("subcommand lookup only returns subcommand fields");
-        };
+        let ty = &field.binding.ty;
         let slot = syn::Index::from(field_index);
         quote! {
             if <#ty as #facade::__private::Subcommands>::selected(&partial.#slot) {
@@ -159,9 +186,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
         }
     });
     let subcommand_apply = subcommand.map(|(field_index, field)| {
-        let model::FieldKind::Subcommand { ty } = &field.kind else {
-            unreachable!("subcommand lookup only returns subcommand fields");
-        };
+        let ty = &field.binding.ty;
         let slot = syn::Index::from(field_index);
         quote! {
             if <#ty as #facade::__private::Subcommands>::apply(&mut partial.#slot, event) {
@@ -174,10 +199,13 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
         .fields
         .iter()
         .enumerate()
-        .filter_map(|(field_index, field)| match &field.kind {
-            model::FieldKind::Flag { .. } if field.shape != model::Shape::Many => {
+        .filter_map(|(field_index, field)| match &field.semantics {
+            model::FieldSemantics::Argument(argument)
+                if matches!(&argument.kind, model::ArgumentKind::Flag { .. })
+                    && argument.shape != model::Shape::Many =>
+            {
                 let slot = syn::Index::from(field_index);
-                let name = &field.name;
+                let name = &field.binding.name;
                 Some(quote! {
                     if partial.#slot.1 {
                         return ::std::result::Result::Err(
@@ -186,7 +214,8 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                     }
                 })
             }
-            model::FieldKind::Flatten { ty } => {
+            model::FieldSemantics::Flatten => {
+                let ty = &field.binding.ty;
                 let slot = syn::Index::from(field_index);
                 Some(quote! {
                     <#ty as #facade::__private::CommandArgs>::check_occurrences(
@@ -194,7 +223,8 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                     )?;
                 })
             }
-            model::FieldKind::Subcommand { ty } => {
+            model::FieldSemantics::Subcommand => {
+                let ty = &field.binding.ty;
                 let slot = syn::Index::from(field_index);
                 Some(quote! {
                     <#ty as #facade::__private::Subcommands>::check_occurrences(
@@ -209,8 +239,9 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
         .fields
         .iter()
         .enumerate()
-        .filter_map(|(field_index, field)| match &field.kind {
-            model::FieldKind::Flatten { ty } => {
+        .filter_map(|(field_index, field)| match &field.semantics {
+            model::FieldSemantics::Flatten => {
+                let ty = &field.binding.ty;
                 let slot = syn::Index::from(field_index);
                 Some(quote! {
                     <#ty as #facade::__private::CommandArgs>::check_required(
@@ -218,9 +249,10 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                     )?;
                 })
             }
-            model::FieldKind::Subcommand { ty } => {
+            model::FieldSemantics::Subcommand => {
+                let ty = &field.binding.ty;
                 let slot = syn::Index::from(field_index);
-                let name = &field.name;
+                let name = &field.binding.name;
                 Some(quote! {
                     if !<#ty as #facade::__private::Subcommands>::selected(&partial.#slot) {
                         return ::std::result::Result::Err(
@@ -233,13 +265,15 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                 })
             }
             _ if field.is_switch()
-                || !matches!(field.shape, model::Shape::Bool | model::Shape::Required) =>
+                || !field.argument().is_some_and(|argument| {
+                    matches!(argument.shape, model::Shape::Bool | model::Shape::Required)
+                }) =>
             {
                 None
             }
             _ => {
                 let slot = syn::Index::from(field_index);
-                let name = &field.name;
+                let name = &field.binding.name;
                 Some(quote! {
                     if partial.#slot.0.is_none() {
                         return ::std::result::Result::Err(
@@ -259,11 +293,12 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
     let finish_partial = if command.fields.is_empty() { quote!(_partial) } else { quote!(partial) };
 
     let built_fields = command.fields.iter().enumerate().map(|(field_index, field)| {
-        let ident = &field.ident;
+        let ident = &field.binding.ident;
         let value = finish_field(field, field_index, &facade);
         quote!(#ident: #value)
     });
-    let built = if command.unit { quote!(Self) } else { quote!(Self { #(#built_fields),* }) };
+    let built =
+        if command.binding.unit { quote!(Self) } else { quote!(Self { #(#built_fields),* }) };
 
     let composed_checks = command.fields.iter().any(model::Field::is_flatten).then(|| {
         quote! {
@@ -282,23 +317,21 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
         }
     });
 
-    let name = &command.name;
-    let about = option_str(command.about.as_deref());
+    let name = &command.semantics.name;
+    let about = option_str(command.semantics.about.as_deref());
     let command_subcommands = subcommand.map_or_else(
         || quote!(&[]),
         |(_, field)| {
-            let model::FieldKind::Subcommand { ty } = &field.kind else {
-                unreachable!("subcommand lookup only returns subcommand fields");
-            };
+            let ty = &field.binding.ty;
             quote!(<#ty as #facade::__private::Subcommands>::COMMANDS)
         },
     );
-    let parser_impl = command.root.then(|| {
+    let parser_impl = command.binding.root.then(|| {
         quote! {
             impl #impl_generics #facade::Parser for #ident #ty_generics #where_clause {}
         }
     });
-    let args_impl = (!command.root).then(|| {
+    let args_impl = (!command.binding.root).then(|| {
         quote! {
             impl #impl_generics #facade::Args
                 for #ident #ty_generics #where_clause
@@ -450,16 +483,23 @@ fn command_tables(
     }
 
     for field in &command.fields {
-        match &field.kind {
-            model::FieldKind::Flag { .. } => {
+        match &field.semantics {
+            model::FieldSemantics::Argument(model::Argument {
+                kind: model::ArgumentKind::Flag { .. },
+                ..
+            }) => {
                 own_flags.push(flag_at);
                 flag_at += 1;
             }
-            model::FieldKind::Positional => {
+            model::FieldSemantics::Argument(model::Argument {
+                kind: model::ArgumentKind::Positional,
+                ..
+            }) => {
                 own_args.push(arg_at);
                 arg_at += 1;
             }
-            model::FieldKind::Flatten { ty } => {
+            model::FieldSemantics::Flatten => {
+                let ty = &field.binding.ty;
                 flush_flags(&mut own_flags, &mut flag_groups);
                 flush_args(&mut own_args, &mut arg_groups);
                 flag_groups.push(quote!(<#ty as #facade::__private::CommandArgs>::COMMAND.flags));
@@ -471,7 +511,7 @@ fn command_tables(
                     );
                 });
             }
-            model::FieldKind::Subcommand { .. } => {}
+            model::FieldSemantics::Subcommand => {}
         }
     }
     flush_flags(&mut own_flags, &mut flag_groups);
@@ -501,18 +541,17 @@ fn command_tables(
 
 /// Adds the conversion bounds required by generated typed binding.
 fn binding_generics(command: &model::Command, facade: &TokenStream) -> Generics {
-    let mut generics = command.generics.clone();
+    let mut generics = command.binding.generics.clone();
     let mut bounded = Vec::new();
     for field in &command.fields {
-        match &field.kind {
-            model::FieldKind::Flatten { ty } => {
-                generics
-                    .make_where_clause()
-                    .predicates
-                    .push(parse_quote!(#ty: #facade::Args));
+        match &field.semantics {
+            model::FieldSemantics::Flatten => {
+                let ty = &field.binding.ty;
+                generics.make_where_clause().predicates.push(parse_quote!(#ty: #facade::Args));
                 continue;
             }
-            model::FieldKind::Subcommand { ty } => {
+            model::FieldSemantics::Subcommand => {
+                let ty = &field.binding.ty;
                 generics
                     .make_where_clause()
                     .predicates
@@ -524,27 +563,29 @@ fn binding_generics(command: &model::Command, facade: &TokenStream) -> Generics 
         if field.is_switch() {
             continue;
         }
-        let ty = field.value_type();
+        let value = field.value_binding();
+        let ty = &value.ty;
         let rendered = quote!(#ty).to_string();
         if bounded.contains(&rendered) {
             continue;
         }
         bounded.push(rendered);
 
-        if field.string_value() {
-            continue;
-        }
-
-        let where_clause = generics.make_where_clause();
-        if field.os_value() {
-            where_clause
-                .predicates
-                .push(parse_quote!(#ty: ::std::convert::From<::std::ffi::OsString>));
-        } else {
-            where_clause.predicates.push(parse_quote!(#ty: ::std::str::FromStr));
-            where_clause.predicates.push(parse_quote!(
-                <#ty as ::std::str::FromStr>::Err: ::std::fmt::Display
-            ));
+        match value.conversion {
+            model::ValueConversion::Text => {}
+            model::ValueConversion::Os => {
+                generics
+                    .make_where_clause()
+                    .predicates
+                    .push(parse_quote!(#ty: ::std::convert::From<::std::ffi::OsString>));
+            }
+            model::ValueConversion::FromStr => {
+                let where_clause = generics.make_where_clause();
+                where_clause.predicates.push(parse_quote!(#ty: ::std::str::FromStr));
+                where_clause.predicates.push(parse_quote!(
+                    <#ty as ::std::str::FromStr>::Err: ::std::fmt::Display
+                ));
+            }
         }
     }
     generics
@@ -582,7 +623,7 @@ fn apply_arm(
         TokenStream::new()
     };
 
-    if field.shape == model::Shape::Many {
+    if field.argument().is_some_and(|argument| argument.shape == model::Shape::Many) {
         quote! {
             #key => {
                 #raw_value
@@ -609,11 +650,13 @@ fn apply_arm(
 fn finish_field(field: &model::Field, field_index: usize, facade: &TokenStream) -> TokenStream {
     let slot = syn::Index::from(field_index);
 
-    if let model::FieldKind::Flatten { ty } = &field.kind {
+    if matches!(&field.semantics, model::FieldSemantics::Flatten) {
+        let ty = &field.binding.ty;
         return quote!(<#ty as #facade::__private::CommandArgs>::finish(partial.#slot)?);
     }
-    if let model::FieldKind::Subcommand { ty } = &field.kind {
-        let name = &field.name;
+    if matches!(&field.semantics, model::FieldSemantics::Subcommand) {
+        let ty = &field.binding.ty;
+        let name = &field.binding.name;
         return quote! {
             {
                 let ::std::option::Option::Some(value) =
@@ -632,28 +675,29 @@ fn finish_field(field: &model::Field, field_index: usize, facade: &TokenStream) 
         return quote!(partial.#slot.0);
     }
 
-    let ty = field.value_type();
-    let name = &field.name;
-    let one = |value: TokenStream| {
-        if field.string_value() {
-            quote!(#facade::__private::text_value(#value, #name)?)
-        } else if field.os_value() {
+    let binding = field.value_binding();
+    let ty = &binding.ty;
+    let name = &field.binding.name;
+    let one = |value: TokenStream| match binding.conversion {
+        model::ValueConversion::Text => quote!(#facade::__private::text_value(#value, #name)?),
+        model::ValueConversion::Os => {
             quote!(#facade::__private::os_value::<#ty>(#value, #name)?)
-        } else {
+        }
+        model::ValueConversion::FromStr => {
             quote!(#facade::__private::parsed_value::<#ty>(#value, #name)?)
         }
     };
-    let many = |value: TokenStream| {
-        if field.string_value() {
-            quote!(#facade::__private::text_values(#value, #name)?)
-        } else if field.os_value() {
+    let many = |value: TokenStream| match binding.conversion {
+        model::ValueConversion::Text => quote!(#facade::__private::text_values(#value, #name)?),
+        model::ValueConversion::Os => {
             quote!(#facade::__private::os_values::<#ty>(#value, #name)?)
-        } else {
+        }
+        model::ValueConversion::FromStr => {
             quote!(#facade::__private::parsed_values::<#ty>(#value, #name)?)
         }
     };
 
-    match field.shape {
+    match field.argument().expect("value field must have argument semantics").shape {
         model::Shape::Bool | model::Shape::Required => {
             let converted = one(quote!(value));
             quote! {
@@ -678,7 +722,7 @@ fn finish_field(field: &model::Field, field_index: usize, facade: &TokenStream) 
                 }
             }
         }
-        model::Shape::Many if field.optional_collection() => {
+        model::Shape::Many if binding.optional_collection => {
             let converted = many(quote!(partial.#slot));
             quote! {
                 if partial.#slot.is_empty() {

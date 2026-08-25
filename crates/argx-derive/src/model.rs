@@ -1,4 +1,9 @@
-//! Semantic model built from a derive input before code generation.
+//! Canonical semantic model built from derive input before code generation.
+//!
+//! CLI meaning is normalized here exactly once. Code generation then projects that meaning into
+//! private runtime command tables while Rust-specific construction and value conversion remain in
+//! separate binding data. Future help, contract, and completion projections should extend this
+//! model rather than reinterpret attributes or runtime parser tables.
 
 use proc_macro2::Span;
 use quote::ToTokens as _;
@@ -11,65 +16,132 @@ mod shape;
 pub(crate) use shape::Shape;
 use shape::{peel_option, peel_vec, rendered_path, validate_value_shape};
 
-/// One struct deriving either `Parser` or `Args`.
+/// One normalized command declaration.
 pub(crate) struct Command {
-    /// Rust type name receiving the generated implementations.
-    pub ident: syn::Ident,
-    /// Generic parameters copied to generated implementations.
-    pub generics: syn::Generics,
-    /// Whole declaration token stream used to seed stable keys.
-    pub fingerprint: String,
-    /// Command-line name represented by this declaration.
-    pub name: String,
-    /// One-line help summary for this command.
-    pub about: Option<String>,
-    /// Whether the public `Parser` trait is implemented in addition to `CommandArgs`.
-    pub root: bool,
-    /// Whether the declaration is a unit struct.
-    pub unit: bool,
+    /// Rust-facing information required to implement the derived type.
+    pub binding: CommandBinding,
+    /// Command-line semantics shared by every generated projection.
+    pub semantics: CommandSemantics,
     /// Fields in declaration order.
     pub fields: Vec<Field>,
 }
 
-/// One enum deriving `Subcommand`.
-pub(crate) struct Subcommand {
-    /// Rust enum receiving the generated implementation.
+/// Rust-facing information for a `Parser` or `Args` declaration.
+pub(crate) struct CommandBinding {
+    /// Rust type name receiving the generated implementations.
     pub ident: syn::Ident,
     /// Generic parameters copied to generated implementations.
     pub generics: syn::Generics,
-    /// Whole declaration token stream used to seed stable variant keys.
+    /// Whole declaration token stream used to seed stable semantic identities.
     pub fingerprint: String,
+    /// Whether the public `Parser` trait is implemented in addition to `CommandArgs`.
+    pub root: bool,
+    /// Whether the declaration is a unit struct.
+    pub unit: bool,
+}
+
+/// CLI semantics common to root commands and selectable subcommands.
+pub(crate) struct CommandSemantics {
+    /// Command-line name represented by this declaration.
+    pub name: String,
+    /// One-line help summary for this command.
+    pub about: Option<String>,
+}
+
+/// One enum deriving `Subcommand`.
+pub(crate) struct Subcommand {
+    /// Rust-facing information required to implement the enum.
+    pub binding: SubcommandBinding,
     /// Variants in declaration order.
     pub variants: Vec<Variant>,
 }
 
+/// Rust-facing information for a `Subcommand` declaration.
+pub(crate) struct SubcommandBinding {
+    /// Rust enum receiving the generated implementation.
+    pub ident: syn::Ident,
+    /// Generic parameters copied to generated implementations.
+    pub generics: syn::Generics,
+    /// Whole declaration token stream used to seed stable variant identities.
+    pub fingerprint: String,
+}
+
 /// One selectable subcommand variant.
 pub(crate) struct Variant {
+    /// Rust-facing variant construction information.
+    pub binding: VariantBinding,
+    /// Command-line semantics of this selectable command.
+    pub semantics: CommandSemantics,
+}
+
+/// Rust-facing information for one subcommand variant.
+pub(crate) struct VariantBinding {
     /// Rust enum variant name.
     pub ident: syn::Ident,
-    /// Command-line spelling used to select this variant.
-    pub name: String,
-    /// One-line help summary for this subcommand.
-    pub about: Option<String>,
     /// Optional reusable `Args` payload.
     pub payload: Option<Type>,
 }
 
-/// One named Rust field and the parse-table entry it contributes.
+/// One named Rust field after CLI semantics have been normalized.
 pub(crate) struct Field {
+    /// Rust-facing information used to construct the destination value.
+    pub binding: FieldBinding,
+    /// CLI meaning of this field.
+    pub semantics: FieldSemantics,
+}
+
+/// Rust-facing information for one destination field.
+pub(crate) struct FieldBinding {
     /// Rust field identifier used when generated code builds the destination value.
     pub ident: syn::Ident,
     /// Declared Rust field type.
     pub ty: Type,
     /// Source span used for declaration-level diagnostics.
     pub span: Span,
-    /// Canonical field name without Rust raw-identifier syntax.
+    /// Field name without Rust raw-identifier syntax, used by binding diagnostics.
     pub name: String,
+    /// Normalized typed-value conversion, when this field binds CLI values directly.
+    pub value: Option<ValueBinding>,
+}
+
+/// Rust conversion information for a value-bearing field.
+pub(crate) struct ValueBinding {
+    /// Rust type receiving one parsed value.
+    pub ty: Type,
+    /// Conversion strategy selected from the destination type.
+    pub conversion: ValueConversion,
+    /// Whether a repeated field preserves absence with an outer `Option`.
+    pub optional_collection: bool,
+}
+
+/// Conversion strategy for one raw CLI value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ValueConversion {
+    /// Preserve UTF-8 text directly as `String`.
+    Text,
+    /// Reconstruct an operating-system string before converting the destination.
+    Os,
+    /// Parse UTF-8 text through `FromStr`.
+    FromStr,
+}
+
+/// CLI role represented by one Rust field.
+pub(crate) enum FieldSemantics {
+    /// One named or positional CLI argument.
+    Argument(Argument),
+    /// Another independently derived `Args` declaration composed inline.
+    Flatten,
+    /// A required nested command selected from a derived subcommand enum.
+    Subcommand,
+}
+
+/// Normalized semantics for one named or positional argument.
+pub(crate) struct Argument {
     /// One-line help summary for this argument.
     pub help: Option<String>,
-    /// Whether the field is named or positional on the command line.
-    pub kind: FieldKind,
-    /// Syntactic value shape relevant to binding cardinality.
+    /// Whether the argument is named or positional on the command line.
+    pub kind: ArgumentKind,
+    /// Syntactic value shape relevant to CLI cardinality.
     pub shape: Shape,
     /// Whether detached values may be flag-like.
     pub allow_hyphen_values: bool,
@@ -77,8 +149,8 @@ pub(crate) struct Field {
     pub allow_negative_numbers: bool,
 }
 
-/// Parse-table category of a field.
-pub(crate) enum FieldKind {
+/// Command-line category of one argument.
+pub(crate) enum ArgumentKind {
     /// A named flag with one or more spellings.
     Flag {
         /// Long spellings without `--`.
@@ -88,20 +160,10 @@ pub(crate) enum FieldKind {
     },
     /// A positional argument.
     Positional,
-    /// Another independently derived `Args` declaration composed inline.
-    Flatten {
-        /// Child declaration type.
-        ty: Type,
-    },
-    /// A required nested command selected from a derived subcommand enum.
-    Subcommand {
-        /// Derived subcommand enum type.
-        ty: Type,
-    },
 }
 
 impl Command {
-    /// Parses and validates the subset of a command declaration required by the typed parser.
+    /// Parses and validates one command into the canonical derive-time model.
     pub(crate) fn from_input(input: &DeriveInput, root: bool) -> syn::Result<Self> {
         let data = match &input.data {
             Data::Struct(data) => data,
@@ -140,13 +202,14 @@ impl Command {
         let about = attributes.about.or_else(|| attrs::doc_summary(&input.attrs));
 
         Ok(Self {
-            ident: input.ident.clone(),
-            generics: input.generics.clone(),
-            fingerprint: input.to_token_stream().to_string(),
-            name,
-            about,
-            root,
-            unit,
+            binding: CommandBinding {
+                ident: input.ident.clone(),
+                generics: input.generics.clone(),
+                fingerprint: input.to_token_stream().to_string(),
+                root,
+                unit,
+            },
+            semantics: CommandSemantics { name, about },
             fields,
         })
     }
@@ -206,32 +269,39 @@ impl Subcommand {
                 }
             };
 
-            variants.push(Variant { ident: variant.ident.clone(), name, about, payload });
+            variants.push(Variant {
+                binding: VariantBinding { ident: variant.ident.clone(), payload },
+                semantics: CommandSemantics { name, about },
+            });
         }
 
         validate_variant_generics(&variants, &input.generics)?;
 
         Ok(Self {
-            ident: input.ident.clone(),
-            generics: input.generics.clone(),
-            fingerprint: input.to_token_stream().to_string(),
+            binding: SubcommandBinding {
+                ident: input.ident.clone(),
+                generics: input.generics.clone(),
+                fingerprint: input.to_token_stream().to_string(),
+            },
             variants,
         })
     }
 }
 
 impl Field {
-    /// Converts one named Rust field into static parse and typed-binding metadata.
+    /// Converts one named Rust field into normalized CLI semantics plus Rust binding information.
     fn from_syn(field: &syn::Field) -> syn::Result<Self> {
         let ident = field.ident.clone().ok_or_else(|| {
             syn::Error::new_spanned(field, "Parser and Args fields must be named")
         })?;
         let attributes = attrs::field(&field.attrs)?;
         let name = ident_name(&ident);
+        let mut binding =
+            FieldBinding { span: ident.span(), ident, ty: field.ty.clone(), name, value: None };
 
         if attributes.flatten && attributes.subcommand {
             return Err(syn::Error::new(
-                ident.span(),
+                binding.span,
                 "`flatten` and `subcommand` cannot be combined",
             ));
         }
@@ -244,33 +314,23 @@ impl Field {
                 || attributes.help.is_some()
             {
                 return Err(syn::Error::new(
-                    ident.span(),
+                    binding.span,
                     "`subcommand` cannot be combined with flag, value, or help attributes",
                 ));
             }
-            if peel_option(&field.ty).is_some() {
+            if peel_option(&binding.ty).is_some() {
                 return Err(syn::Error::new_spanned(
-                    &field.ty,
+                    &binding.ty,
                     "`subcommand` does not support `Option<T>`; hold the Subcommand enum directly",
                 ));
             }
-            if peel_vec(&field.ty).is_some() {
+            if peel_vec(&binding.ty).is_some() {
                 return Err(syn::Error::new_spanned(
-                    &field.ty,
+                    &binding.ty,
                     "`subcommand` does not support collection wrappers",
                 ));
             }
-            return Ok(Self {
-                span: ident.span(),
-                ident,
-                ty: field.ty.clone(),
-                name,
-                help: None,
-                kind: FieldKind::Subcommand { ty: field.ty.clone() },
-                shape: Shape::Required,
-                allow_hyphen_values: false,
-                allow_negative_numbers: false,
-            });
+            return Ok(Self { binding, semantics: FieldSemantics::Subcommand });
         }
 
         if attributes.flatten {
@@ -281,46 +341,34 @@ impl Field {
                 || attributes.help.is_some()
             {
                 return Err(syn::Error::new(
-                    ident.span(),
+                    binding.span,
                     "`flatten` cannot be combined with flag, value, or help attributes",
                 ));
             }
-            if peel_option(&field.ty).is_some() {
+            if peel_option(&binding.ty).is_some() {
                 return Err(syn::Error::new_spanned(
-                    &field.ty,
+                    &binding.ty,
                     "`flatten` does not support `Option<T>`; hold the Args struct directly",
                 ));
             }
-            if peel_vec(&field.ty).is_some() {
+            if peel_vec(&binding.ty).is_some() {
                 return Err(syn::Error::new_spanned(
-                    &field.ty,
+                    &binding.ty,
                     "`flatten` does not support collection wrappers; hold one Args struct directly",
                 ));
             }
 
-            return Ok(Self {
-                span: ident.span(),
-                ident,
-                ty: field.ty.clone(),
-                name,
-                help: None,
-                kind: FieldKind::Flatten { ty: field.ty.clone() },
-                // Flattened fields do not bind a value themselves. The shape is never inspected
-                // by typed conversion and stays required only as an internal placeholder.
-                shape: Shape::Required,
-                allow_hyphen_values: false,
-                allow_negative_numbers: false,
-            });
+            return Ok(Self { binding, semantics: FieldSemantics::Flatten });
         }
 
-        let shape = Shape::from_type(&field.ty);
-        validate_value_shape(&field.ty, shape, ident.span())?;
+        let shape = Shape::from_type(&binding.ty);
+        validate_value_shape(&binding.ty, shape, binding.span)?;
 
         let kind = if attributes.long.is_some() || attributes.short.is_some() {
             let longs = attributes
                 .long
                 .map(|long| match long {
-                    attrs::Inferred::Infer => case::to_kebab(&name),
+                    attrs::Inferred::Infer => case::to_kebab(&binding.name),
                     attrs::Inferred::Explicit(value) => value,
                 })
                 .into_iter()
@@ -328,20 +376,20 @@ impl Field {
             let shorts = attributes
                 .short
                 .map(|short| match short {
-                    attrs::Inferred::Infer => infer_short(&name, ident.span()),
-                    attrs::Inferred::Explicit(value) => validate_short(value, ident.span()),
+                    attrs::Inferred::Infer => infer_short(&binding.name, binding.span),
+                    attrs::Inferred::Explicit(value) => validate_short(value, binding.span),
                 })
                 .transpose()?
                 .into_iter()
                 .collect();
-            FieldKind::Flag { longs, shorts }
+            ArgumentKind::Flag { longs, shorts }
         } else {
-            FieldKind::Positional
+            ArgumentKind::Positional
         };
 
-        if attributes.allow_hyphen_values && matches!(&kind, FieldKind::Positional) {
+        if attributes.allow_hyphen_values && matches!(&kind, ArgumentKind::Positional) {
             return Err(syn::Error::new(
-                ident.span(),
+                binding.span,
                 "`allow_hyphen_values` is only valid on named flags",
             ));
         }
@@ -349,87 +397,95 @@ impl Field {
             && shape == Shape::Bool
         {
             return Err(syn::Error::new(
-                ident.span(),
+                binding.span,
                 "value policies are not valid on bool fields",
             ));
         }
 
-        let help = attributes.help.or_else(|| attrs::doc_summary(&field.attrs));
+        let switch = matches!(&kind, ArgumentKind::Flag { .. }) && shape == Shape::Bool;
+        if !switch {
+            binding.value = Some(value_binding(&binding.ty, shape));
+        }
 
+        let help = attributes.help.or_else(|| attrs::doc_summary(&field.attrs));
         Ok(Self {
-            span: ident.span(),
-            ident,
-            ty: field.ty.clone(),
-            name,
-            help,
-            kind,
-            shape,
-            allow_hyphen_values: attributes.allow_hyphen_values,
-            allow_negative_numbers: attributes.allow_negative_numbers,
+            binding,
+            semantics: FieldSemantics::Argument(Argument {
+                help,
+                kind,
+                shape,
+                allow_hyphen_values: attributes.allow_hyphen_values,
+                allow_negative_numbers: attributes.allow_negative_numbers,
+            }),
         })
+    }
+
+    /// Returns this field's normalized argument semantics, if it is a CLI argument.
+    pub(crate) const fn argument(&self) -> Option<&Argument> {
+        match &self.semantics {
+            FieldSemantics::Argument(argument) => Some(argument),
+            FieldSemantics::Flatten | FieldSemantics::Subcommand => None,
+        }
     }
 
     /// Reports whether this field composes another `Args` declaration.
     pub(crate) const fn is_flatten(&self) -> bool {
-        matches!(self.kind, FieldKind::Flatten { .. })
-    }
-
-    /// Reports whether this field selects a nested command enum.
-    pub(crate) const fn is_subcommand(&self) -> bool {
-        matches!(self.kind, FieldKind::Subcommand { .. })
+        matches!(&self.semantics, FieldSemantics::Flatten)
     }
 
     /// Reports whether this field is a value-less boolean flag.
     pub(crate) fn is_switch(&self) -> bool {
-        matches!(&self.kind, FieldKind::Flag { .. }) && self.shape == Shape::Bool
+        self.argument().is_some_and(|argument| {
+            matches!(&argument.kind, ArgumentKind::Flag { .. }) && argument.shape == Shape::Bool
+        })
     }
 
-    /// Returns the Rust type receiving one parsed value.
-    pub(crate) fn value_type(&self) -> &Type {
-        assert!(
-            !self.is_flatten() && !self.is_subcommand(),
-            "composed fields do not have a scalar value type",
-        );
-        match self.shape {
-            Shape::Bool | Shape::Required => &self.ty,
-            Shape::Optional => {
-                peel_option(&self.ty).expect("optional shape must contain an Option value type")
-            }
-            Shape::Many => {
-                let collection = peel_option(&self.ty).unwrap_or(&self.ty);
-                peel_vec(collection).expect("many shape must contain a Vec item type")
-            }
+    /// Returns normalized typed-value binding information.
+    pub(crate) const fn value_binding(&self) -> &ValueBinding {
+        self.binding.value.as_ref().expect("composed fields and switches do not bind typed values")
+    }
+}
+
+/// Normalizes Rust conversion behavior for one CLI value-bearing field.
+fn value_binding(ty: &Type, shape: Shape) -> ValueBinding {
+    let value_ty = match shape {
+        Shape::Bool | Shape::Required => ty,
+        Shape::Optional => {
+            peel_option(ty).expect("optional shape must contain an Option value type")
         }
-    }
+        Shape::Many => {
+            let collection = peel_option(ty).unwrap_or(ty);
+            peel_vec(collection).expect("many shape must contain a Vec item type")
+        }
+    };
+    let rendered = rendered_path(value_ty);
+    let conversion = if matches!(
+        rendered.as_str(),
+        "String"
+            | "std::string::String"
+            | "::std::string::String"
+            | "alloc::string::String"
+            | "::alloc::string::String"
+    ) {
+        ValueConversion::Text
+    } else if matches!(
+        rendered.as_str(),
+        "OsString"
+            | "std::ffi::OsString"
+            | "::std::ffi::OsString"
+            | "PathBuf"
+            | "std::path::PathBuf"
+            | "::std::path::PathBuf"
+    ) {
+        ValueConversion::Os
+    } else {
+        ValueConversion::FromStr
+    };
 
-    /// Reports whether a repeated field preserves absence with an outer `Option`.
-    pub(crate) fn optional_collection(&self) -> bool {
-        self.shape == Shape::Many && peel_option(&self.ty).is_some()
-    }
-
-    /// Reports whether one value is the standard UTF-8 string type.
-    pub(crate) fn string_value(&self) -> bool {
-        matches!(
-            rendered_path(self.value_type()).as_str(),
-            "String"
-                | "std::string::String"
-                | "::std::string::String"
-                | "alloc::string::String"
-                | "::alloc::string::String"
-        )
-    }
-
-    /// Reports whether one value should be reconstructed as an operating-system string.
-    pub(crate) fn os_value(&self) -> bool {
-        matches!(
-            rendered_path(self.value_type()).as_str(),
-            "OsString"
-                | "std::ffi::OsString"
-                | "::std::ffi::OsString"
-                | "PathBuf"
-                | "std::path::PathBuf"
-                | "::std::path::PathBuf"
-        )
+    ValueBinding {
+        ty: value_ty.clone(),
+        conversion,
+        optional_collection: shape == Shape::Many && peel_option(ty).is_some(),
     }
 }
 
@@ -466,16 +522,22 @@ fn validate_fields(fields: &[Field]) -> syn::Result<()> {
     let mut subcommand_seen = false;
 
     for field in fields {
-        match &field.kind {
-            FieldKind::Flag { longs: field_longs, shorts: field_shorts } => {
+        match &field.semantics {
+            FieldSemantics::Argument(Argument {
+                kind: ArgumentKind::Flag { longs: field_longs, shorts: field_shorts },
+                ..
+            }) => {
                 for long in field_longs {
-                    validate_long(long, field.span)?;
+                    validate_long(long, field.binding.span)?;
                     if long == "help" {
-                        return Err(syn::Error::new(field.span, "`--help` is reserved by Argx"));
+                        return Err(syn::Error::new(
+                            field.binding.span,
+                            "`--help` is reserved by Argx",
+                        ));
                     }
                     if longs.contains(&long.as_str()) {
                         return Err(syn::Error::new(
-                            field.span,
+                            field.binding.span,
                             format!("duplicate long flag `--{long}`"),
                         ));
                     }
@@ -483,18 +545,23 @@ fn validate_fields(fields: &[Field]) -> syn::Result<()> {
                 }
                 for short in field_shorts {
                     if *short == b'h' {
-                        return Err(syn::Error::new(field.span, "`-h` is reserved by Argx"));
+                        return Err(syn::Error::new(
+                            field.binding.span,
+                            "`-h` is reserved by Argx",
+                        ));
                     }
                     if shorts.contains(short) {
                         return Err(syn::Error::new(
-                            field.span,
+                            field.binding.span,
                             format!("duplicate short flag `-{}`", char::from(*short)),
                         ));
                     }
                     shorts.push(*short);
                 }
             }
-            FieldKind::Positional => {
+            FieldSemantics::Argument(Argument {
+                kind: ArgumentKind::Positional, shape, ..
+            }) => {
                 if let Some(span) = variadic_positional_span {
                     return Err(syn::Error::new(
                         span,
@@ -502,25 +569,25 @@ fn validate_fields(fields: &[Field]) -> syn::Result<()> {
                     ));
                 }
 
-                let required = matches!(field.shape, Shape::Bool | Shape::Required);
+                let required = matches!(*shape, Shape::Bool | Shape::Required);
                 if required && optional_positional_seen {
                     return Err(syn::Error::new(
-                        field.span,
+                        field.binding.span,
                         "required positional arguments cannot follow optional positional arguments",
                     ));
                 }
                 if !required {
                     optional_positional_seen = true;
                 }
-                if field.shape == Shape::Many {
-                    variadic_positional_span = Some(field.span);
+                if *shape == Shape::Many {
+                    variadic_positional_span = Some(field.binding.span);
                 }
             }
-            FieldKind::Flatten { .. } => {}
-            FieldKind::Subcommand { .. } => {
+            FieldSemantics::Flatten => {}
+            FieldSemantics::Subcommand => {
                 if subcommand_seen {
                     return Err(syn::Error::new(
-                        field.span,
+                        field.binding.span,
                         "a command can contain only one `subcommand` field",
                     ));
                 }
@@ -552,11 +619,12 @@ fn validate_composed_generics(fields: &[Field], generics: &syn::Generics) -> syn
     }
 
     for field in fields {
-        let (ty, attribute) = match &field.kind {
-            FieldKind::Flatten { ty } => (ty, "flatten"),
-            FieldKind::Subcommand { ty } => (ty, "subcommand"),
-            _ => continue,
+        let attribute = match &field.semantics {
+            FieldSemantics::Flatten => "flatten",
+            FieldSemantics::Subcommand => "subcommand",
+            FieldSemantics::Argument(_) => continue,
         };
+        let ty = &field.binding.ty;
         let mut visitor = GenericUse { params: &params, found: false };
         visitor.visit_type(ty);
         if visitor.found {
@@ -587,7 +655,7 @@ fn validate_variant_generics(variants: &[Variant], generics: &syn::Generics) -> 
     }
 
     for variant in variants {
-        let Some(ty) = &variant.payload else {
+        let Some(ty) = &variant.binding.payload else {
             continue;
         };
         let mut visitor = GenericUse { params: &params, found: false };
@@ -686,4 +754,55 @@ fn validate_long(long: &str, span: Span) -> syn::Result<()> {
         ));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use syn::{DeriveInput, parse_quote};
+
+    use super::{ArgumentKind, Command, FieldSemantics, Shape, ValueConversion};
+
+    #[test]
+    fn command_model_separates_cli_semantics_from_rust_binding() {
+        let input: DeriveInput = parse_quote! {
+            /// Example command.
+            #[argx(name = "example")]
+            struct Cli {
+                /// Enable verbose output.
+                #[argx(short, long)]
+                verbose: bool,
+                output: Option<std::path::PathBuf>,
+                #[argx(flatten)]
+                shared: Shared,
+                #[argx(subcommand)]
+                command: Commands,
+            }
+        };
+
+        let command = Command::from_input(&input, true).expect("command model should be valid");
+        assert_eq!(command.semantics.name, "example");
+        assert_eq!(command.semantics.about.as_deref(), Some("Example command."));
+        assert!(command.binding.root);
+
+        let verbose = &command.fields[0];
+        let Some(argument) = verbose.argument() else {
+            panic!("verbose should be an argument");
+        };
+        assert!(matches!(&argument.kind, ArgumentKind::Flag { .. }));
+        assert_eq!(argument.shape, Shape::Bool);
+        assert!(verbose.binding.value.is_none());
+
+        let output = &command.fields[1];
+        let Some(argument) = output.argument() else {
+            panic!("output should be an argument");
+        };
+        assert!(matches!(&argument.kind, ArgumentKind::Positional));
+        assert_eq!(argument.shape, Shape::Optional);
+        assert_eq!(output.value_binding().conversion, ValueConversion::Os);
+
+        assert!(matches!(&command.fields[2].semantics, FieldSemantics::Flatten));
+        assert!(command.fields[2].binding.value.is_none());
+        assert!(matches!(&command.fields[3].semantics, FieldSemantics::Subcommand));
+        assert!(command.fields[3].binding.value.is_none());
+    }
 }

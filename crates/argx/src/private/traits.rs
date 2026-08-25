@@ -3,12 +3,12 @@
 use super::model::Command;
 use crate::argv::Event;
 
-/// Static command metadata and generated typed-binding behavior.
+/// Generated runtime projections of one normalized command declaration.
 pub trait CommandArgs: Sized {
     /// Values collected so far during one parse.
     type Partial;
 
-    /// Parse tables for this declaration.
+    /// Private runtime command semantics projected from this declaration.
     const COMMAND: &'static Command<'static>;
 
     /// Creates empty binding state for a new parse.
@@ -53,12 +53,12 @@ pub trait CommandArgs: Sized {
     fn finish(partial: Self::Partial) -> Result<Self, crate::Error>;
 }
 
-/// Static command metadata and typed binding exposed by a derived subcommand enum.
+/// Generated command semantics and typed binding for a derived subcommand enum.
 pub trait Subcommands: Sized {
     /// Values collected for the selected variant during one parse.
     type Partial;
 
-    /// Parse tables for the enum's named subcommands.
+    /// Private runtime command semantics for the enum's named subcommands.
     const COMMANDS: &'static [&'static Command<'static>];
 
     /// Creates empty selection and binding state.

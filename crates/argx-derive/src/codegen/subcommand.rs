@@ -10,18 +10,21 @@ use crate::{crate_name, key, model};
 /// Generates static child-command tables and typed enum binding.
 pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
     let facade = crate_name::facade_path();
-    let ident = &subcommand.ident;
+    let ident = &subcommand.binding.ident;
     let generics = subcommand_generics(subcommand, &facade);
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-    let keys =
-        key::subcommand_constants(&facade, &subcommand.fingerprint, subcommand.variants.len());
+    let keys = key::subcommand_constants(
+        &facade,
+        &subcommand.binding.fingerprint,
+        subcommand.variants.len(),
+    );
 
     let command_tables = subcommand.variants.iter().enumerate().map(|(index, variant)| {
         let table = format_ident!("ARGX_SUBCOMMAND_{index}");
         let key = key::ident("SUBCOMMAND", Some(index));
-        let name = &variant.name;
-        let about = option_str(variant.about.as_deref());
-        variant.payload.as_ref().map_or_else(|| quote! {
+        let name = &variant.semantics.name;
+        let about = option_str(variant.semantics.about.as_deref());
+        variant.binding.payload.as_ref().map_or_else(|| quote! {
                 static #table: #facade::__private::Command<'static> =
                     #facade::__private::Command {
                         name: #name,
@@ -52,7 +55,7 @@ pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
     // largest selected branch instead of reserving space for every sibling's partial state.
     let partial_variants = subcommand.variants.iter().enumerate().map(|(index, variant)| {
         let partial_variant = format_ident!("V{index}");
-        variant.payload.as_ref().map_or_else(
+        variant.binding.payload.as_ref().map_or_else(
             || quote!(#partial_variant,),
             |ty| quote!(#partial_variant(<#ty as #facade::__private::CommandArgs>::Partial),),
         )
@@ -60,7 +63,7 @@ pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
 
     let selected_apply_arms = subcommand.variants.iter().enumerate().map(|(index, variant)| {
         let partial_variant = format_ident!("V{index}");
-        variant.payload.as_ref().map_or_else(
+        variant.binding.payload.as_ref().map_or_else(
             || quote!(Partial::#partial_variant => return false,),
             |ty| {
                 quote! {
@@ -74,7 +77,7 @@ pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
     let select_arms = subcommand.variants.iter().enumerate().map(|(index, variant)| {
         let key = key::ident("SUBCOMMAND", Some(index));
         let partial_variant = format_ident!("V{index}");
-        variant.payload.as_ref().map_or_else(
+        variant.binding.payload.as_ref().map_or_else(
             || {
                 quote! {
                     #key => {
@@ -101,7 +104,7 @@ pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
         .iter()
         .enumerate()
         .filter_map(|(index, variant)| {
-            let ty = variant.payload.as_ref()?;
+            let ty = variant.binding.payload.as_ref()?;
             let partial_variant = format_ident!("V{index}");
             Some(quote! {
                 Partial::#partial_variant(selected) => {
@@ -115,7 +118,7 @@ pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
         .iter()
         .enumerate()
         .filter_map(|(index, variant)| {
-            let ty = variant.payload.as_ref()?;
+            let ty = variant.binding.payload.as_ref()?;
             let partial_variant = format_ident!("V{index}");
             Some(quote! {
                 Partial::#partial_variant(selected) => {
@@ -150,8 +153,8 @@ pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
     };
     let finish_arms = subcommand.variants.iter().enumerate().map(|(index, variant)| {
         let partial_variant = format_ident!("V{index}");
-        let variant_ident = &variant.ident;
-        variant.payload.as_ref().map_or_else(
+        let variant_ident = &variant.binding.ident;
+        variant.binding.payload.as_ref().map_or_else(
             || {
                 quote! {
                     Partial::#partial_variant => ::std::result::Result::Ok(
@@ -250,10 +253,10 @@ pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
 
 /// Adds the payload bounds required by generated subcommand binding.
 fn subcommand_generics(subcommand: &model::Subcommand, facade: &TokenStream) -> Generics {
-    let mut generics = subcommand.generics.clone();
+    let mut generics = subcommand.binding.generics.clone();
     let mut bounded = Vec::new();
     for variant in &subcommand.variants {
-        let Some(ty) = &variant.payload else {
+        let Some(ty) = &variant.binding.payload else {
             continue;
         };
         let rendered = quote!(#ty).to_string();
@@ -261,10 +264,7 @@ fn subcommand_generics(subcommand: &model::Subcommand, facade: &TokenStream) -> 
             continue;
         }
         bounded.push(rendered);
-        generics
-            .make_where_clause()
-            .predicates
-            .push(parse_quote!(#ty: #facade::Args));
+        generics.make_where_clause().predicates.push(parse_quote!(#ty: #facade::Args));
     }
     generics
 }

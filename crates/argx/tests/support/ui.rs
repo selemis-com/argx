@@ -12,7 +12,10 @@ use std::{
     },
 };
 
-use snapbox::{cmd::{Command, OutputAssert}, prelude::IntoData};
+use snapbox::{
+    cmd::{Command, OutputAssert},
+    prelude::IntoData,
+};
 
 /// Serializes Cargo invocations that share the UI-test target directory.
 static CARGO_LOCK: Mutex<()> = Mutex::new(());
@@ -87,15 +90,8 @@ pub(crate) fn assert_ui_success(fixture: &str, dependency: &str) {
 
 /// Compiles one downstream fixture and asserts its normalized failure diagnostics.
 #[track_caller]
-pub(crate) fn assert_ui_failure(
-    fixture: &str,
-    dependency: &str,
-    expected_stderr: impl IntoData,
-) {
-    ui_output("fail", fixture, dependency)
-        .failure()
-        .stdout_eq("")
-        .stderr_eq(expected_stderr);
+pub(crate) fn assert_ui_failure(fixture: &str, dependency: &str, expected_stderr: impl IntoData) {
+    ui_output("fail", fixture, dependency).failure().stdout_eq("").stderr_eq(expected_stderr);
 }
 
 /// Compiles one downstream fixture and exposes normalized output to Snapbox.
