@@ -1155,7 +1155,7 @@ Options:
             Err(Error::DisplayHelp {
                 help: String::from(
                     "Usage: global-cli outer leaf [OPTIONS]\n\n\
-Options:\n  --verbose\n  --region\n  --profile\n  -h, --help  Print help\n",
+Options:\n  --verbose\n  --region <REGION>\n  --profile <PROFILE>\n  -h, --help           Print help\n",
                 ),
             }),
         );
