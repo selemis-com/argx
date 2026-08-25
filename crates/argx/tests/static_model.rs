@@ -5,13 +5,17 @@
 mod tests {
     use argx::__private::CommandArgs as _;
 
+    /// Documentation that is overridden by explicit command help.
     #[derive(argx::Parser)]
-    #[argx(name = "example")]
+    #[argx(name = "example", about = "Example command")]
     struct Cli {
+        /// Enable verbose output.
         #[argx(short, long)]
         verbose: bool,
-        #[argx(long = "output")]
+        /// Documentation overridden by explicit field help.
+        #[argx(long = "output", help = "Optional output path")]
         output: Option<String>,
+        /// Input value to process.
         input: String,
         rest: Vec<String>,
     }
@@ -63,7 +67,10 @@ mod tests {
 
     #[derive(argx::Subcommand)]
     enum Commands {
+        /// Add one value.
         Add(AddArgs),
+        /// Documentation overridden by explicit command help.
+        #[argx(about = "Remove one value")]
         Remove(AddArgs),
         Nested(NestedArgs),
         Status,
@@ -117,6 +124,7 @@ mod tests {
 
         let command = Cli::COMMAND;
         assert_eq!(command.name, "example");
+        assert_eq!(command.about, Some("Example command"));
         assert_eq!(command.flags.len(), 2);
         assert_eq!(command.args.len(), 2);
         assert!(command.subcommands.is_empty());
@@ -124,18 +132,23 @@ mod tests {
         assert_eq!(command.flags[0].name, "verbose");
         assert_eq!(command.flags[0].longs, ["verbose"]);
         assert_eq!(command.flags[0].shorts, [b'v']);
+        assert_eq!(command.flags[0].help, Some("Enable verbose output."));
         assert!(!command.flags[0].takes_value);
+        assert!(!command.flags[0].required);
         assert!(!command.flags[0].allow_hyphen_values);
         assert!(!command.flags[0].allow_negative_numbers);
 
         assert_eq!(command.flags[1].name, "output");
         assert_eq!(command.flags[1].longs, ["output"]);
         assert!(command.flags[1].shorts.is_empty());
+        assert_eq!(command.flags[1].help, Some("Optional output path"));
         assert!(command.flags[1].takes_value);
+        assert!(!command.flags[1].required);
         assert!(!command.flags[1].allow_hyphen_values);
         assert!(!command.flags[1].allow_negative_numbers);
 
         assert_eq!(command.args[0].name, "input");
+        assert_eq!(command.args[0].help, Some("Input value to process."));
         assert!(command.args[0].required);
         assert!(!command.args[0].variadic);
         assert!(!command.args[0].allow_negative_numbers);
@@ -223,7 +236,9 @@ mod tests {
         let command = CommandCli::COMMAND;
         assert_eq!(command.subcommands.len(), 4);
         assert_eq!(command.subcommands[0].name, "add");
+        assert_eq!(command.subcommands[0].about, Some("Add one value."));
         assert_eq!(command.subcommands[1].name, "remove");
+        assert_eq!(command.subcommands[1].about, Some("Remove one value"));
         assert_eq!(command.subcommands[2].name, "nested");
         assert_eq!(command.subcommands[3].name, "status");
 

@@ -32,7 +32,7 @@ struct Cli {
 }
 
 fn main() {
-    let cli = Cli::try_parse_args(["status"]).expect("static example arguments are valid");
+    let cli = Cli::parse();
     match cli.command {
         Command::Add(add) => {
             if add.force {

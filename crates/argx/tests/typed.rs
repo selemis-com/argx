@@ -216,6 +216,39 @@ mod tests {
         command: RootCommand,
     }
 
+    /// Root help summary overridden through the explicit command attribute.
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    #[argx(name = "tool", about = "Manage things")]
+    struct HelpCli {
+        /// Enable verbose output.
+        #[argx(short, long)]
+        verbose: bool,
+        /// This doc comment is overridden by explicit help.
+        #[argx(long, help = "Output path")]
+        output: String,
+        /// Workspace name.
+        workspace: String,
+        #[argx(subcommand)]
+        command: HelpCommand,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Subcommand)]
+    enum HelpCommand {
+        /// Configure values.
+        Config(HelpConfig),
+        /// Show current status.
+        Status,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Args)]
+    struct HelpConfig {
+        /// Use local configuration.
+        #[argx(long)]
+        local: bool,
+        /// Configuration key.
+        key: String,
+    }
+
     #[derive(Debug, PartialEq, Eq, argx::Args)]
     struct ReusedArgs {
         #[argx(long)]
@@ -520,6 +553,65 @@ mod tests {
         assert_eq!(
             TextCli::try_parse_args([raw]),
             Err(Error::InvalidUtf8 { name: "value", value: vec![b'x', 0xff] })
+        );
+    }
+
+    #[test]
+    fn generated_help_uses_static_metadata_and_selected_command_scope() {
+        let root = HelpCli::render_help();
+        assert!(root.starts_with(
+            "Manage things\n\nUsage: tool [OPTIONS] --output <OUTPUT> <WORKSPACE> <COMMAND>\n"
+        ));
+        assert!(root.contains("<WORKSPACE>  Workspace name."));
+        assert!(root.contains("config  Configure values."));
+        assert!(root.contains("status  Show current status."));
+        assert!(root.contains("-v, --verbose"));
+        assert!(root.contains("Enable verbose output."));
+        assert!(root.contains("--output <OUTPUT>"));
+        assert!(root.contains("Output path"));
+        assert!(root.ends_with("-h, --help         Print help\n"));
+
+        assert_eq!(HelpCli::try_parse_args(["--help"]), Err(Error::DisplayHelp { help: root }),);
+
+        let nested = HelpCli::try_parse_args(["--output", "out", "acme", "config", "--help"]);
+        let Err(Error::DisplayHelp { help }) = nested else {
+            panic!("nested help request did not return generated help")
+        };
+        assert!(help.starts_with("Configure values.\n\nUsage: tool config [OPTIONS] <KEY>\n"));
+        assert!(help.contains("<KEY>  Configuration key."));
+        assert!(help.contains("--local"));
+        assert!(help.contains("Use local configuration."));
+
+        let status = HelpCli::try_parse_args(["--output", "out", "acme", "status"])
+            .expect("status command should parse");
+        assert!(!status.verbose);
+        assert_eq!(status.output, "out");
+        assert_eq!(status.workspace, "acme");
+        assert!(matches!(status.command, HelpCommand::Status));
+
+        let config =
+            HelpCli::try_parse_args(["--output", "out", "acme", "config", "--local", "theme"])
+                .expect("config command should parse");
+        let HelpCommand::Config(config) = config.command else {
+            panic!("config command did not construct its payload")
+        };
+        assert!(config.local);
+        assert_eq!(config.key, "theme");
+    }
+
+    #[test]
+    fn help_precedes_deferred_binding_errors_but_not_detached_value_rules() {
+        assert!(matches!(
+            HelpCli::try_parse_args(["--verbose", "--verbose", "--help"]),
+            Err(Error::DisplayHelp { .. })
+        ));
+        assert_eq!(
+            HelpCli::try_parse_args(["--output", "--help"]),
+            Err(Error::MissingValue { name: "output" }),
+        );
+        assert_eq!(
+            Empty::try_parse_args(["--", "--help"]),
+            Err(Error::UnexpectedArgument { token: b"--help".to_vec() }),
         );
     }
 

@@ -33,3 +33,15 @@ struct VariadicBeforeAnotherPositional {
 }
 
 fn main() {}
+
+#[derive(argx::Parser)]
+struct ReservedLongHelp {
+    #[argx(long = "help")]
+    value: bool,
+}
+
+#[derive(argx::Parser)]
+struct ReservedShortHelp {
+    #[argx(short = 'h')]
+    value: bool,
+}

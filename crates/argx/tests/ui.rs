@@ -72,6 +72,8 @@ mod tests {
             "long flag must be non-empty, must not start with `-`, and cannot contain `=`, whitespace, or controls",
             "required positional arguments cannot follow optional positional arguments",
             "variadic positional argument must be the last positional argument",
+            "`--help` is reserved by Argx",
+            "`-h` is reserved by Argx",
         ] {
             assert!(stderr.contains(expected), "missing diagnostic: {expected}\n{stderr}");
         }
@@ -95,7 +97,7 @@ mod tests {
             "`flatten` cannot depend on the containing struct's generic parameters",
             "`flatten` does not support `Option<T>`",
             "`flatten` does not support collection wrappers",
-            "`flatten` cannot be combined with flag or value attributes",
+            "`flatten` cannot be combined with flag, value, or help attributes",
             "`flatten` takes no value",
         ] {
             assert!(stderr.contains(expected), "missing diagnostic: {expected}\n{stderr}");
@@ -150,7 +152,7 @@ mod tests {
             "FlattenArgs",
             "`subcommand` does not support `Option<T>`",
             "`subcommand` does not support collection wrappers",
-            "`subcommand` cannot be combined with flag or value attributes",
+            "`subcommand` cannot be combined with flag, value, or help attributes",
             "`subcommand` takes no value",
             "`flatten` and `subcommand` cannot be combined",
             "a command can contain only one `subcommand` field",

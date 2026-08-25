@@ -31,7 +31,7 @@ mod tests {
 
     /// Visible short spellings used to build unique generated command tables.
     const SHORT_ALPHABET: &[u8] =
-        b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+[]{};,.?/|~";
+        b"abcdefg`ijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+[]{};,.?/|~";
 
     /// Derive-independent shape controls for one generated flag.
     #[derive(Debug, Clone, Copy)]
@@ -118,11 +118,15 @@ mod tests {
         Empty,
         /// Unusual but syntactically flag-like raw token.
         RawFlagLike,
+        /// Built-in long help switch.
+        HelpLong,
+        /// Built-in short help switch.
+        HelpShort,
     }
 
     impl TokenKind {
         /// Number of variants represented in coverage counters.
-        const COUNT: usize = 13;
+        const COUNT: usize = 15;
 
         /// Stable coverage-counter index for this token class.
         const fn index(self) -> usize {
@@ -140,6 +144,8 @@ mod tests {
                 Self::LoneDash => 10,
                 Self::Empty => 11,
                 Self::RawFlagLike => 12,
+                Self::HelpLong => 13,
+                Self::HelpShort => 14,
             }
         }
     }
@@ -183,12 +189,12 @@ mod tests {
             /// Encoded positional value.
             value: Vec<u8>,
         },
-        /// Terminal parser failure.
+        /// Terminal parser control-flow or failure result.
         Error(ErrorTrace),
     }
 
     impl Trace {
-        /// Reports whether this item is a terminal failure.
+        /// Reports whether this item terminates parsing.
         const fn is_error(&self) -> bool {
             matches!(self, Self::Error(_))
         }
@@ -205,6 +211,8 @@ mod tests {
         UnexpectedFlagValue(u64),
         /// Whole positional token that could not be bound.
         UnexpectedArg(Vec<u8>),
+        /// Built-in help terminated parsing successfully.
+        DisplayHelp,
     }
 
     impl ErrorTrace {
@@ -215,6 +223,7 @@ mod tests {
                 Self::MissingFlagValue(_) => 1,
                 Self::UnexpectedFlagValue(_) => 2,
                 Self::UnexpectedArg(_) => 3,
+                Self::DisplayHelp => 4,
             }
         }
     }
@@ -337,6 +346,7 @@ mod tests {
                 Self::UnexpectedArg(token) => {
                     write!(formatter, "unexpected_arg({})", Encoded(token))
                 }
+                Self::DisplayHelp => formatter.write_str("display_help"),
             }
         }
     }
@@ -402,8 +412,8 @@ mod tests {
         flags: usize,
         /// Bound positional events.
         args: usize,
-        /// Counts for each terminal error class.
-        errors: [usize; 4],
+        /// Counts for each terminal control-flow or error class.
+        errors: [usize; 5],
     }
 
     impl Coverage {
@@ -519,6 +529,8 @@ mod tests {
             2 => Just(TokenKind::LoneDash),
             1 => Just(TokenKind::Empty),
             2 => Just(TokenKind::RawFlagLike),
+            1 => Just(TokenKind::HelpLong),
+            1 => Just(TokenKind::HelpShort),
         ]
     }
 
@@ -654,6 +666,8 @@ mod tests {
             TokenKind::LoneDash => b"-".to_vec(),
             TokenKind::Empty => Vec::new(),
             TokenKind::RawFlagLike => raw_flag_like(token.selectors[0]).to_vec(),
+            TokenKind::HelpLong => b"--help".to_vec(),
+            TokenKind::HelpShort => b"-h".to_vec(),
         }
     }
 
@@ -770,9 +784,11 @@ mod tests {
             .map(|(flag, longs)| Flag {
                 key: flag.key,
                 name: &flag.name,
+                help: None,
                 longs,
                 shorts: &flag.shorts,
                 takes_value: flag.takes_value,
+                required: false,
                 allow_hyphen_values: flag.allow_hyphen_values,
                 allow_negative_numbers: flag.allow_negative_numbers,
             })
@@ -784,6 +800,7 @@ mod tests {
             .map(|arg| Arg {
                 key: arg.key,
                 name: &arg.name,
+                help: None,
                 required: arg.required,
                 variadic: arg.variadic,
                 allow_negative_numbers: arg.allow_negative_numbers,
@@ -792,6 +809,7 @@ mod tests {
         let arg_refs = args.iter().collect::<Vec<_>>();
         let table = Command {
             name: "generated",
+            about: None,
             flags: &flag_refs,
             args: &arg_refs,
             subcommands: &[],
@@ -836,6 +854,7 @@ mod tests {
             Error::MissingFlagValue { flag } => ErrorTrace::MissingFlagValue(flag.key),
             Error::UnexpectedFlagValue { flag } => ErrorTrace::UnexpectedFlagValue(flag.key),
             Error::UnexpectedArg { token } => ErrorTrace::UnexpectedArg(token.to_vec()),
+            Error::DisplayHelp => ErrorTrace::DisplayHelp,
             _ => panic!("property harness does not recognize this parser error variant"),
         }
     }
@@ -853,7 +872,9 @@ mod tests {
                 flags_stopped = true;
                 continue;
             }
-            if flags_stopped
+            if !flags_stopped && matches!(token.as_slice(), b"--help" | b"-h") {
+                trace.push(Trace::Error(ErrorTrace::DisplayHelp));
+            } else if flags_stopped
                 || binds_as_negative_positional(command, arg_position, token)
                 || !is_flag_like(token)
             {
@@ -1036,13 +1057,20 @@ mod tests {
         static VALUE: Arg<'static> = Arg {
             key: 0x3000,
             name: "value",
+            help: None,
             required: false,
             variadic: true,
             allow_negative_numbers: false,
         };
         /// Minimal command used by the byte-preservation invariant.
-        static COMMAND: Command<'static> =
-            Command { name: "passthrough", flags: &[], args: &[&VALUE], subcommands: &[], key: 2 };
+        static COMMAND: Command<'static> = Command {
+            name: "passthrough",
+            about: None,
+            flags: &[],
+            args: &[&VALUE],
+            subcommands: &[],
+            key: 2,
+        };
 
         let separator = OsStr::new("--");
         let mut refs = Vec::with_capacity(argv.len() + 1);
@@ -1217,6 +1245,7 @@ mod tests {
             Command { name: "status", key: 0x4600, ..Command::EMPTY };
         static ROOT: Command<'static> = Command {
             name: "root",
+            about: None,
             flags: &[&ROOT_VERBOSE],
             args: &[&ROOT_VALUE],
             subcommands: &[&ADD, &CONFIG, &ROOT_STATUS],
@@ -1417,11 +1446,15 @@ mod tests {
             coverage.flags, coverage.args, coverage.non_utf8_tokens,
         );
         eprintln!(
-            "[parser fuzz] terminal errors: unknown_flag={} | missing_value={} | unexpected_value={} | unexpected_arg={}",
-            coverage.errors[0], coverage.errors[1], coverage.errors[2], coverage.errors[3],
+            "[parser fuzz] terminal outcomes: unknown_flag={} | missing_value={} | unexpected_value={} | unexpected_arg={} | display_help={}",
+            coverage.errors[0],
+            coverage.errors[1],
+            coverage.errors[2],
+            coverage.errors[3],
+            coverage.errors[4],
         );
         eprintln!(
-            "[parser fuzz] generated token classes: word={} | known_long={} | known_long_attached={} | known_short={} | known_short_attached={} | short_bundle={} | unknown_long={} | unknown_short={} | separator={} | negative={} | lone_dash={} | empty={} | raw_flag_like={}",
+            "[parser fuzz] generated token classes: word={} | known_long={} | known_long_attached={} | known_short={} | known_short_attached={} | short_bundle={} | unknown_long={} | unknown_short={} | separator={} | negative={} | lone_dash={} | empty={} | raw_flag_like={} | help_long={} | help_short={}",
             coverage.token_kinds[0],
             coverage.token_kinds[1],
             coverage.token_kinds[2],
@@ -1435,6 +1468,8 @@ mod tests {
             coverage.token_kinds[10],
             coverage.token_kinds[11],
             coverage.token_kinds[12],
+            coverage.token_kinds[13],
+            coverage.token_kinds[14],
         );
     }
 

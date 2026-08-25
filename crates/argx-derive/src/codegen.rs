@@ -51,16 +51,20 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
             unreachable!("flag list only contains flag fields");
         };
         let name = &field.name;
+        let help = option_str(field.help.as_deref());
         let takes_value = !field.is_switch();
+        let required = field.shape == model::Shape::Required;
         let allow_hyphen_values = field.allow_hyphen_values;
         let allow_negative_numbers = field.allow_negative_numbers;
         quote! {
             static #table: #facade::__private::Flag<'static> = #facade::__private::Flag {
                 key: #key,
                 name: #name,
+                help: #help,
                 longs: &[#(#longs),*],
                 shorts: &[#(#shorts),*],
                 takes_value: #takes_value,
+                required: #required,
                 allow_hyphen_values: #allow_hyphen_values,
                 allow_negative_numbers: #allow_negative_numbers,
             };
@@ -71,6 +75,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
         let table = format_ident!("ARGX_ARG_{index}");
         let key = key::ident("ARG", Some(index));
         let name = &field.name;
+        let help = option_str(field.help.as_deref());
         let required = matches!(field.shape, model::Shape::Bool | model::Shape::Required);
         let variadic = field.shape == model::Shape::Many;
         let allow_negative_numbers = field.allow_negative_numbers;
@@ -79,6 +84,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                 #facade::__private::Arg {
                     key: #key,
                     name: #name,
+                    help: #help,
                     required: #required,
                     variadic: #variadic,
                     allow_negative_numbers: #allow_negative_numbers,
@@ -276,6 +282,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
     });
 
     let name = &command.name;
+    let about = option_str(command.about.as_deref());
     let command_subcommands = subcommand.map_or_else(
         || quote!(&[]),
         |(_, field)| {
@@ -309,6 +316,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
             static ARGX_COMMAND: #facade::__private::Command<'static> =
                 #facade::__private::Command {
                     name: #name,
+                    about: #about,
                     flags: #command_flags,
                     args: #command_args,
                     subcommands: #command_subcommands,
@@ -683,6 +691,14 @@ fn finish_field(field: &model::Field, field_index: usize, facade: &TokenStream) 
     }
 }
 
+/// Renders optional static text into generated metadata.
+fn option_str(value: Option<&str>) -> TokenStream {
+    value.map_or_else(
+        || quote!(::std::option::Option::None),
+        |value| quote!(::std::option::Option::Some(#value)),
+    )
+}
+
 /// Generates static child-command tables and typed enum binding.
 pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
     let facade = crate_name::facade_path();
@@ -696,10 +712,12 @@ pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
         let table = format_ident!("ARGX_SUBCOMMAND_{index}");
         let key = key::ident("SUBCOMMAND", Some(index));
         let name = &variant.name;
+        let about = option_str(variant.about.as_deref());
         variant.payload.as_ref().map_or_else(|| quote! {
                 static #table: #facade::__private::Command<'static> =
                     #facade::__private::Command {
                         name: #name,
+                        about: #about,
                         flags: &[],
                         args: &[],
                         subcommands: &[],
@@ -709,6 +727,7 @@ pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
                 static #table: #facade::__private::Command<'static> =
                     #facade::__private::Command {
                         name: #name,
+                        about: #about,
                         flags: <#ty as #facade::__private::CommandArgs>::COMMAND.flags,
                         args: <#ty as #facade::__private::CommandArgs>::COMMAND.args,
                         subcommands: <#ty as #facade::__private::CommandArgs>::COMMAND.subcommands,

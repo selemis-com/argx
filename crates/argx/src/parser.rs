@@ -4,6 +4,16 @@ use std::ffi::OsStr;
 
 use crate::__private::{Arg, Command, Flag};
 
+/// Synthetic metadata for the built-in help switch.
+static HELP_FLAG: Flag<'static> = Flag {
+    key: 0,
+    name: "help",
+    help: Some("Print help"),
+    longs: &["help"],
+    shorts: b"h",
+    ..Flag::BOOL
+};
+
 /// One token binding produced by the raw argument parser.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Event<'t, 'v> {
@@ -32,6 +42,8 @@ pub enum Event<'t, 'v> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Error<'t, 'v> {
+    /// Built-in help was requested for the current command scope.
+    DisplayHelp,
     /// A flag-like token did not match any declared flag.
     UnknownFlag {
         /// Whole encoded token supplied by the caller.
@@ -98,16 +110,16 @@ impl<'t, 'a, 'v> ArgvParser<'t, 'a, 'v> {
         }
     }
 
-    /// Produces the next token binding or parse failure.
+    /// Produces the next token binding or terminal parser result.
     ///
-    /// An error is terminal: subsequent calls return `None`. Events emitted before an error are a
-    /// partial parse and must be discarded by callers. A short bundle is preflighted before its
-    /// first event, so an unknown short rejects the whole token atomically.
+    /// A help request or error is terminal: subsequent calls return `None`. Events emitted before a
+    /// terminal result are a partial parse and must be discarded by callers. A short bundle is
+    /// preflighted before its first event, so an unknown short rejects the whole token atomically.
     ///
     /// # Errors
     ///
-    /// Returns a structured error when a token cannot be bound according to the static command
-    /// metadata.
+    /// Returns [`Error::DisplayHelp`] for the built-in help switch, or a structured error when a
+    /// token cannot be bound according to the static command metadata.
     pub fn next_event(&mut self) -> Option<Result<Event<'t, 'v>, Error<'t, 'v>>> {
         if self.done {
             return None;
@@ -170,6 +182,13 @@ impl<'t, 'a, 'v> ArgvParser<'t, 'a, 'v> {
             .iter()
             .position(|byte| *byte == b'=')
             .map_or((body, None), |index| (&body[..index], Some(&body[index + 1..])));
+        if name == b"help" {
+            return if attached.is_some() {
+                Err(Error::UnexpectedFlagValue { flag: &HELP_FLAG })
+            } else {
+                Err(Error::DisplayHelp)
+            };
+        }
         let Some(flag) = self.find_long(name) else {
             return Err(Error::UnknownFlag { token });
         };
@@ -194,6 +213,10 @@ impl<'t, 'a, 'v> ArgvParser<'t, 'a, 'v> {
     fn check_short_bundle(&self, token: &'v [u8]) -> Result<(), Error<'t, 'v>> {
         let mut remaining = &token[1..];
         while let Some((&short, tail)) = remaining.split_first() {
+            if short == b'h' {
+                remaining = tail;
+                continue;
+            }
             match self.find_short(short) {
                 None => return Err(Error::UnknownFlag { token }),
                 Some(flag) if flag.takes_value => return Ok(()),
@@ -208,6 +231,10 @@ impl<'t, 'a, 'v> ArgvParser<'t, 'a, 'v> {
         let Some((&short, rest)) = self.bundle.split_first() else {
             return Err(Error::UnknownFlag { token: self.bundle_token });
         };
+        if short == b'h' {
+            self.bundle = &[];
+            return Err(Error::DisplayHelp);
+        }
         let Some(flag) = self.find_short(short) else {
             self.bundle = &[];
             return Err(Error::UnknownFlag { token: self.bundle_token });

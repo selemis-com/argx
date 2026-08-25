@@ -19,6 +19,8 @@ pub(crate) struct Command {
     pub fingerprint: String,
     /// Command-line name represented by this declaration.
     pub name: String,
+    /// One-line help summary for this command.
+    pub about: Option<String>,
     /// Whether the public `Parser` trait is implemented in addition to `CommandArgs`.
     pub root: bool,
     /// Whether the declaration is a unit struct.
@@ -45,6 +47,8 @@ pub(crate) struct Variant {
     pub ident: syn::Ident,
     /// Command-line spelling used to select this variant.
     pub name: String,
+    /// One-line help summary for this subcommand.
+    pub about: Option<String>,
     /// Optional reusable `Args` payload.
     pub payload: Option<Type>,
 }
@@ -59,6 +63,8 @@ pub(crate) struct Field {
     pub span: Span,
     /// Canonical field name without Rust raw-identifier syntax.
     pub name: String,
+    /// One-line help summary for this argument.
+    pub help: Option<String>,
     /// Whether the field is named or positional on the command line.
     pub kind: FieldKind,
     /// Syntactic value shape relevant to binding cardinality.
@@ -142,12 +148,14 @@ impl Command {
         if name.is_empty() {
             return Err(syn::Error::new(Span::call_site(), "command name cannot be empty"));
         }
+        let about = attributes.about.or_else(|| attrs::doc_summary(&input.attrs));
 
         Ok(Self {
             ident: input.ident.clone(),
             generics: input.generics.clone(),
             fingerprint: input.to_token_stream().to_string(),
             name,
+            about,
             root,
             unit,
             fields,
@@ -172,6 +180,7 @@ impl Subcommand {
             let attributes = attrs::variant(&variant.attrs)?;
             let rust_name = ident_name(&variant.ident);
             let name = attributes.name.unwrap_or_else(|| case::to_kebab(&rust_name));
+            let about = attributes.about.or_else(|| attrs::doc_summary(&variant.attrs));
             validate_subcommand_name(&name, variant.ident.span())?;
             if names.contains(&name) {
                 return Err(syn::Error::new(
@@ -208,7 +217,7 @@ impl Subcommand {
                 }
             };
 
-            variants.push(Variant { ident: variant.ident.clone(), name, payload });
+            variants.push(Variant { ident: variant.ident.clone(), name, about, payload });
         }
 
         validate_variant_generics(&variants, &input.generics)?;
@@ -243,10 +252,11 @@ impl Field {
                 || attributes.short.is_some()
                 || attributes.allow_hyphen_values
                 || attributes.allow_negative_numbers
+                || attributes.help.is_some()
             {
                 return Err(syn::Error::new(
                     ident.span(),
-                    "`subcommand` cannot be combined with flag or value attributes",
+                    "`subcommand` cannot be combined with flag, value, or help attributes",
                 ));
             }
             if peel_option(&field.ty).is_some() {
@@ -266,6 +276,7 @@ impl Field {
                 ident,
                 ty: field.ty.clone(),
                 name,
+                help: None,
                 kind: FieldKind::Subcommand { ty: field.ty.clone() },
                 shape: Shape::Required,
                 allow_hyphen_values: false,
@@ -278,10 +289,11 @@ impl Field {
                 || attributes.short.is_some()
                 || attributes.allow_hyphen_values
                 || attributes.allow_negative_numbers
+                || attributes.help.is_some()
             {
                 return Err(syn::Error::new(
                     ident.span(),
-                    "`flatten` cannot be combined with flag or value attributes",
+                    "`flatten` cannot be combined with flag, value, or help attributes",
                 ));
             }
             if peel_option(&field.ty).is_some() {
@@ -302,6 +314,7 @@ impl Field {
                 ident,
                 ty: field.ty.clone(),
                 name,
+                help: None,
                 kind: FieldKind::Flatten { ty: field.ty.clone() },
                 // Flattened fields do not bind a value themselves. The shape is never inspected
                 // by typed conversion and stays required only as an internal placeholder.
@@ -352,11 +365,14 @@ impl Field {
             ));
         }
 
+        let help = attributes.help.or_else(|| attrs::doc_summary(&field.attrs));
+
         Ok(Self {
             span: ident.span(),
             ident,
             ty: field.ty.clone(),
             name,
+            help,
             kind,
             shape,
             allow_hyphen_values: attributes.allow_hyphen_values,
@@ -561,6 +577,9 @@ fn validate_fields(fields: &[Field]) -> syn::Result<()> {
             FieldKind::Flag { longs: field_longs, shorts: field_shorts } => {
                 for long in field_longs {
                     validate_long(long, field.span)?;
+                    if long == "help" {
+                        return Err(syn::Error::new(field.span, "`--help` is reserved by Argx"));
+                    }
                     if longs.contains(&long.as_str()) {
                         return Err(syn::Error::new(
                             field.span,
@@ -570,6 +589,9 @@ fn validate_fields(fields: &[Field]) -> syn::Result<()> {
                     longs.push(long.as_str());
                 }
                 for short in field_shorts {
+                    if *short == b'h' {
+                        return Err(syn::Error::new(field.span, "`-h` is reserved by Argx"));
+                    }
                     if shorts.contains(short) {
                         return Err(syn::Error::new(
                             field.span,

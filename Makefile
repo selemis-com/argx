@@ -81,7 +81,8 @@ test-examples: ## Build and run all runnable examples.
 			--package argx \
 			--example "$$example" \
 			--all-features \
-			--locked; \
+			--locked \
+			-- --help >/dev/null; \
 	done
 
 .PHONY: test

@@ -1,6 +1,10 @@
 //! Public parse and typed-binding errors.
 
-use std::{fmt, process};
+use std::{
+    fmt,
+    io::{self, Write as _},
+    process,
+};
 
 /// Details for a value that the destination Rust type rejected.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -14,10 +18,15 @@ pub struct InvalidValue {
     pub reason: String,
 }
 
-/// A failure while parsing command-line arguments into a typed value.
+/// A control-flow or failure result while parsing command-line arguments.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Error {
+    /// Generated help requested through the built-in help switch.
+    DisplayHelp {
+        /// Fully rendered help text for the selected command scope.
+        help: String,
+    },
     /// A flag-like token did not match any declared flag.
     UnknownFlag {
         /// Encoded token supplied by the caller.
@@ -77,17 +86,40 @@ pub enum Error {
 }
 
 impl Error {
-    /// Prints this error to standard error and terminates the process with the conventional
-    /// command-line error status.
+    /// Returns the process status used by [`Self::exit`].
+    #[must_use]
+    pub const fn exit_code(&self) -> i32 {
+        match self {
+            Self::DisplayHelp { .. } => 0,
+            _ => 2,
+        }
+    }
+
+    /// Prints this result to the appropriate stream and terminates the process.
+    ///
+    /// Help requests are written to standard output and exit successfully. Parse and binding
+    /// failures are written to standard error and exit with status 2.
     pub fn exit(&self) -> ! {
-        eprintln!("error: {self}");
-        process::exit(2)
+        match self {
+            Self::DisplayHelp { help } => {
+                let mut stdout = io::stdout().lock();
+                let _ = stdout.write_all(help.as_bytes());
+                let _ = stdout.flush();
+            }
+            _ => {
+                let mut stderr = io::stderr().lock();
+                let _ = writeln!(stderr, "error: {self}\n\nFor more information, try '--help'.");
+                let _ = stderr.flush();
+            }
+        }
+        process::exit(self.exit_code())
     }
 }
 
 impl fmt::Display for Error {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::DisplayHelp { help } => formatter.write_str(help),
             Self::UnknownFlag { token } => {
                 write!(formatter, "unknown flag `{}`", display_bytes(token))
             }
@@ -140,7 +172,7 @@ fn display_bytes(value: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::display_bytes;
+    use super::{Error, display_bytes};
 
     #[test]
     fn diagnostic_bytes_do_not_emit_control_characters() {
@@ -148,5 +180,15 @@ mod tests {
         assert!(!rendered.contains('\n'));
         assert!(!rendered.contains('\x1b'));
         assert!(rendered.contains(r"\n"));
+    }
+
+    #[test]
+    fn help_requests_use_success_status_and_render_verbatim() {
+        let help = Error::DisplayHelp { help: "Usage: tool [OPTIONS]\n".to_owned() };
+        assert_eq!(help.exit_code(), 0);
+        assert_eq!(help.to_string(), "Usage: tool [OPTIONS]\n");
+
+        let failure = Error::UnknownFlag { token: b"--bad".to_vec() };
+        assert_eq!(failure.exit_code(), 2);
     }
 }

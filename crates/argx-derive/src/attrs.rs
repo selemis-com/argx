@@ -1,6 +1,6 @@
 //! Parsing for Argx container and field attributes.
 
-use syn::{Attribute, LitChar, LitStr, Token};
+use syn::{Attribute, Expr, Lit, LitChar, LitStr, Meta, Token};
 
 /// An attribute whose bare form asks Argx to infer a value from the Rust identifier.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -16,6 +16,8 @@ pub(crate) enum Inferred<T> {
 pub(crate) struct CommandAttrs {
     /// Explicit command-line name.
     pub name: Option<String>,
+    /// Explicit one-line command description.
+    pub about: Option<String>,
 }
 
 /// Attributes accepted on a command field.
@@ -33,6 +35,8 @@ pub(crate) struct FieldAttrs {
     pub allow_hyphen_values: bool,
     /// Whether negative numbers may be consumed while other flag-like values are refused.
     pub allow_negative_numbers: bool,
+    /// Explicit one-line argument description.
+    pub help: Option<String>,
 }
 
 /// Parses every `#[argx(...)]` attribute on a command declaration.
@@ -46,6 +50,12 @@ pub(crate) fn command(attributes: &[Attribute]) -> syn::Result<CommandAttrs> {
                 }
                 let value = meta.value()?.parse::<LitStr>()?;
                 parsed.name = Some(value.value());
+                Ok(())
+            } else if meta.path.is_ident("about") {
+                if parsed.about.is_some() {
+                    return Err(meta.error("duplicate `about` attribute"));
+                }
+                parsed.about = Some(meta.value()?.parse::<LitStr>()?.value());
                 Ok(())
             } else {
                 Err(meta.error("unsupported Argx command attribute"))
@@ -66,6 +76,12 @@ pub(crate) fn variant(attributes: &[Attribute]) -> syn::Result<CommandAttrs> {
                 }
                 let value = meta.value()?.parse::<LitStr>()?;
                 parsed.name = Some(value.value());
+                Ok(())
+            } else if meta.path.is_ident("about") {
+                if parsed.about.is_some() {
+                    return Err(meta.error("duplicate `about` attribute"));
+                }
+                parsed.about = Some(meta.value()?.parse::<LitStr>()?.value());
                 Ok(())
             } else {
                 Err(meta.error("unsupported Argx subcommand variant attribute"))
@@ -130,6 +146,12 @@ pub(crate) fn field(attributes: &[Attribute]) -> syn::Result<FieldAttrs> {
                 }
                 parsed.allow_negative_numbers = true;
                 Ok(())
+            } else if meta.path.is_ident("help") {
+                if parsed.help.is_some() {
+                    return Err(meta.error("duplicate `help` attribute"));
+                }
+                parsed.help = Some(meta.value()?.parse::<LitStr>()?.value());
+                Ok(())
             } else {
                 Err(meta.error("unsupported Argx field attribute"))
             }
@@ -146,4 +168,56 @@ pub(crate) fn reject(attributes: &[Attribute], context: &str) -> syn::Result<()>
         })?;
     }
     Ok(())
+}
+
+/// Returns the first paragraph of Rust doc comments as a one-line help summary.
+pub(crate) fn doc_summary(attributes: &[Attribute]) -> Option<String> {
+    let mut summary = String::new();
+    let mut started = false;
+
+    for attribute in attributes.iter().filter(|attribute| attribute.path().is_ident("doc")) {
+        let Meta::NameValue(meta) = &attribute.meta else {
+            continue;
+        };
+        let Expr::Lit(value) = &meta.value else {
+            continue;
+        };
+        let Lit::Str(value) = &value.lit else {
+            continue;
+        };
+        let line = value.value();
+        let line = line.trim();
+        if line.is_empty() {
+            if started {
+                break;
+            }
+            continue;
+        }
+        if started {
+            summary.push(' ');
+        }
+        summary.push_str(line);
+        started = true;
+    }
+
+    started.then_some(summary)
+}
+
+#[cfg(test)]
+mod tests {
+    use syn::{DeriveInput, parse_quote};
+
+    use super::doc_summary;
+
+    #[test]
+    fn doc_summary_uses_only_the_first_paragraph() {
+        let input: DeriveInput = parse_quote! {
+            /// First line.
+            /// Second line.
+            ///
+            /// Detailed text is not part of short help.
+            struct Example;
+        };
+        assert_eq!(doc_summary(&input.attrs).as_deref(), Some("First line. Second line."));
+    }
 }

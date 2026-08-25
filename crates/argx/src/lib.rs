@@ -9,6 +9,7 @@
 
 mod binding;
 mod error;
+mod help;
 mod parser;
 
 use std::ffi::{OsStr, OsString};
@@ -30,7 +31,8 @@ pub use argx_derive::{Args, Parser, Subcommand};
 pub trait Parser: Sized + __private::CommandArgs {
     /// Parses the current process arguments, excluding the program name.
     ///
-    /// Parse failures are printed to standard error and terminate the process with status 2.
+    /// Help requests are printed to standard output and terminate successfully. Parse failures are
+    /// printed to standard error and terminate the process with status 2.
     fn parse() -> Self {
         Self::try_parse().unwrap_or_else(|error| error.exit())
     }
@@ -39,15 +41,16 @@ pub trait Parser: Sized + __private::CommandArgs {
     ///
     /// # Errors
     ///
-    /// Returns an error when argv cannot be bound to this command or a bound value cannot be
-    /// converted to its Rust field type.
+    /// Returns [`Error::DisplayHelp`] when help is requested, or an error when argv cannot be bound
+    /// to this command or a bound value cannot be converted to its Rust field type.
     fn try_parse() -> Result<Self, Error> {
         Self::try_parse_args(std::env::args_os().skip(1))
     }
 
     /// Parses a complete argv sequence whose first item is the program name.
     ///
-    /// Parse failures are printed to standard error and terminate the process with status 2.
+    /// Help requests are printed to standard output and terminate successfully. Parse failures are
+    /// printed to standard error and terminate the process with status 2.
     fn parse_from<I, T>(argv: I) -> Self
     where
         I: IntoIterator<Item = T>,
@@ -63,8 +66,8 @@ pub trait Parser: Sized + __private::CommandArgs {
     ///
     /// # Errors
     ///
-    /// Returns an error when argv cannot be bound to this command or a bound value cannot be
-    /// converted to its Rust field type.
+    /// Returns [`Error::DisplayHelp`] when help is requested, or an error when argv cannot be bound
+    /// to this command or a bound value cannot be converted to its Rust field type.
     fn try_parse_from<I, T>(argv: I) -> Result<Self, Error>
     where
         I: IntoIterator<Item = T>,
@@ -77,7 +80,8 @@ pub trait Parser: Sized + __private::CommandArgs {
 
     /// Parses arguments that do not include a program name.
     ///
-    /// Parse failures are printed to standard error and terminate the process with status 2.
+    /// Help requests are printed to standard output and terminate successfully. Parse failures are
+    /// printed to standard error and terminate the process with status 2.
     fn parse_args<I, T>(argv: I) -> Self
     where
         I: IntoIterator<Item = T>,
@@ -93,8 +97,8 @@ pub trait Parser: Sized + __private::CommandArgs {
     ///
     /// # Errors
     ///
-    /// Returns an error when argv cannot be bound to this command or a bound value cannot be
-    /// converted to its Rust field type.
+    /// Returns [`Error::DisplayHelp`] when help is requested, or an error when argv cannot be bound
+    /// to this command or a bound value cannot be converted to its Rust field type.
     fn try_parse_args<I, T>(argv: I) -> Result<Self, Error>
     where
         I: IntoIterator<Item = T>,
@@ -103,6 +107,12 @@ pub trait Parser: Sized + __private::CommandArgs {
         let owned: Vec<OsString> = argv.into_iter().map(Into::into).collect();
         let refs: Vec<&OsStr> = owned.iter().map(OsString::as_os_str).collect();
         binding::parse_refs::<Self>(&refs)
+    }
+
+    /// Renders generated help for this root command.
+    #[must_use]
+    fn render_help() -> String {
+        help::render(&[Self::COMMAND])
     }
 }
 
@@ -123,6 +133,8 @@ pub mod __private {
     pub struct Command<'a> {
         /// Command name as exposed on the command line.
         pub name: &'a str,
+        /// One-line description shown in generated help.
+        pub about: Option<&'a str>,
         /// Flags accepted by this command.
         pub flags: &'a [&'a Flag<'a>],
         /// Positional arguments accepted by this command.
@@ -135,7 +147,8 @@ pub mod __private {
 
     impl Command<'static> {
         /// Empty command metadata for use with struct update syntax.
-        pub const EMPTY: Self = Self { name: "", flags: &[], args: &[], subcommands: &[], key: 0 };
+        pub const EMPTY: Self =
+            Self { name: "", about: None, flags: &[], args: &[], subcommands: &[], key: 0 };
     }
 
     /// Static parse metadata for a named flag.
@@ -145,12 +158,16 @@ pub mod __private {
         pub key: Key,
         /// Canonical field name used by diagnostics and generated binding code.
         pub name: &'a str,
+        /// One-line description shown in generated help.
+        pub help: Option<&'a str>,
         /// Long spellings without the leading `--`.
         pub longs: &'a [&'a str],
         /// ASCII short spellings without the leading `-`.
         pub shorts: &'a [u8],
         /// Whether one occurrence consumes a value.
         pub takes_value: bool,
+        /// Whether this flag must occur at least once.
+        pub required: bool,
         /// Whether a detached value may itself be flag-like.
         pub allow_hyphen_values: bool,
         /// Whether a detached negative number may be consumed while other flag-like values are
@@ -163,9 +180,11 @@ pub mod __private {
         pub const BOOL: Self = Self {
             key: 0,
             name: "",
+            help: None,
             longs: &[],
             shorts: &[],
             takes_value: false,
+            required: false,
             allow_hyphen_values: false,
             allow_negative_numbers: false,
         };
@@ -181,6 +200,8 @@ pub mod __private {
         pub key: Key,
         /// Canonical field name used by diagnostics and generated binding code.
         pub name: &'a str,
+        /// One-line description shown in generated help.
+        pub help: Option<&'a str>,
         /// Whether this positional must receive at least one value.
         pub required: bool,
         /// Whether this positional may receive multiple values.
@@ -194,6 +215,7 @@ pub mod __private {
         pub const REQUIRED: Self = Self {
             key: 0,
             name: "",
+            help: None,
             required: true,
             variadic: false,
             allow_negative_numbers: false,

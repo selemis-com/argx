@@ -2,7 +2,7 @@
 
 use std::{ffi::OsString, fmt, str::FromStr};
 
-use crate::{__private::CommandArgs, Error, InvalidValue, parser::Error as RawError};
+use crate::{__private::CommandArgs, Error, InvalidValue, help, parser::Error as RawError};
 
 /// Parses already-separated argument references into one derived command value.
 ///
@@ -18,11 +18,29 @@ pub(crate) fn parse_refs<T: CommandArgs>(argv: &[&std::ffi::OsStr]) -> Result<T,
     let mut partial = T::start();
     let mut parser: crate::parser::ArgvParser<'static, '_, '_> =
         crate::parser::ArgvParser::new(T::COMMAND, argv);
+    let mut command_path = Vec::new();
 
     while let Some(event) = parser.next_event() {
-        let event = event.map_err(raw_error)?;
+        let event = match event {
+            Ok(event) => event,
+            Err(RawError::DisplayHelp) => {
+                let rendered = if command_path.is_empty() {
+                    help::render(&[T::COMMAND])
+                } else {
+                    help::render(&command_path)
+                };
+                return Err(Error::DisplayHelp { help: rendered });
+            }
+            Err(error) => return Err(raw_error(error)),
+        };
         let applied = T::apply(&mut partial, &event);
         assert!(applied, "generated command metadata and binding keys diverged");
+        if let crate::parser::Event::Command { command } = event {
+            if command_path.is_empty() {
+                command_path.push(T::COMMAND);
+            }
+            command_path.push(command);
+        }
     }
 
     T::check(&mut partial)?;
@@ -32,6 +50,7 @@ pub(crate) fn parse_refs<T: CommandArgs>(argv: &[&std::ffi::OsStr]) -> Result<T,
 /// Converts one raw-parser error into the owned public error type.
 fn raw_error(error: RawError<'static, '_>) -> Error {
     match error {
+        RawError::DisplayHelp => unreachable!("help requests are handled with command context"),
         RawError::UnknownFlag { token } => Error::UnknownFlag { token: token.to_vec() },
         RawError::MissingFlagValue { flag } => Error::MissingValue { name: flag.name },
         RawError::UnexpectedFlagValue { flag } => Error::UnexpectedValue { name: flag.name },

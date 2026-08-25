@@ -18,6 +18,7 @@ mod tests {
     static REST: Arg<'static> = Arg {
         key: 6,
         name: "rest",
+        help: None,
         required: false,
         variadic: true,
         allow_negative_numbers: false,
@@ -278,6 +279,48 @@ mod tests {
     }
 
     #[test]
+    fn built_in_help_is_terminal_scope_control_and_respects_separator_rules() {
+        let values = argv(&["--help"]);
+        let mut parser = ArgvParser::new(&COMMAND, &values);
+        assert_eq!(parser.next_event(), Some(Err(Error::DisplayHelp)));
+        assert_eq!(parser.next_event(), None);
+
+        let values = argv(&["-vh"]);
+        let mut parser = ArgvParser::new(&COMMAND, &values);
+        assert_eq!(parser.next_event(), Some(Ok(Event::Flag { flag: &VERBOSE, value: None })));
+        assert_eq!(parser.next_event(), Some(Err(Error::DisplayHelp)));
+        assert_eq!(parser.next_event(), None);
+
+        let values = argv(&["--help=value"]);
+        let mut parser = ArgvParser::new(&COMMAND, &values);
+        let Some(Err(Error::UnexpectedFlagValue { flag })) = parser.next_event() else {
+            panic!("attached help value did not produce the expected error")
+        };
+        assert_eq!(flag.name, "help");
+
+        let values = argv(&["--", "--help"]);
+        let mut parser = ArgvParser::new(&COMMAND, &values);
+        assert_eq!(parser.next_event(), Some(Ok(Event::Arg { arg: &INPUT, value: b"--help" })));
+
+        static RAW: Flag<'static> = Flag {
+            key: 29,
+            name: "raw",
+            longs: &["raw"],
+            allow_hyphen_values: true,
+            ..Flag::VALUE
+        };
+        static RAW_COMMAND: Command<'static> =
+            Command { name: "raw", flags: &[&RAW], ..Command::EMPTY };
+        let values = argv(&["--raw", "--help"]);
+        let mut parser = ArgvParser::new(&RAW_COMMAND, &values);
+        assert_eq!(
+            parser.next_event(),
+            Some(Ok(Event::Flag { flag: &RAW, value: Some(b"--help") }))
+        );
+        assert_eq!(parser.next_event(), None);
+    }
+
+    #[test]
     fn long_names_are_exact_and_switches_reject_attached_values() {
         let args = argv(&["--verb"]);
         let mut parser = ArgvParser::new(&COMMAND, &args);
@@ -313,6 +356,7 @@ mod tests {
         static ROOT_VALUE: Arg<'static> = Arg { key: 30, name: "root", ..Arg::REQUIRED };
         static ROOT: Command<'static> = Command {
             name: "root",
+            about: None,
             flags: &[&VERBOSE],
             args: &[&ROOT_VALUE],
             subcommands: &[&CHILD],
@@ -381,6 +425,7 @@ mod tests {
         static VALUE: Arg<'static> = Arg {
             key: 52,
             name: "value",
+            help: None,
             required: false,
             variadic: true,
             allow_negative_numbers: false,
