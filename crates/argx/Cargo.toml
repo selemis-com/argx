@@ -22,3 +22,15 @@ rustdoc-args = [
 
 [lints]
 workspace = true
+
+[features]
+default = ["derive"]
+derive = ["dep:argx-derive"]
+
+[dependencies]
+# Crates
+argx-derive = { workspace = true, optional = true }
+
+[dev-dependencies]
+# Vendor
+snapbox.workspace = true
