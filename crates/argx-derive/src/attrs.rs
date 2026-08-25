@@ -25,6 +25,10 @@ pub(crate) struct FieldAttrs {
     pub long: Option<Inferred<String>>,
     /// Short flag spelling, or an instruction to infer it.
     pub short: Option<Inferred<char>>,
+    /// Whether detached values may be flag-like.
+    pub allow_hyphen_values: bool,
+    /// Whether negative numbers may be consumed while other flag-like values are refused.
+    pub allow_negative_numbers: bool,
 }
 
 /// Parses every `#[argx(...)]` attribute on a command declaration.
@@ -71,6 +75,18 @@ pub(crate) fn field(attributes: &[Attribute]) -> syn::Result<FieldAttrs> {
                 } else {
                     Inferred::Infer
                 });
+                Ok(())
+            } else if meta.path.is_ident("allow_hyphen_values") {
+                if parsed.allow_hyphen_values {
+                    return Err(meta.error("duplicate `allow_hyphen_values` attribute"));
+                }
+                parsed.allow_hyphen_values = true;
+                Ok(())
+            } else if meta.path.is_ident("allow_negative_numbers") {
+                if parsed.allow_negative_numbers {
+                    return Err(meta.error("duplicate `allow_negative_numbers` attribute"));
+                }
+                parsed.allow_negative_numbers = true;
                 Ok(())
             } else {
                 Err(meta.error("unsupported Argx field attribute"))

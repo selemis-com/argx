@@ -1,11 +1,11 @@
-//! Minimal derive-facade example.
+//! Minimal typed parser example.
 
 use argx::Parser;
 
-/// Minimal CLI used to verify the derive facade in an executable.
+/// Minimal command with no declared arguments.
 #[derive(Debug, Parser)]
 struct Cli;
 
 fn main() {
-    let _ = Cli;
+    let _cli = Cli::parse();
 }

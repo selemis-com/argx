@@ -11,4 +11,13 @@ mod tests {
     fn basic_example_builds_and_runs() {
         support::basic_example_command().assert().success().stdout_eq("").stderr_eq("");
     }
+    #[test]
+    fn parse_entry_point_reports_errors_and_exits_unsuccessfully() {
+        support::basic_example_command()
+            .arg("--unknown")
+            .assert()
+            .failure()
+            .stdout_eq("")
+            .stderr_eq("error: unknown flag `--unknown`\n");
+    }
 }

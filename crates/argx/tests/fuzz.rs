@@ -1,8 +1,8 @@
-//! Model-based fuzz testing for raw command-line token binding.
+//! Model-based fuzz testing for raw parsing and typed argument binding.
 //!
-//! Proptest generates valid command tables and arbitrary operating-system arguments. The Argx
-//! parser is checked against a deliberately separate reference grammar, while an independent
-//! passthrough property verifies that `--` preserves every encoded argument byte-for-byte. The
+//! Proptest generates valid command tables and arbitrary operating-system arguments. The raw
+//! parser is checked against a deliberately separate reference grammar, while typed properties
+//! exercise generated binding, conversion, entry-point equivalence, and byte preservation. The
 //! fuzzing campaign is isolated from deterministic tests so its size and seed can be controlled
 //! without changing the ordinary test suite.
 
@@ -10,6 +10,8 @@
 mod tests {
     #[cfg(unix)]
     use std::os::unix::ffi::OsStringExt as _;
+    #[cfg(all(feature = "derive", unix))]
+    use std::path::PathBuf;
     use std::{
         cell::RefCell,
         env,
@@ -18,6 +20,8 @@ mod tests {
     };
 
     use argx::__private::{Arg, ArgvParser, Command, Error, Event, Flag};
+    #[cfg(feature = "derive")]
+    use argx::{Error as TypedError, Parser as _};
     use proptest::{
         collection,
         prelude::*,
@@ -549,14 +553,14 @@ mod tests {
     }
 
     /// Returns the configured Proptest runner behavior with source-adjacent regression persistence.
-    fn proptest_config() -> Config {
+    fn proptest_config(test_name: &'static str) -> Config {
         Config {
             cases: env_u32("ARGX_FUZZ_CASES", 512),
             failure_persistence: Some(Box::new(FileFailurePersistence::WithSource(
                 "proptest-regressions",
             ))),
             source_file: Some(file!()),
-            test_name: Some("generated_commands_and_argv_match_reference_grammar"),
+            test_name: Some(test_name),
             ..Config::default()
         }
     }
@@ -1049,7 +1053,7 @@ mod tests {
     #[test]
     fn generated_commands_and_argv_match_reference_grammar() {
         let strategy = scenario_strategy();
-        let config = proptest_config();
+        let config = proptest_config("generated_commands_and_argv_match_reference_grammar");
         let cases = config.cases;
         let trace_cases = env_flag("ARGX_FUZZ_TRACE");
         let coverage = RefCell::new(Coverage::default());
@@ -1139,5 +1143,213 @@ mod tests {
             coverage.token_kinds[11],
             coverage.token_kinds[12],
         );
+    }
+
+    /// Typed command used to fuzz end-to-end binding and entry-point behavior.
+    #[cfg(feature = "derive")]
+    #[derive(Debug, Clone, PartialEq, Eq, argx::Parser)]
+    struct TypedRoundTrip {
+        /// Optional switch represented by presence or absence of one flag occurrence.
+        #[argx(long)]
+        verbose: bool,
+        /// Optional scalar converted through `FromStr`.
+        #[argx(long)]
+        number: Option<i64>,
+        /// Repeatable UTF-8 values whose order must be preserved.
+        #[argx(long)]
+        value: Vec<String>,
+        /// Optional repeated UTF-8 values that preserve absence.
+        #[argx(long)]
+        optional_value: Option<Vec<String>>,
+        /// Required positional UTF-8 value.
+        input: String,
+        /// Remaining positional UTF-8 values.
+        rest: Vec<String>,
+    }
+
+    /// Typed command used to fuzz deferred scalar cardinality.
+    #[cfg(feature = "derive")]
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    struct TypedScalar {
+        /// Optional scalar whose second occurrence must win over conversion as a duplicate error.
+        #[argx(long)]
+        port: Option<u16>,
+    }
+
+    /// Typed positional OS value used by the Unix byte-preservation property.
+    #[cfg(all(feature = "derive", unix))]
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    struct TypedPath {
+        /// Operating-system-backed positional value.
+        path: PathBuf,
+    }
+
+    /// Typed UTF-8 positional used by the invalid-byte rejection property.
+    #[cfg(all(feature = "derive", unix))]
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    struct TypedText {
+        /// UTF-8 positional value.
+        value: String,
+    }
+
+    /// Generates bounded arbitrary Unicode strings for typed-binding campaigns.
+    #[cfg(feature = "derive")]
+    fn typed_string_strategy() -> impl Strategy<Value = String> {
+        collection::vec(any::<char>(), 0..=24)
+            .prop_map(|characters| characters.into_iter().collect::<String>())
+    }
+
+    /// Generates one complete set of values representable by [`TypedRoundTrip`].
+    #[cfg(feature = "derive")]
+    fn typed_round_trip_strategy() -> impl Strategy<Value = TypedRoundTrip> {
+        (
+            any::<bool>(),
+            proptest::option::of(any::<i64>()),
+            collection::vec(typed_string_strategy(), 0..=8),
+            prop_oneof![
+                Just(None),
+                collection::vec(typed_string_strategy(), 1..=8).prop_map(Some),
+            ],
+            typed_string_strategy(),
+            collection::vec(typed_string_strategy(), 0..=8),
+        )
+            .prop_map(|(verbose, number, value, optional_value, input, rest)| TypedRoundTrip {
+                verbose,
+                number,
+                value,
+                optional_value,
+                input,
+                rest,
+            })
+    }
+
+    /// Renders typed values into an unambiguous argv sequence for end-to-end round trips.
+    #[cfg(feature = "derive")]
+    fn typed_round_trip_argv(value: &TypedRoundTrip) -> Vec<OsString> {
+        let mut argv = Vec::new();
+        if value.verbose {
+            argv.push(OsString::from("--verbose"));
+        }
+        if let Some(number) = value.number {
+            argv.push(OsString::from(format!("--number={number}")));
+        }
+        argv.extend(value.value.iter().map(|item| OsString::from(format!("--value={item}"))));
+        if let Some(optional_values) = &value.optional_value {
+            argv.extend(
+                optional_values
+                    .iter()
+                    .map(|item| OsString::from(format!("--optional-value={item}"))),
+            );
+        }
+        argv.push(OsString::from("--"));
+        argv.push(OsString::from(value.input.as_str()));
+        argv.extend(value.rest.iter().map(|item| OsString::from(item.as_str())));
+        argv
+    }
+
+    /// Generates encoded Unix values that are not valid UTF-8.
+    #[cfg(all(feature = "derive", unix))]
+    fn invalid_utf8_strategy() -> impl Strategy<Value = Vec<u8>> {
+        collection::vec(any::<u8>(), 1..=48)
+            .prop_filter("generated bytes must be invalid UTF-8", |value| {
+                std::str::from_utf8(value).is_err()
+            })
+    }
+
+    /// Fuzzes typed binding round trips and the argv0-vs-args entry-point contract.
+    #[cfg(feature = "derive")]
+    #[test]
+    fn typed_binding_round_trips_generated_values() {
+        let strategy = (typed_round_trip_strategy(), typed_string_strategy());
+        let config = proptest_config("typed_binding_round_trips_generated_values");
+        let cases = config.cases;
+        let mut runner = TestRunner::new(config);
+
+        let result = runner.run(&strategy, |(expected, argv0)| {
+            let argv = typed_round_trip_argv(&expected);
+            let parsed = TypedRoundTrip::try_parse_args(argv.clone());
+            prop_assert_eq!(parsed, Ok(expected.clone()));
+
+            let mut complete = Vec::with_capacity(argv.len() + 1);
+            complete.push(OsString::from(argv0));
+            complete.extend(argv);
+            let parsed = TypedRoundTrip::try_parse_from(complete);
+            prop_assert_eq!(parsed, Ok(expected));
+            Ok(())
+        });
+        if let Err(error) = result {
+            panic!("Argx typed round-trip property failed: {error}");
+        }
+        eprintln!("[typed fuzz] PASS: {cases} typed round-trip cases");
+    }
+
+    /// Fuzzes deferred duplicate checking and raw syntax error precedence.
+    #[cfg(feature = "derive")]
+    #[test]
+    fn typed_scalar_errors_follow_binding_precedence() {
+        let strategy = (typed_string_strategy(), typed_string_strategy());
+        let config = proptest_config("typed_scalar_errors_follow_binding_precedence");
+        let cases = config.cases;
+        let mut runner = TestRunner::new(config);
+
+        let result = runner.run(&strategy, |(first, second)| {
+            let first_arg = OsString::from(format!("--port={first}"));
+            let second_arg = OsString::from(format!("--port={second}"));
+
+            let single = TypedScalar::try_parse_args([first_arg.clone()]);
+            match first.parse::<u16>() {
+                Ok(port) => prop_assert_eq!(single, Ok(TypedScalar { port: Some(port) })),
+                Err(_) => match single {
+                    Err(TypedError::InvalidValue(error)) => {
+                        prop_assert_eq!(error.name, "port");
+                        prop_assert_eq!(error.value.as_str(), first.as_str());
+                        prop_assert!(!error.reason.is_empty());
+                    }
+                    other => prop_assert!(false, "unexpected scalar conversion result: {other:?}"),
+                },
+            }
+
+            prop_assert_eq!(
+                TypedScalar::try_parse_args([first_arg.clone(), second_arg.clone()]),
+                Err(TypedError::DuplicateArgument { name: "port" }),
+            );
+            prop_assert_eq!(
+                TypedScalar::try_parse_args([first_arg, second_arg, OsString::from("--unknown")]),
+                Err(TypedError::UnknownFlag { token: b"--unknown".to_vec() }),
+            );
+            Ok(())
+        });
+        if let Err(error) = result {
+            panic!("Argx typed error-precedence property failed: {error}");
+        }
+        eprintln!("[typed fuzz] PASS: {cases} typed scalar/error-precedence cases");
+    }
+
+    /// Fuzzes lossless OS-backed binding and strict UTF-8 rejection on Unix.
+    #[cfg(all(feature = "derive", unix))]
+    #[test]
+    fn typed_binding_preserves_non_utf8_os_values() {
+        use std::os::unix::ffi::{OsStrExt as _, OsStringExt as _};
+
+        let strategy = invalid_utf8_strategy();
+        let config = proptest_config("typed_binding_preserves_non_utf8_os_values");
+        let cases = config.cases;
+        let mut runner = TestRunner::new(config);
+        let result = runner.run(&strategy, |bytes| {
+            let raw = OsString::from_vec(bytes.clone());
+            let parsed = TypedPath::try_parse_args([OsString::from("--"), raw.clone()]);
+            let parsed = parsed.expect("arbitrary Unix OS bytes must bind to PathBuf");
+            prop_assert_eq!(parsed.path.as_os_str().as_bytes(), bytes.as_slice());
+
+            prop_assert_eq!(
+                TypedText::try_parse_args([OsString::from("--"), raw]),
+                Err(TypedError::InvalidUtf8 { name: "value", value: bytes }),
+            );
+            Ok(())
+        });
+        if let Err(error) = result {
+            panic!("Argx typed non-UTF-8 property failed: {error}");
+        }
+        eprintln!("[typed fuzz] PASS: {cases} non-UTF-8 typed binding cases");
     }
 }

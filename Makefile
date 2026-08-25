@@ -1,8 +1,8 @@
 # Makefile for building and testing argx.
 .DEFAULT_GOAL := help
 
-# Number of generated parser cases in one fuzzing campaign.
-FUZZ_CASES ?= 512
+# Number of generated cases executed by each fuzz property.
+FUZZ_CASES ?= 2048
 
 # Minimum number of argv tokens generated per parser case.
 FUZZ_MIN_TOKENS ?= 0
@@ -43,7 +43,7 @@ test-unit: ## Run deterministic unit and integration tests.
 		--locked
 
 .PHONY: test-fuzz
-test-fuzz: ## Fuzz generated command schemas and argv against the parser model.
+test-fuzz: ## Fuzz raw parsing and typed argument binding.
 	set -eu; \
 	if [ -n "$(FUZZ_SEED)" ]; then export PROPTEST_RNG_SEED="$(FUZZ_SEED)"; fi; \
 	if [ -n "$(FUZZ_TRACE)" ]; then export ARGX_FUZZ_TRACE="$(FUZZ_TRACE)"; fi; \

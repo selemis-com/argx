@@ -9,7 +9,9 @@ mod tests {
 
     #[test]
     fn supported_derive_shapes_compile_downstream() {
-        for (fixture, dependency) in [("basic", "argx"), ("renamed_dependency", "cli_args")] {
+        for (fixture, dependency) in
+            [("basic", "argx"), ("renamed_dependency", "cli_args"), ("typed", "argx")]
+        {
             let output = support::ui_output("pass", fixture, dependency);
             assert!(
                 output.status.success(),
@@ -47,6 +49,8 @@ mod tests {
             "unsupported Argx command attribute",
             "unsupported Argx field attribute",
             "short flag must be one visible ASCII character other than `-` or `=`",
+            "`allow_hyphen_values` is only valid on named flags",
+            "value policies are not valid on bool fields",
             "unsupported Argx subcommand attribute",
         ] {
             assert!(stderr.contains(expected), "missing diagnostic: {expected}\n{stderr}");
@@ -67,6 +71,17 @@ mod tests {
         ] {
             assert!(stderr.contains(expected), "missing diagnostic: {expected}\n{stderr}");
         }
+    }
+
+    #[test]
+    fn nested_value_wrappers_are_rejected_explicitly() {
+        let output = support::ui_output("fail", "nested_value_wrappers", "argx");
+        assert!(!output.status.success());
+        let stderr = String::from_utf8(output.stderr).expect("UTF-8 compiler diagnostics");
+        assert!(
+            stderr.matches("nested Option and Vec value wrappers are not supported").count() >= 2,
+            "missing nested-wrapper diagnostics:\n{stderr}"
+        );
     }
 
     #[test]

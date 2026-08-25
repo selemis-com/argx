@@ -26,4 +26,16 @@ enum InvalidSubcommandAttribute {
     Run,
 }
 
+#[derive(argx::Parser)]
+struct HyphenPolicyOnPositional {
+    #[argx(allow_hyphen_values)]
+    value: String,
+}
+
+#[derive(argx::Parser)]
+struct ValuePolicyOnSwitch {
+    #[argx(long, allow_negative_numbers)]
+    verbose: bool,
+}
+
 fn main() {}

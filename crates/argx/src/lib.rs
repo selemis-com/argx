@@ -7,7 +7,13 @@
 #![cfg_attr(not(test), warn(unused_crate_dependencies))]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
+mod binding;
+mod error;
 mod parser;
+
+use std::ffi::{OsStr, OsString};
+
+pub use error::{Error, InvalidValue};
 
 // Generated absolute paths must also work when a derive is used inside this crate. Integration
 // targets already receive this name through Cargo; the library target needs the self alias.
@@ -21,11 +27,84 @@ extern crate self as argx;
 pub use argx_derive::{Args, Parser, Subcommand};
 
 /// Parses command-line arguments into a typed value.
-///
-/// Typed parsing entry points are added once generated value binding is in place. For now this
-/// trait marks a root command and guarantees that derive-generated static command metadata is
-/// available.
-pub trait Parser: Sized + __private::CommandArgs {}
+pub trait Parser: Sized + __private::CommandArgs {
+    /// Parses the current process arguments, excluding the program name.
+    ///
+    /// Parse failures are printed to standard error and terminate the process with status 2.
+    fn parse() -> Self {
+        Self::try_parse().unwrap_or_else(|error| error.exit())
+    }
+
+    /// Parses the current process arguments, excluding the program name.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when argv cannot be bound to this command or a bound value cannot be
+    /// converted to its Rust field type.
+    fn try_parse() -> Result<Self, Error> {
+        Self::try_parse_args(std::env::args_os().skip(1))
+    }
+
+    /// Parses a complete argv sequence whose first item is the program name.
+    ///
+    /// Parse failures are printed to standard error and terminate the process with status 2.
+    fn parse_from<I, T>(argv: I) -> Self
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<OsString>,
+    {
+        Self::try_parse_from(argv).unwrap_or_else(|error| error.exit())
+    }
+
+    /// Parses a complete argv sequence whose first item is the program name.
+    ///
+    /// The program name is ignored. An empty sequence is therefore equivalent to a program name
+    /// followed by no command-line arguments.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when argv cannot be bound to this command or a bound value cannot be
+    /// converted to its Rust field type.
+    fn try_parse_from<I, T>(argv: I) -> Result<Self, Error>
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<OsString>,
+    {
+        let mut argv = argv.into_iter();
+        let _ = argv.next();
+        Self::try_parse_args(argv)
+    }
+
+    /// Parses arguments that do not include a program name.
+    ///
+    /// Parse failures are printed to standard error and terminate the process with status 2.
+    fn parse_args<I, T>(argv: I) -> Self
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<OsString>,
+    {
+        Self::try_parse_args(argv).unwrap_or_else(|error| error.exit())
+    }
+
+    /// Parses arguments that do not include a program name.
+    ///
+    /// This entry point is useful when argv is already separated from the executable name, such as
+    /// in tests, embedded command dispatch, or an agent invoking a command directly.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when argv cannot be bound to this command or a bound value cannot be
+    /// converted to its Rust field type.
+    fn try_parse_args<I, T>(argv: I) -> Result<Self, Error>
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<OsString>,
+    {
+        let owned: Vec<OsString> = argv.into_iter().map(Into::into).collect();
+        let refs: Vec<&OsStr> = owned.iter().map(OsString::as_os_str).collect();
+        binding::parse_refs::<Self>(&refs)
+    }
+}
 
 /// Implementation details shared with generated code.
 ///
@@ -136,13 +215,37 @@ pub mod __private {
         (state as Key) << 32
     }
 
-    /// Static command metadata exposed by a root parser or reusable argument struct.
-    ///
-    /// The associated constant is what eventually lets a parent splice flattened child tables into
-    /// its own static tables without constructing a command tree at runtime.
+    /// Static command metadata and generated typed-binding behavior.
     pub trait CommandArgs: Sized {
+        /// Values collected so far during one parse.
+        type Partial;
+
         /// Parse tables for this declaration.
         const COMMAND: &'static Command<'static>;
+
+        /// Creates empty binding state for a new parse.
+        fn start() -> Self::Partial;
+
+        /// Applies one raw parser event when it belongs to this declaration.
+        ///
+        /// Returns whether this declaration owned the event. Occurrence policy is checked after
+        /// raw argv parsing completes so syntax errors take precedence over binding errors.
+        fn apply(partial: &mut Self::Partial, event: &Event<'_, '_>) -> bool;
+
+        /// Validates completed occurrence and requiredness state before conversion.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error when typed cardinality or requiredness is not satisfied.
+        fn check(partial: &mut Self::Partial) -> Result<(), crate::Error>;
+
+        /// Converts completed raw binding state into the destination Rust value.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error when a required value is absent or a supplied value cannot be
+        /// converted to the destination field type.
+        fn finish(partial: Self::Partial) -> Result<Self, crate::Error>;
     }
 
     /// Static command metadata exposed by a derived subcommand enum.
@@ -152,6 +255,81 @@ pub mod __private {
     pub trait Subcommands: Sized {
         /// Parse tables for the enum's named subcommands.
         const COMMANDS: &'static [&'static Command<'static>] = &[];
+    }
+
+    /// Converts one raw value directly into a UTF-8 string.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the value is not valid UTF-8.
+    pub fn text_value(value: Vec<u8>, name: &'static str) -> Result<String, crate::Error> {
+        crate::binding::text_value(value, name)
+    }
+
+    /// Converts repeated raw values directly into UTF-8 strings.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first invalid UTF-8 value.
+    pub fn text_values(
+        values: Vec<Vec<u8>>,
+        name: &'static str,
+    ) -> Result<Vec<String>, crate::Error> {
+        crate::binding::text_values(values, name)
+    }
+
+    /// Converts one raw value through UTF-8 and the destination type's `FromStr` implementation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for invalid UTF-8 or a destination conversion failure.
+    pub fn parsed_value<T>(value: Vec<u8>, name: &'static str) -> Result<T, crate::Error>
+    where
+        T: std::str::FromStr,
+        T::Err: std::fmt::Display,
+    {
+        crate::binding::parsed_value(value, name)
+    }
+
+    /// Converts repeated raw values through UTF-8 and `FromStr`.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first conversion failure.
+    pub fn parsed_values<T>(
+        values: Vec<Vec<u8>>,
+        name: &'static str,
+    ) -> Result<Vec<T>, crate::Error>
+    where
+        T: std::str::FromStr,
+        T::Err: std::fmt::Display,
+    {
+        crate::binding::parsed_values(values, name)
+    }
+
+    /// Converts one raw value into an operating-system-backed destination type.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the encoded bytes cannot be reconstructed as an operating-system
+    /// string.
+    pub fn os_value<T>(value: Vec<u8>, name: &'static str) -> Result<T, crate::Error>
+    where
+        T: From<std::ffi::OsString>,
+    {
+        crate::binding::os_value(value, name)
+    }
+
+    /// Converts repeated raw values into an operating-system-backed destination type.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first operating-system string reconstruction failure.
+    pub fn os_values<T>(values: Vec<Vec<u8>>, name: &'static str) -> Result<Vec<T>, crate::Error>
+    where
+        T: From<std::ffi::OsString>,
+    {
+        crate::binding::os_values(values, name)
     }
 
     #[cfg(test)]

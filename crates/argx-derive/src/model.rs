@@ -18,20 +18,30 @@ pub(crate) struct Command {
     pub name: String,
     /// Whether the public `Parser` trait is implemented in addition to `CommandArgs`.
     pub root: bool,
+    /// Whether the declaration is a unit struct.
+    pub unit: bool,
     /// Fields in declaration order.
     pub fields: Vec<Field>,
 }
 
 /// One named Rust field and the parse-table entry it contributes.
 pub(crate) struct Field {
+    /// Rust field identifier used when generated code builds the destination value.
+    pub ident: syn::Ident,
+    /// Declared Rust field type.
+    pub ty: Type,
     /// Source span used for declaration-level diagnostics.
     pub span: Span,
     /// Canonical field name without Rust raw-identifier syntax.
     pub name: String,
     /// Whether the field is named or positional on the command line.
     pub kind: FieldKind,
-    /// Syntactic value shape relevant to the static parser table.
+    /// Syntactic value shape relevant to binding cardinality.
     pub shape: Shape,
+    /// Whether detached values may be flag-like.
+    pub allow_hyphen_values: bool,
+    /// Whether negative numbers may be consumed while other flag-like values are refused.
+    pub allow_negative_numbers: bool,
 }
 
 /// Parse-table category of a field.
@@ -51,7 +61,7 @@ pub(crate) enum FieldKind {
 /// What a field's Rust type says about how many values it can hold.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Shape {
-    /// `bool`: a switch that does not consume a value.
+    /// Bare `bool`, which is a switch when used as a flag.
     Bool,
     /// `Option<T>`: zero or one value.
     Optional,
@@ -62,7 +72,7 @@ pub(crate) enum Shape {
 }
 
 impl Command {
-    /// Parses and validates the subset of a command declaration required by the static model.
+    /// Parses and validates the subset of a command declaration required by the typed parser.
     pub(crate) fn from_input(input: &DeriveInput, root: bool) -> syn::Result<Self> {
         let data = match &input.data {
             Data::Struct(data) => data,
@@ -75,6 +85,7 @@ impl Command {
             }
         };
 
+        let unit = matches!(&data.fields, Fields::Unit);
         let fields = match &data.fields {
             Fields::Named(fields) => {
                 fields.named.iter().map(Field::from_syn).collect::<syn::Result<Vec<_>>>()?
@@ -103,13 +114,14 @@ impl Command {
             fingerprint: input.to_token_stream().to_string(),
             name,
             root,
+            unit,
             fields,
         })
     }
 }
 
 impl Field {
-    /// Converts one named Rust field into static parse metadata.
+    /// Converts one named Rust field into static parse and typed-binding metadata.
     fn from_syn(field: &syn::Field) -> syn::Result<Self> {
         let ident = field.ident.clone().ok_or_else(|| {
             syn::Error::new_spanned(field, "Parser and Args fields must be named")
@@ -117,6 +129,7 @@ impl Field {
         let attributes = attrs::field(&field.attrs)?;
         let name = ident_name(&ident);
         let shape = Shape::from_type(&field.ty);
+        validate_value_shape(&field.ty, shape, ident.span())?;
 
         let kind = if attributes.long.is_some() || attributes.short.is_some() {
             let longs = attributes
@@ -141,38 +154,161 @@ impl Field {
             FieldKind::Positional
         };
 
-        Ok(Self { span: ident.span(), name, kind, shape })
+        if attributes.allow_hyphen_values && matches!(&kind, FieldKind::Positional) {
+            return Err(syn::Error::new(
+                ident.span(),
+                "`allow_hyphen_values` is only valid on named flags",
+            ));
+        }
+        if (attributes.allow_hyphen_values || attributes.allow_negative_numbers)
+            && shape == Shape::Bool
+        {
+            return Err(syn::Error::new(
+                ident.span(),
+                "value policies are not valid on bool fields",
+            ));
+        }
+
+        Ok(Self {
+            span: ident.span(),
+            ident,
+            ty: field.ty.clone(),
+            name,
+            kind,
+            shape,
+            allow_hyphen_values: attributes.allow_hyphen_values,
+            allow_negative_numbers: attributes.allow_negative_numbers,
+        })
+    }
+
+    /// Reports whether this field is a value-less boolean flag.
+    pub(crate) fn is_switch(&self) -> bool {
+        matches!(&self.kind, FieldKind::Flag { .. }) && self.shape == Shape::Bool
+    }
+
+    /// Returns the Rust type receiving one parsed value.
+    pub(crate) fn value_type(&self) -> &Type {
+        match self.shape {
+            Shape::Bool | Shape::Required => &self.ty,
+            Shape::Optional => {
+                peel_option(&self.ty).expect("optional shape must contain an Option value type")
+            }
+            Shape::Many => {
+                let collection = peel_option(&self.ty).unwrap_or(&self.ty);
+                peel_vec(collection).expect("many shape must contain a Vec item type")
+            }
+        }
+    }
+
+    /// Reports whether a repeated field preserves absence with an outer `Option`.
+    pub(crate) fn optional_collection(&self) -> bool {
+        self.shape == Shape::Many && peel_option(&self.ty).is_some()
+    }
+
+    /// Reports whether one value is the standard UTF-8 string type.
+    pub(crate) fn string_value(&self) -> bool {
+        matches!(
+            rendered_path(self.value_type()).as_str(),
+            "String"
+                | "std::string::String"
+                | "::std::string::String"
+                | "alloc::string::String"
+                | "::alloc::string::String"
+        )
+    }
+
+    /// Reports whether one value should be reconstructed as an operating-system string.
+    pub(crate) fn os_value(&self) -> bool {
+        matches!(
+            rendered_path(self.value_type()).as_str(),
+            "OsString"
+                | "std::ffi::OsString"
+                | "::std::ffi::OsString"
+                | "PathBuf"
+                | "std::path::PathBuf"
+                | "::std::path::PathBuf"
+        )
     }
 }
 
 impl Shape {
     /// Infers the value shape from the outer standard collection wrappers.
     fn from_type(ty: &Type) -> Self {
-        if type_is(ty, "bool") {
+        if matches!(
+            rendered_path(ty).as_str(),
+            "bool"
+                | "std::primitive::bool"
+                | "::std::primitive::bool"
+                | "core::primitive::bool"
+                | "::core::primitive::bool"
+        ) {
             return Self::Bool;
         }
-        if peel(ty, "Option").and_then(|inner| peel(inner, "Vec")).is_some() {
+        if peel_option(ty).and_then(peel_vec).is_some() {
             return Self::Many;
         }
-        if peel(ty, "Option").is_some() {
+        if peel_option(ty).is_some() {
             return Self::Optional;
         }
-        if peel(ty, "Vec").is_some() {
+        if peel_vec(ty).is_some() {
             return Self::Many;
         }
         Self::Required
     }
 }
 
-/// Peels one standard generic wrapper and returns its first type argument.
-fn peel<'a>(ty: &'a Type, container: &str) -> Option<&'a Type> {
+/// Rejects collection nestings that the typed binding model does not define.
+fn validate_value_shape(ty: &Type, shape: Shape, span: Span) -> syn::Result<()> {
+    let value = match shape {
+        Shape::Bool | Shape::Required => return Ok(()),
+        Shape::Optional => peel_option(ty).expect("optional shape must contain Option"),
+        Shape::Many => {
+            let collection = peel_option(ty).unwrap_or(ty);
+            peel_vec(collection).expect("many shape must contain Vec")
+        }
+    };
+
+    if peel_option(value).is_some() || peel_vec(value).is_some() {
+        return Err(syn::Error::new(
+            span,
+            "nested Option and Vec value wrappers are not supported",
+        ));
+    }
+    Ok(())
+}
+
+/// Peels one standard `Option` wrapper.
+fn peel_option(ty: &Type) -> Option<&Type> {
+    peel_standard(
+        ty,
+        &[
+            "Option",
+            "std::option::Option",
+            "::std::option::Option",
+            "core::option::Option",
+            "::core::option::Option",
+        ],
+    )
+}
+
+/// Peels one standard `Vec` wrapper.
+fn peel_vec(ty: &Type) -> Option<&Type> {
+    peel_standard(
+        ty,
+        &["Vec", "std::vec::Vec", "::std::vec::Vec", "alloc::vec::Vec", "::alloc::vec::Vec"],
+    )
+}
+
+/// Peels one recognized standard generic wrapper and returns its sole type argument.
+fn peel_standard<'a>(ty: &'a Type, accepted: &[&str]) -> Option<&'a Type> {
+    if !accepted.contains(&rendered_path(ty).split('<').next()?) {
+        return None;
+    }
+
     let Type::Path(path) = ty else {
         return None;
     };
     let segment = path.path.segments.last()?;
-    if segment.ident != container {
-        return None;
-    }
     let PathArguments::AngleBracketed(arguments) = &segment.arguments else {
         return None;
     };
@@ -186,12 +322,9 @@ fn peel<'a>(ty: &'a Type, container: &str) -> Option<&'a Type> {
     Some(inner)
 }
 
-/// Reports whether the last segment of a type path has the requested name.
-fn type_is(ty: &Type, expected: &str) -> bool {
-    let Type::Path(path) = ty else {
-        return false;
-    };
-    path.path.segments.last().is_some_and(|segment| segment.ident == expected)
+/// Returns a type path as written with token-stream spacing removed.
+fn rendered_path(ty: &Type) -> String {
+    ty.to_token_stream().to_string().replace(' ', "")
 }
 
 /// Returns an identifier without Rust's raw-identifier prefix.
