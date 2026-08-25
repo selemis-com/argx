@@ -25,7 +25,7 @@ pub(crate) struct CommandAttrs {
 }
 
 /// Attributes accepted on a command field.
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub(crate) struct FieldAttrs {
     /// Whether this field contributes another `Args` declaration inline.
     pub flatten: bool,
@@ -33,6 +33,8 @@ pub(crate) struct FieldAttrs {
     pub subcommand: bool,
     /// Whether this named argument remains in scope for descendant commands.
     pub global: bool,
+    /// Typed Rust expression used when the argument is absent.
+    pub default: Option<Expr>,
     /// Long flag spelling, or an instruction to infer it.
     pub long: Option<Inferred<String>>,
     /// Short flag spelling, or an instruction to infer it.
@@ -124,6 +126,12 @@ pub(crate) fn field(attributes: &[Attribute]) -> syn::Result<FieldAttrs> {
                     return Err(meta.error("`global` takes no value"));
                 }
                 parsed.global = true;
+                Ok(())
+            } else if meta.path.is_ident("default") {
+                if parsed.default.is_some() {
+                    return Err(meta.error("duplicate `default` attribute"));
+                }
+                parsed.default = Some(meta.value()?.parse::<Expr>()?);
                 Ok(())
             } else if meta.path.is_ident("long") {
                 if parsed.long.is_some() {

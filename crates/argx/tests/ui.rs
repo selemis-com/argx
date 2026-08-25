@@ -13,6 +13,7 @@ mod tests {
             ("basic", "argx"),
             ("renamed_dependency", "cli_args"),
             ("typed", "argx"),
+            ("defaults", "argx"),
             ("flatten", "argx"),
             ("subcommands", "argx"),
         ] {
@@ -51,6 +52,36 @@ error: `global` is only valid on named flags
 error: `flatten` cannot be combined with flag, value, or help attributes
 error: `subcommand` cannot be combined with flag, value, or help attributes
 error: `global` takes no value
+
+"#]],
+        );
+    }
+
+    #[test]
+    fn invalid_default_declarations_are_rejected_deterministically() {
+        support::assert_ui_failure(
+            "invalid_defaults",
+            "argx",
+            snapbox::str![[r#"
+error: `default` is only supported on scalar value-taking flags
+error: `default` is only supported on scalar value-taking flags
+error: `default` is only supported on scalar value-taking flags
+error: duplicate `default` attribute
+
+"#]],
+        );
+    }
+
+    #[test]
+    fn default_expression_types_are_checked_by_rust() {
+        // Keep these as direct type mismatches. Diagnostics about generated `match` arms would
+        // leak macro implementation details instead of pointing users at their default expression.
+        support::assert_ui_failure(
+            "invalid_default_types",
+            "argx",
+            snapbox::str![[r#"
+error[E0308]: mismatched types
+error[E0308]: mismatched types
 
 "#]],
         );

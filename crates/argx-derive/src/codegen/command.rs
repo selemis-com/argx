@@ -74,7 +74,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
         let help = option_str(argument.help.as_deref());
         let global = argument.global;
         let takes_value = !field.is_switch();
-        let required = argument.shape == model::Shape::Required;
+        let required = argument.shape == model::Shape::Required && !argument.has_default;
         let allow_hyphen_values = argument.allow_hyphen_values;
         let allow_negative_numbers = argument.allow_negative_numbers;
         quote! {
@@ -276,6 +276,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
             _ if field.is_switch()
                 || !field.argument().is_some_and(|argument| {
                     matches!(argument.shape, model::Shape::Bool | model::Shape::Required)
+                        && !argument.has_default
                 }) =>
             {
                 None
@@ -721,6 +722,15 @@ fn finish_field(field: &model::Field, field_index: usize, facade: &TokenStream) 
     let binding = field.value_binding();
     let ty = &binding.ty;
     let name = &field.binding.name;
+    // Type-check the user's default expression directly against the value type. Relying on
+    // surrounding branch unification instead would make rustc diagnose generated `match` arms
+    // rather than the `default = ...` expression the user can actually fix.
+    let default = field.binding.default.as_ref().map(|default| {
+        quote!({
+            let __argx_default: #ty = #default;
+            __argx_default
+        })
+    });
     let one = |value: TokenStream| match binding.conversion {
         model::ValueConversion::Text => quote!(#facade::__private::text_value(#value, #name)?),
         model::ValueConversion::Os => {
@@ -743,27 +753,55 @@ fn finish_field(field: &model::Field, field_index: usize, facade: &TokenStream) 
     match field.argument().expect("value field must have argument semantics").shape {
         model::Shape::Bool | model::Shape::Required => {
             let converted = one(quote!(value));
-            quote! {
-                {
-                    let ::std::option::Option::Some(value) = partial.#slot.0 else {
-                        return ::std::result::Result::Err(
-                            #facade::Error::MissingRequired { name: #name },
-                        );
-                    };
-                    #converted
-                }
-            }
+            default.as_ref().map_or_else(
+                || {
+                    quote! {
+                        {
+                            let ::std::option::Option::Some(value) = partial.#slot.0 else {
+                                return ::std::result::Result::Err(
+                                    #facade::Error::MissingRequired { name: #name },
+                                );
+                            };
+                            #converted
+                        }
+                    }
+                },
+                |default| {
+                    quote! {
+                        match partial.#slot.0 {
+                            ::std::option::Option::Some(value) => #converted,
+                            ::std::option::Option::None => #default,
+                        }
+                    }
+                },
+            )
         }
         model::Shape::Optional => {
             let converted = one(quote!(value));
-            quote! {
-                match partial.#slot.0 {
-                    ::std::option::Option::Some(value) => {
-                        ::std::option::Option::Some(#converted)
+            default.as_ref().map_or_else(
+                || {
+                    quote! {
+                        match partial.#slot.0 {
+                            ::std::option::Option::Some(value) => {
+                                ::std::option::Option::Some(#converted)
+                            }
+                            ::std::option::Option::None => ::std::option::Option::None,
+                        }
                     }
-                    ::std::option::Option::None => ::std::option::Option::None,
-                }
-            }
+                },
+                |default| {
+                    quote! {
+                        match partial.#slot.0 {
+                            ::std::option::Option::Some(value) => {
+                                ::std::option::Option::Some(#converted)
+                            }
+                            ::std::option::Option::None => {
+                                ::std::option::Option::Some(#default)
+                            }
+                        }
+                    }
+                },
+            )
         }
         model::Shape::Many if binding.optional_collection => {
             let converted = many(quote!(partial.#slot));

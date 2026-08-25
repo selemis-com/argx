@@ -106,6 +106,8 @@ pub(crate) struct FieldBinding {
     pub name: String,
     /// Normalized typed-value conversion, when this field binds CLI values directly.
     pub value: Option<ValueBinding>,
+    /// Typed Rust expression used when this argument is absent.
+    pub default: Option<syn::Expr>,
 }
 
 /// Rust conversion information for a value-bearing field.
@@ -149,6 +151,8 @@ pub(crate) struct Argument {
     pub global: bool,
     /// Syntactic value shape relevant to CLI cardinality.
     pub shape: Shape,
+    /// Whether absence is satisfied by a typed Rust default.
+    pub has_default: bool,
     /// Whether detached values may be flag-like.
     pub allow_hyphen_values: bool,
     /// Whether negative numbers may be consumed while other flag-like values are refused.
@@ -313,8 +317,14 @@ impl Field {
         })?;
         let attributes = attrs::field(&field.attrs)?;
         let name = ident_name(&ident);
-        let mut binding =
-            FieldBinding { span: ident.span(), ident, ty: field.ty.clone(), name, value: None };
+        let mut binding = FieldBinding {
+            span: ident.span(),
+            ident,
+            ty: field.ty.clone(),
+            name,
+            value: None,
+            default: None,
+        };
 
         if attributes.flatten && attributes.subcommand {
             return Err(syn::Error::new(
@@ -327,6 +337,7 @@ impl Field {
             if attributes.long.is_some()
                 || attributes.short.is_some()
                 || attributes.global
+                || attributes.default.is_some()
                 || attributes.allow_hyphen_values
                 || attributes.allow_negative_numbers
                 || attributes.help.is_some()
@@ -355,6 +366,7 @@ impl Field {
             if attributes.long.is_some()
                 || attributes.short.is_some()
                 || attributes.global
+                || attributes.default.is_some()
                 || attributes.allow_hyphen_values
                 || attributes.allow_negative_numbers
                 || attributes.help.is_some()
@@ -423,11 +435,22 @@ impl Field {
                 "value policies are not valid on bool fields",
             ));
         }
+        if attributes.default.is_some()
+            && (!matches!(&kind, ArgumentKind::Flag { .. })
+                || matches!(shape, Shape::Bool | Shape::Many))
+        {
+            return Err(syn::Error::new(
+                binding.span,
+                "`default` is only supported on scalar value-taking flags",
+            ));
+        }
 
+        let has_default = attributes.default.is_some();
         let switch = matches!(&kind, ArgumentKind::Flag { .. }) && shape == Shape::Bool;
         if !switch {
             binding.value = Some(value_binding(&binding.ty, shape));
         }
+        binding.default = attributes.default;
 
         let help = attributes.help.or_else(|| attrs::doc_summary(&field.attrs));
         Ok(Self {
@@ -437,6 +460,7 @@ impl Field {
                 kind,
                 global: attributes.global,
                 shape,
+                has_default,
                 allow_hyphen_values: attributes.allow_hyphen_values,
                 allow_negative_numbers: attributes.allow_negative_numbers,
             }),
@@ -806,6 +830,7 @@ mod tests {
                 /// Enable verbose output.
                 #[argx(short, long, global)]
                 verbose: bool,
+                #[argx(long, default = std::path::PathBuf::from("out"))]
                 output: Option<std::path::PathBuf>,
                 #[argx(flatten)]
                 shared: Shared,
@@ -832,9 +857,11 @@ mod tests {
         let Some(argument) = output.argument() else {
             panic!("output should be an argument");
         };
-        assert!(matches!(&argument.kind, ArgumentKind::Positional));
+        assert!(matches!(&argument.kind, ArgumentKind::Flag { .. }));
         assert_eq!(argument.shape, Shape::Optional);
+        assert!(argument.has_default);
         assert_eq!(output.value_binding().conversion, ValueConversion::Os);
+        assert!(output.binding.default.is_some());
 
         assert!(matches!(&command.fields[2].semantics, FieldSemantics::Flatten));
         assert!(command.fields[2].binding.value.is_none());

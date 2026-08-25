@@ -280,6 +280,29 @@ mod tests {
         version: bool,
     }
 
+    const DEFAULT_PORT: u16 = 3000;
+
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    #[argx(name = "defaults")]
+    struct DefaultCli {
+        #[argx(long, default = DEFAULT_PORT)]
+        port: u16,
+        #[argx(long, default = String::from("development"))]
+        profile: Option<String>,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Args)]
+    struct DefaultShared {
+        #[argx(long, default = 4_u16)]
+        jobs: u16,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    struct FlattenedDefaults {
+        #[argx(flatten)]
+        shared: DefaultShared,
+    }
+
     #[derive(Debug, PartialEq, Eq, argx::Args)]
     struct ReusedArgs {
         #[argx(long)]
@@ -750,6 +773,48 @@ Options:
             Ok(UserVersionFlag { version: true }),
         );
         assert_eq!(UserVersionFlag::try_parse_args(["-V"]), Ok(UserVersionFlag { version: true }),);
+    }
+
+    #[test]
+    fn typed_defaults_fill_absent_scalar_flags_and_argv_wins() {
+        assert_eq!(
+            DefaultCli::try_parse_args(std::iter::empty::<&str>()),
+            Ok(DefaultCli { port: 3000, profile: Some(String::from("development")) }),
+        );
+        assert_eq!(
+            DefaultCli::try_parse_args(["--port", "8080", "--profile", "production"]),
+            Ok(DefaultCli { port: 8080, profile: Some(String::from("production")) }),
+        );
+        assert_eq!(
+            DefaultCli::try_parse_args(["--port", "1", "--port", "2"]),
+            Err(Error::DuplicateArgument { name: "port" }),
+        );
+        assert_eq!(
+            FlattenedDefaults::try_parse_args(std::iter::empty::<&str>()),
+            Ok(FlattenedDefaults { shared: DefaultShared { jobs: 4 } }),
+        );
+    }
+
+    #[test]
+    fn typed_defaults_do_not_repair_invalid_or_incomplete_argv() {
+        assert_eq!(
+            DefaultCli::try_parse_args(["--port"]),
+            Err(Error::MissingValue { name: "port" }),
+        );
+
+        let error = DefaultCli::try_parse_args(["--port", "not-a-port"])
+            .expect_err("an explicit invalid value must not fall back to the default");
+        let Error::InvalidValue(error) = error else { panic!("unexpected error: {error:?}") };
+        assert_eq!(error.name, "port");
+        assert_eq!(error.value, "not-a-port");
+    }
+
+    #[test]
+    fn typed_defaults_make_bare_value_flags_optional_in_help() {
+        let help = DefaultCli::render_help();
+        assert!(help.contains("Usage: defaults [OPTIONS]"));
+        assert!(!help.contains("Usage: defaults --port"));
+        assert!(help.contains("--port <PORT>"));
     }
 
     #[test]
