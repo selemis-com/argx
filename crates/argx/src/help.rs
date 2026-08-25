@@ -191,21 +191,24 @@ mod tests {
 
     #[test]
     fn renders_scope_aware_aligned_help() {
-        assert_eq!(
+        snapbox::Assert::new().eq(
             render(&[&ROOT, &CONFIG]),
-            concat!(
-                "Manage configuration\n\n",
-                "Usage: tool config [OPTIONS] --output <OUTPUT> <INPUT> [REST]... <COMMAND>\n",
-                "\nArguments:\n",
-                "  <INPUT>    Input file\n",
-                "  [REST]...\n",
-                "\nCommands:\n",
-                "  get  Read one value\n",
-                "\nOptions:\n",
-                "  -v, --verbose      Enable verbose output\n",
-                "  --output <OUTPUT>  Write to this path\n",
-                "  -h, --help         Print help\n",
-            )
+            r#"Manage configuration
+
+Usage: tool config [OPTIONS] --output <OUTPUT> <INPUT> [REST]... <COMMAND>
+
+Arguments:
+  <INPUT>    Input file
+  [REST]...
+
+Commands:
+  get  Read one value
+
+Options:
+  -v, --verbose      Enable verbose output
+  --output <OUTPUT>  Write to this path
+  -h, --help         Print help
+"#,
         );
     }
 }

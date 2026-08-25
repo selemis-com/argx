@@ -12,7 +12,7 @@ use std::{
     },
 };
 
-use snapbox::cmd::Command;
+use snapbox::{cmd::{Command, OutputAssert}, prelude::IntoData};
 
 /// Serializes Cargo invocations that share the UI-test target directory.
 static CARGO_LOCK: Mutex<()> = Mutex::new(());
@@ -24,8 +24,6 @@ static NEXT_PROJECT: AtomicUsize = AtomicUsize::new(0);
 struct UiProject {
     /// Project root in the system temporary directory.
     root: PathBuf,
-    /// Stable fixture path substituted into compiler diagnostics.
-    diagnostic_path: String,
 }
 
 impl UiProject {
@@ -62,7 +60,7 @@ impl UiProject {
             panic!("failed to copy UI fixture `{}`: {error}", source.display())
         });
 
-        Self { root, diagnostic_path: format!("{group}/{fixture}.rs") }
+        Self { root }
     }
 
     /// Builds the Cargo command used for this downstream project.
@@ -81,25 +79,49 @@ impl Drop for UiProject {
     }
 }
 
-/// Compiles one downstream fixture and returns normalized compiler output.
+/// Compiles one downstream fixture and asserts successful, silent output.
 #[track_caller]
-pub(crate) fn ui_output(group: &str, fixture: &str, dependency: &str) -> Output {
+pub(crate) fn assert_ui_success(fixture: &str, dependency: &str) {
+    ui_output("pass", fixture, dependency).success().stdout_eq("").stderr_eq("");
+}
+
+/// Compiles one downstream fixture and asserts its normalized failure diagnostics.
+#[track_caller]
+pub(crate) fn assert_ui_failure(
+    fixture: &str,
+    dependency: &str,
+    expected_stderr: impl IntoData,
+) {
+    ui_output("fail", fixture, dependency)
+        .failure()
+        .stdout_eq("")
+        .stderr_eq(expected_stderr);
+}
+
+/// Compiles one downstream fixture and exposes normalized output to Snapbox.
+#[track_caller]
+fn ui_output(group: &str, fixture: &str, dependency: &str) -> OutputAssert {
     let _guard = CARGO_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let project = UiProject::new(group, fixture, dependency);
     let output = project
         .command()
         .output()
         .unwrap_or_else(|error| panic!("failed to compile UI fixture `{fixture}`: {error}"));
-    normalize_output(output, &project.diagnostic_path)
+    OutputAssert::new(normalize_output(output, group == "fail"))
 }
 
 /// Removes Cargo and rustc noise that is not part of the diagnostic contract.
-fn normalize_output(mut output: Output, diagnostic_path: &str) -> Output {
+///
+/// Successful fixtures retain every diagnostic so unexpected warnings fail the test. Failing
+/// fixtures retain primary error headings while discarding compiler-owned spans and suggestions.
+fn normalize_output(mut output: Output, primary_errors_only: bool) -> Output {
     let stderr = String::from_utf8_lossy(&output.stderr).replace('\\', "/");
     let mut lines = stderr
         .lines()
         .filter(|line| !line.starts_with("error: could not compile `argx-ui-"))
         .filter(|line| !line.starts_with("error: process didn't exit successfully:"))
+        .filter(|line| !line.starts_with("error: aborting due to"))
+        .filter(|line| !primary_errors_only || line.starts_with("error"))
         .filter(|line| {
             let Some((_, marker)) = line.split_once('|') else {
                 return true;
@@ -112,7 +134,7 @@ fn normalize_output(mut output: Output, diagnostic_path: &str) -> Output {
         lines.pop();
     }
 
-    let mut normalized = lines.join("\n").replace("src/main.rs", diagnostic_path);
+    let mut normalized = lines.join("\n");
     if !normalized.is_empty() {
         normalized.push('\n');
     }

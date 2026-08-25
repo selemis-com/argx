@@ -186,7 +186,10 @@ mod tests {
     fn help_requests_use_success_status_and_render_verbatim() {
         let help = Error::DisplayHelp { help: "Usage: tool [OPTIONS]\n".to_owned() };
         assert_eq!(help.exit_code(), 0);
-        assert_eq!(help.to_string(), "Usage: tool [OPTIONS]\n");
+        snapbox::Assert::new().eq(
+            help.to_string(),
+            "Usage: tool [OPTIONS]\n",
+        );
 
         let failure = Error::UnknownFlag { token: b"--bad".to_vec() };
         assert_eq!(failure.exit_code(), 2);

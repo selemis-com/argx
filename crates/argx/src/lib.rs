@@ -27,6 +27,12 @@ extern crate self as argx;
 #[cfg(feature = "derive")]
 pub use argx_derive::{Args, Parser, Subcommand};
 
+/// Marks a reusable argument group derived with `#[derive(Args)]`.
+///
+/// This trait distinguishes reusable argument groups from root [`Parser`] declarations. It is
+/// implemented by the `Args` derive and is not intended for manual implementation.
+pub trait Args: Sized + __private::CommandArgs {}
+
 /// Parses command-line arguments into a typed value.
 pub trait Parser: Sized + __private::CommandArgs {
     /// Parses the current process arguments, excluding the program name.

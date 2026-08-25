@@ -13,7 +13,7 @@ pub use compose::{
     table_len,
 };
 pub use model::{Arg, Command, Flag, Key, key_base};
-pub use traits::{CommandArgs, FlattenArgs, Subcommands};
+pub use traits::{CommandArgs, Subcommands};
 pub use value::{os_value, os_values, parsed_value, parsed_values, text_value, text_values};
 
 pub use crate::argv::{ArgvParser, Error, Event};

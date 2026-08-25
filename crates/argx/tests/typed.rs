@@ -559,17 +559,25 @@ mod tests {
     #[test]
     fn generated_help_uses_static_metadata_and_selected_command_scope() {
         let root = HelpCli::render_help();
-        assert!(root.starts_with(
-            "Manage things\n\nUsage: tool [OPTIONS] --output <OUTPUT> <WORKSPACE> <COMMAND>\n"
-        ));
-        assert!(root.contains("<WORKSPACE>  Workspace name."));
-        assert!(root.contains("config  Configure values."));
-        assert!(root.contains("status  Show current status."));
-        assert!(root.contains("-v, --verbose"));
-        assert!(root.contains("Enable verbose output."));
-        assert!(root.contains("--output <OUTPUT>"));
-        assert!(root.contains("Output path"));
-        assert!(root.ends_with("-h, --help         Print help\n"));
+        snapbox::Assert::new().eq(
+            root.as_str(),
+            r#"Manage things
+
+Usage: tool [OPTIONS] --output <OUTPUT> <WORKSPACE> <COMMAND>
+
+Arguments:
+  <WORKSPACE>  Workspace name.
+
+Commands:
+  config  Configure values.
+  status  Show current status.
+
+Options:
+  -v, --verbose      Enable verbose output.
+  --output <OUTPUT>  Output path
+  -h, --help         Print help
+"#,
+        );
 
         assert_eq!(HelpCli::try_parse_args(["--help"]), Err(Error::DisplayHelp { help: root }),);
 
@@ -577,10 +585,20 @@ mod tests {
         let Err(Error::DisplayHelp { help }) = nested else {
             panic!("nested help request did not return generated help")
         };
-        assert!(help.starts_with("Configure values.\n\nUsage: tool config [OPTIONS] <KEY>\n"));
-        assert!(help.contains("<KEY>  Configuration key."));
-        assert!(help.contains("--local"));
-        assert!(help.contains("Use local configuration."));
+        snapbox::Assert::new().eq(
+            help,
+            r#"Configure values.
+
+Usage: tool config [OPTIONS] <KEY>
+
+Arguments:
+  <KEY>  Configuration key.
+
+Options:
+  --local     Use local configuration.
+  -h, --help  Print help
+"#,
+        );
 
         let status = HelpCli::try_parse_args(["--output", "out", "acme", "status"])
             .expect("status command should parse");

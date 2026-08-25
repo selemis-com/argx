@@ -53,9 +53,6 @@ pub trait CommandArgs: Sized {
     fn finish(partial: Self::Partial) -> Result<Self, crate::Error>;
 }
 
-/// Marker implemented only by reusable declarations derived with `Args`.
-pub trait FlattenArgs: CommandArgs {}
-
 /// Static command metadata and typed binding exposed by a derived subcommand enum.
 pub trait Subcommands: Sized {
     /// Values collected for the selected variant during one parse.

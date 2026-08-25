@@ -300,7 +300,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
     });
     let args_impl = (!command.root).then(|| {
         quote! {
-            impl #impl_generics #facade::__private::FlattenArgs
+            impl #impl_generics #facade::Args
                 for #ident #ty_generics #where_clause
             {}
         }
@@ -509,7 +509,7 @@ fn binding_generics(command: &model::Command, facade: &TokenStream) -> Generics 
                 generics
                     .make_where_clause()
                     .predicates
-                    .push(parse_quote!(#ty: #facade::__private::FlattenArgs));
+                    .push(parse_quote!(#ty: #facade::Args));
                 continue;
             }
             model::FieldKind::Subcommand { ty } => {

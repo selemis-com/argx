@@ -264,7 +264,7 @@ fn subcommand_generics(subcommand: &model::Subcommand, facade: &TokenStream) -> 
         generics
             .make_where_clause()
             .predicates
-            .push(parse_quote!(#ty: #facade::__private::FlattenArgs));
+            .push(parse_quote!(#ty: #facade::Args));
     }
     generics
 }
