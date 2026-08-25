@@ -1,4 +1,4 @@
-# Makefile for building and testing argx.
+# Makefile for building and testing Argx.
 .DEFAULT_GOAL := help
 
 # Number of generated cases executed by each fuzz property.
