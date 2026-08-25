@@ -440,13 +440,46 @@ pub mod __private {
     /// Marker implemented only by reusable declarations derived with `Args`.
     pub trait FlattenArgs: CommandArgs {}
 
-    /// Static command metadata exposed by a derived subcommand enum.
-    ///
-    /// Variant table generation arrives with subcommand support. The empty default keeps the
-    /// composition contract in place while that feature is not implemented yet.
+    /// Static command metadata and typed binding exposed by a derived subcommand enum.
     pub trait Subcommands: Sized {
+        /// Values collected for the selected variant during one parse.
+        type Partial;
+
         /// Parse tables for the enum's named subcommands.
-        const COMMANDS: &'static [&'static Command<'static>] = &[];
+        const COMMANDS: &'static [&'static Command<'static>];
+
+        /// Creates empty selection and binding state.
+        fn start() -> Self::Partial;
+
+        /// Reports whether one sibling command has already been selected.
+        fn selected(partial: &Self::Partial) -> bool;
+
+        /// Applies a command-selection event or an event belonging to the selected command tree.
+        fn apply(partial: &mut Self::Partial, event: &Event<'_, '_>) -> bool;
+
+        /// Validates scalar occurrence policy in the selected command tree.
+        ///
+        /// # Errors
+        ///
+        /// Returns the first duplicate scalar argument in the selected branch.
+        fn check_occurrences(partial: &mut Self::Partial) -> Result<(), crate::Error>;
+
+        /// Validates required arguments in the selected command tree.
+        ///
+        /// # Errors
+        ///
+        /// Returns the first missing required argument or nested subcommand.
+        fn check_required(partial: &mut Self::Partial) -> Result<(), crate::Error>;
+
+        /// Converts selected raw binding state into the destination enum.
+        ///
+        /// `None` means no sibling was selected; the containing `CommandArgs` implementation owns
+        /// the field name used by the resulting missing-subcommand diagnostic.
+        ///
+        /// # Errors
+        ///
+        /// Returns a conversion failure from the selected command payload.
+        fn finish(partial: Self::Partial) -> Result<Option<Self>, crate::Error>;
     }
 
     /// Converts one raw value directly into a UTF-8 string.

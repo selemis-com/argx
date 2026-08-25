@@ -43,6 +43,40 @@ mod tests {
         after: String,
     }
 
+    #[derive(argx::Args)]
+    struct AddArgs {
+        #[argx(long)]
+        force: bool,
+        value: String,
+    }
+
+    #[derive(argx::Args)]
+    struct NestedArgs {
+        #[argx(subcommand)]
+        command: NestedCommand,
+    }
+
+    #[derive(argx::Subcommand)]
+    enum NestedCommand {
+        Leaf,
+    }
+
+    #[derive(argx::Subcommand)]
+    enum Commands {
+        Add(AddArgs),
+        Remove(AddArgs),
+        Nested(NestedArgs),
+        Status,
+    }
+
+    #[derive(argx::Parser)]
+    struct CommandCli {
+        #[argx(long)]
+        verbose: bool,
+        #[argx(subcommand)]
+        command: Commands,
+    }
+
     mod add {
         #[derive(argx::Args)]
         pub(super) struct Options {
@@ -56,6 +90,20 @@ mod tests {
         pub(super) struct Options {
             #[argx(long)]
             pub(super) force: bool,
+        }
+    }
+
+    mod command_a {
+        #[derive(argx::Subcommand)]
+        pub(super) enum Action {
+            Run,
+        }
+    }
+
+    mod command_b {
+        #[derive(argx::Subcommand)]
+        pub(super) enum Action {
+            Run,
         }
     }
 
@@ -166,5 +214,78 @@ mod tests {
         assert_ne!(add.key, remove.key);
         assert_ne!(add.flags[0].key, remove.flags[0].key);
         assert_eq!(add.flags[0].key & 0xffff_ffff, remove.flags[0].key & 0xffff_ffff);
+    }
+
+    #[test]
+    fn subcommand_derive_exposes_static_nested_command_tables() {
+        use argx::__private::Subcommands as _;
+
+        let command = CommandCli::COMMAND;
+        assert_eq!(command.subcommands.len(), 4);
+        assert_eq!(command.subcommands[0].name, "add");
+        assert_eq!(command.subcommands[1].name, "remove");
+        assert_eq!(command.subcommands[2].name, "nested");
+        assert_eq!(command.subcommands[3].name, "status");
+
+        let add = command.subcommands[0];
+        let add_args = <AddArgs as argx::__private::CommandArgs>::COMMAND;
+        assert_eq!(add.flags, add_args.flags);
+        assert_eq!(add.args, add_args.args);
+        assert_eq!(add.flags[0].name, "force");
+        assert_eq!(add.args[0].name, "value");
+
+        let remove = command.subcommands[1];
+        assert_eq!(remove.flags, add_args.flags);
+        assert_eq!(remove.args, add_args.args);
+
+        let nested = command.subcommands[2];
+        assert_eq!(nested.subcommands.len(), 1);
+        assert_eq!(nested.subcommands[0].name, "leaf");
+        assert_eq!(Commands::COMMANDS, command.subcommands);
+        assert_ne!(command.subcommands[0].key, command.subcommands[1].key);
+        assert_ne!(command.subcommands[1].key, command.subcommands[2].key);
+        assert_ne!(command.subcommands[2].key, command.subcommands[3].key);
+        for (index, command) in command.subcommands.iter().enumerate() {
+            assert_eq!(command.key & 0xffff_ffff, 0x8000_0000 | index as u64);
+        }
+
+        let add_value = Commands::Add(AddArgs { force: false, value: String::new() });
+        let Commands::Add(add_value) = add_value else {
+            unreachable!("constructed Add variant changed")
+        };
+        assert!(!add_value.force);
+        assert!(add_value.value.is_empty());
+
+        let remove_value = Commands::Remove(AddArgs { force: false, value: String::new() });
+        let Commands::Remove(remove_value) = remove_value else {
+            unreachable!("constructed Remove variant changed")
+        };
+        assert!(!remove_value.force);
+        assert!(remove_value.value.is_empty());
+
+        let nested_value = Commands::Nested(NestedArgs { command: NestedCommand::Leaf });
+        let Commands::Nested(nested_value) = nested_value else {
+            unreachable!("constructed Nested variant changed")
+        };
+        assert!(matches!(nested_value.command, NestedCommand::Leaf));
+
+        let value = CommandCli { verbose: false, command: Commands::Status };
+        assert!(!value.verbose);
+        assert!(matches!(value.command, Commands::Status));
+    }
+
+    #[test]
+    fn identical_subcommand_declarations_in_different_modules_have_different_keys() {
+        use argx::__private::Subcommands as _;
+
+        let first_value = command_a::Action::Run;
+        let second_value = command_b::Action::Run;
+        assert!(matches!(first_value, command_a::Action::Run));
+        assert!(matches!(second_value, command_b::Action::Run));
+
+        let first = command_a::Action::COMMANDS[0];
+        let second = command_b::Action::COMMANDS[0];
+        assert_ne!(first.key, second.key);
+        assert_eq!(first.key & 0xffff_ffff, second.key & 0xffff_ffff);
     }
 }

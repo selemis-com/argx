@@ -54,6 +54,26 @@ pub(crate) fn constants(
     }
 }
 
+/// Emits command-kind keys for the variants of one derived subcommand enum.
+pub(crate) fn subcommand_constants(
+    facade: &TokenStream,
+    fingerprint: &str,
+    commands: usize,
+) -> TokenStream {
+    let declaration = declaration_hash(fingerprint);
+    let command_keys = (0..commands).map(|index| {
+        let name = ident("SUBCOMMAND", Some(index));
+        let index = index as u64;
+        quote!(const #name: u64 = ARGX_KEY_BASE | #KIND_COMMAND | #index;)
+    });
+
+    quote! {
+        const ARGX_KEY_BASE: u64 =
+            #facade::__private::key_base(::core::module_path!(), #declaration);
+        #(#command_keys)*
+    }
+}
+
 /// Returns the generated constant name for one key.
 pub(crate) fn ident(kind: &str, index: Option<usize>) -> Ident {
     index.map_or_else(

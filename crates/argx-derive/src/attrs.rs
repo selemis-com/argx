@@ -23,6 +23,8 @@ pub(crate) struct CommandAttrs {
 pub(crate) struct FieldAttrs {
     /// Whether this field contributes another `Args` declaration inline.
     pub flatten: bool,
+    /// Whether this field selects one command from a derived subcommand enum.
+    pub subcommand: bool,
     /// Long flag spelling, or an instruction to infer it.
     pub long: Option<Inferred<String>>,
     /// Short flag spelling, or an instruction to infer it.
@@ -53,6 +55,26 @@ pub(crate) fn command(attributes: &[Attribute]) -> syn::Result<CommandAttrs> {
     Ok(parsed)
 }
 
+/// Parses every `#[argx(...)]` attribute on a subcommand variant.
+pub(crate) fn variant(attributes: &[Attribute]) -> syn::Result<CommandAttrs> {
+    let mut parsed = CommandAttrs::default();
+    for attribute in attributes.iter().filter(|attribute| attribute.path().is_ident("argx")) {
+        attribute.parse_nested_meta(|meta| {
+            if meta.path.is_ident("name") {
+                if parsed.name.is_some() {
+                    return Err(meta.error("duplicate `name` attribute"));
+                }
+                let value = meta.value()?.parse::<LitStr>()?;
+                parsed.name = Some(value.value());
+                Ok(())
+            } else {
+                Err(meta.error("unsupported Argx subcommand variant attribute"))
+            }
+        })?;
+    }
+    Ok(parsed)
+}
+
 /// Parses every `#[argx(...)]` attribute on a field declaration.
 pub(crate) fn field(attributes: &[Attribute]) -> syn::Result<FieldAttrs> {
     let mut parsed = FieldAttrs::default();
@@ -66,6 +88,15 @@ pub(crate) fn field(attributes: &[Attribute]) -> syn::Result<FieldAttrs> {
                     return Err(meta.error("`flatten` takes no value"));
                 }
                 parsed.flatten = true;
+                Ok(())
+            } else if meta.path.is_ident("subcommand") {
+                if parsed.subcommand {
+                    return Err(meta.error("duplicate `subcommand` attribute"));
+                }
+                if meta.input.peek(Token![=]) || meta.input.peek(syn::token::Paren) {
+                    return Err(meta.error("`subcommand` takes no value"));
+                }
+                parsed.subcommand = true;
                 Ok(())
             } else if meta.path.is_ident("long") {
                 if parsed.long.is_some() {

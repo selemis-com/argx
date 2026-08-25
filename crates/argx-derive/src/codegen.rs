@@ -2,9 +2,9 @@
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
-use syn::{Data, DeriveInput, Generics, parse_quote};
+use syn::{Generics, parse_quote};
 
-use crate::{attrs, crate_name, key, model};
+use crate::{crate_name, key, model};
 
 /// Generated static table expressions for one command declaration.
 #[derive(Debug)]
@@ -36,6 +36,11 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
         .enumerate()
         .filter(|(_, field)| matches!(&field.kind, model::FieldKind::Positional))
         .collect::<Vec<_>>();
+    let subcommand = command
+        .fields
+        .iter()
+        .enumerate()
+        .find(|(_, field)| matches!(&field.kind, model::FieldKind::Subcommand { .. }));
     let keys = key::constants(&facade, &command.fingerprint, flags.len(), args.len());
     let command_key = key::ident("COMMAND", None);
 
@@ -89,6 +94,9 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
         model::FieldKind::Flatten { ty } => {
             quote!(<#ty as #facade::__private::CommandArgs>::Partial)
         }
+        model::FieldKind::Subcommand { ty } => {
+            quote!(<#ty as #facade::__private::Subcommands>::Partial)
+        }
         _ if field.shape == model::Shape::Many => {
             quote!(::std::vec::Vec<::std::vec::Vec<u8>>)
         }
@@ -98,6 +106,9 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
     let partial_start = command.fields.iter().map(|field| match &field.kind {
         model::FieldKind::Flatten { ty } => {
             quote!(<#ty as #facade::__private::CommandArgs>::start())
+        }
+        model::FieldKind::Subcommand { ty } => {
+            quote!(<#ty as #facade::__private::Subcommands>::start())
         }
         _ if field.shape == model::Shape::Many => quote!(::std::vec::Vec::new()),
         _ if field.is_switch() => quote!((false, false)),
@@ -126,6 +137,31 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
             }
         })
     });
+    let selected_subcommand_apply = subcommand.map(|(field_index, field)| {
+        let model::FieldKind::Subcommand { ty } = &field.kind else {
+            unreachable!("subcommand lookup only returns subcommand fields");
+        };
+        let slot = syn::Index::from(field_index);
+        quote! {
+            if <#ty as #facade::__private::Subcommands>::selected(&partial.#slot) {
+                return <#ty as #facade::__private::Subcommands>::apply(
+                    &mut partial.#slot,
+                    event,
+                );
+            }
+        }
+    });
+    let subcommand_apply = subcommand.map(|(field_index, field)| {
+        let model::FieldKind::Subcommand { ty } = &field.kind else {
+            unreachable!("subcommand lookup only returns subcommand fields");
+        };
+        let slot = syn::Index::from(field_index);
+        quote! {
+            if <#ty as #facade::__private::Subcommands>::apply(&mut partial.#slot, event) {
+                return true;
+            }
+        }
+    });
 
     let occurrence_checks = command
         .fields
@@ -151,6 +187,14 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                     )?;
                 })
             }
+            model::FieldKind::Subcommand { ty } => {
+                let slot = syn::Index::from(field_index);
+                Some(quote! {
+                    <#ty as #facade::__private::Subcommands>::check_occurrences(
+                        &mut partial.#slot,
+                    )?;
+                })
+            }
             _ => None,
         })
         .collect::<Vec<_>>();
@@ -163,6 +207,20 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                 let slot = syn::Index::from(field_index);
                 Some(quote! {
                     <#ty as #facade::__private::CommandArgs>::check_required(
+                        &mut partial.#slot,
+                    )?;
+                })
+            }
+            model::FieldKind::Subcommand { ty } => {
+                let slot = syn::Index::from(field_index);
+                let name = &field.name;
+                Some(quote! {
+                    if !<#ty as #facade::__private::Subcommands>::selected(&partial.#slot) {
+                        return ::std::result::Result::Err(
+                            #facade::Error::MissingSubcommand { name: #name },
+                        );
+                    }
+                    <#ty as #facade::__private::Subcommands>::check_required(
                         &mut partial.#slot,
                     )?;
                 })
@@ -218,6 +276,15 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
     });
 
     let name = &command.name;
+    let command_subcommands = subcommand.map_or_else(
+        || quote!(&[]),
+        |(_, field)| {
+            let model::FieldKind::Subcommand { ty } = &field.kind else {
+                unreachable!("subcommand lookup only returns subcommand fields");
+            };
+            quote!(<#ty as #facade::__private::Subcommands>::COMMANDS)
+        },
+    );
     let parser_impl = command.root.then(|| {
         quote! {
             impl #impl_generics #facade::Parser for #ident #ty_generics #where_clause {}
@@ -244,7 +311,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                     name: #name,
                     flags: #command_flags,
                     args: #command_args,
-                    subcommands: &[],
+                    subcommands: #command_subcommands,
                     key: #command_key,
                 };
 
@@ -265,6 +332,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                     #apply_partial: &mut Self::Partial,
                     event: &#facade::__private::Event<'_, '_>,
                 ) -> bool {
+                    #selected_subcommand_apply
                     let matched = match *event {
                         #facade::__private::Event::Flag { flag, value } => {
                             let _ = value;
@@ -280,11 +348,13 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                                 _ => false,
                             }
                         },
+                        #facade::__private::Event::Command { .. } => false,
                     };
                     if matched {
                         return true;
                     }
                     #(#flattened_apply)*
+                    #subcommand_apply
                     false
                 }
 
@@ -392,6 +462,7 @@ fn command_tables(
                     );
                 });
             }
+            model::FieldKind::Subcommand { .. } => {}
         }
     }
     flush_flags(&mut own_flags, &mut flag_groups);
@@ -424,12 +495,22 @@ fn binding_generics(command: &model::Command, facade: &TokenStream) -> Generics 
     let mut generics = command.generics.clone();
     let mut bounded = Vec::new();
     for field in &command.fields {
-        if let model::FieldKind::Flatten { ty } = &field.kind {
-            generics
-                .make_where_clause()
-                .predicates
-                .push(parse_quote!(#ty: #facade::__private::FlattenArgs));
-            continue;
+        match &field.kind {
+            model::FieldKind::Flatten { ty } => {
+                generics
+                    .make_where_clause()
+                    .predicates
+                    .push(parse_quote!(#ty: #facade::__private::FlattenArgs));
+                continue;
+            }
+            model::FieldKind::Subcommand { ty } => {
+                generics
+                    .make_where_clause()
+                    .predicates
+                    .push(parse_quote!(#ty: #facade::__private::Subcommands));
+                continue;
+            }
+            _ => {}
         }
         if field.is_switch() {
             continue;
@@ -522,6 +603,21 @@ fn finish_field(field: &model::Field, field_index: usize, facade: &TokenStream) 
     if let model::FieldKind::Flatten { ty } = &field.kind {
         return quote!(<#ty as #facade::__private::CommandArgs>::finish(partial.#slot)?);
     }
+    if let model::FieldKind::Subcommand { ty } = &field.kind {
+        let name = &field.name;
+        return quote! {
+            {
+                let ::std::option::Option::Some(value) =
+                    <#ty as #facade::__private::Subcommands>::finish(partial.#slot)?
+                else {
+                    return ::std::result::Result::Err(
+                        #facade::Error::MissingSubcommand { name: #name },
+                    );
+                };
+                value
+            }
+        };
+    }
 
     if field.is_switch() {
         return quote!(partial.#slot.0);
@@ -587,29 +683,261 @@ fn finish_field(field: &model::Field, field_index: usize, facade: &TokenStream) 
     }
 }
 
-/// Generates the current subcommand composition marker after validating the derive shape.
-pub(crate) fn subcommands(input: &DeriveInput) -> syn::Result<TokenStream> {
-    let Data::Enum(data) = &input.data else {
-        return Err(syn::Error::new_spanned(
-            &input.ident,
-            "Subcommand can only be derived for enums",
-        ));
-    };
-
-    attrs::reject(&input.attrs, "subcommand")?;
-    for variant in &data.variants {
-        attrs::reject(&variant.attrs, "subcommand variant")?;
-        for field in &variant.fields {
-            attrs::reject(&field.attrs, "subcommand field")?;
-        }
-    }
-
+/// Generates static child-command tables and typed enum binding.
+pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
     let facade = crate_name::facade_path();
-    let ident = &input.ident;
-    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
-    Ok(quote! {
-        impl #impl_generics #facade::__private::Subcommands
-            for #ident #ty_generics #where_clause
-        {}
-    })
+    let ident = &subcommand.ident;
+    let generics = subcommand_generics(subcommand, &facade);
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let keys =
+        key::subcommand_constants(&facade, &subcommand.fingerprint, subcommand.variants.len());
+
+    let command_tables = subcommand.variants.iter().enumerate().map(|(index, variant)| {
+        let table = format_ident!("ARGX_SUBCOMMAND_{index}");
+        let key = key::ident("SUBCOMMAND", Some(index));
+        let name = &variant.name;
+        variant.payload.as_ref().map_or_else(|| quote! {
+                static #table: #facade::__private::Command<'static> =
+                    #facade::__private::Command {
+                        name: #name,
+                        flags: &[],
+                        args: &[],
+                        subcommands: &[],
+                        key: #key,
+                    };
+            }, |ty| quote! {
+                static #table: #facade::__private::Command<'static> =
+                    #facade::__private::Command {
+                        name: #name,
+                        flags: <#ty as #facade::__private::CommandArgs>::COMMAND.flags,
+                        args: <#ty as #facade::__private::CommandArgs>::COMMAND.args,
+                        subcommands: <#ty as #facade::__private::CommandArgs>::COMMAND.subcommands,
+                        key: #key,
+                    };
+            })
+    });
+    let command_refs = (0..subcommand.variants.len()).map(|index| {
+        let table = format_ident!("ARGX_SUBCOMMAND_{index}");
+        quote!(&#table)
+    });
+
+    // Only one sibling command can be active. An enum keeps the accumulator proportional to the
+    // largest selected branch instead of reserving space for every sibling's partial state.
+    let partial_variants = subcommand.variants.iter().enumerate().map(|(index, variant)| {
+        let partial_variant = format_ident!("V{index}");
+        variant.payload.as_ref().map_or_else(
+            || quote!(#partial_variant,),
+            |ty| quote!(#partial_variant(<#ty as #facade::__private::CommandArgs>::Partial),),
+        )
+    });
+
+    let selected_apply_arms = subcommand.variants.iter().enumerate().map(|(index, variant)| {
+        let partial_variant = format_ident!("V{index}");
+        variant.payload.as_ref().map_or_else(
+            || quote!(Partial::#partial_variant => return false,),
+            |ty| {
+                quote! {
+                    Partial::#partial_variant(selected) => {
+                        return <#ty as #facade::__private::CommandArgs>::apply(selected, event);
+                    },
+                }
+            },
+        )
+    });
+    let select_arms = subcommand.variants.iter().enumerate().map(|(index, variant)| {
+        let key = key::ident("SUBCOMMAND", Some(index));
+        let partial_variant = format_ident!("V{index}");
+        variant.payload.as_ref().map_or_else(
+            || {
+                quote! {
+                    #key => {
+                        *partial = Partial::#partial_variant;
+                        true
+                    }
+                }
+            },
+            |ty| {
+                quote! {
+                    #key => {
+                        *partial = Partial::#partial_variant(
+                            <#ty as #facade::__private::CommandArgs>::start(),
+                        );
+                        true
+                    }
+                }
+            },
+        )
+    });
+
+    let occurrence_arms = subcommand
+        .variants
+        .iter()
+        .enumerate()
+        .filter_map(|(index, variant)| {
+            let ty = variant.payload.as_ref()?;
+            let partial_variant = format_ident!("V{index}");
+            Some(quote! {
+                Partial::#partial_variant(selected) => {
+                    <#ty as #facade::__private::CommandArgs>::check_occurrences(selected)
+                }
+            })
+        })
+        .collect::<Vec<_>>();
+    let required_arms = subcommand
+        .variants
+        .iter()
+        .enumerate()
+        .filter_map(|(index, variant)| {
+            let ty = variant.payload.as_ref()?;
+            let partial_variant = format_ident!("V{index}");
+            Some(quote! {
+                Partial::#partial_variant(selected) => {
+                    <#ty as #facade::__private::CommandArgs>::check_required(selected)
+                }
+            })
+        })
+        .collect::<Vec<_>>();
+    let occurrence_partial =
+        if occurrence_arms.is_empty() { quote!(_partial) } else { quote!(partial) };
+    let required_partial =
+        if required_arms.is_empty() { quote!(_partial) } else { quote!(partial) };
+    let occurrence_body = if occurrence_arms.is_empty() {
+        quote!(::std::result::Result::Ok(()))
+    } else {
+        quote! {
+            match partial {
+                #(#occurrence_arms,)*
+                _ => ::std::result::Result::Ok(()),
+            }
+        }
+    };
+    let required_body = if required_arms.is_empty() {
+        quote!(::std::result::Result::Ok(()))
+    } else {
+        quote! {
+            match partial {
+                #(#required_arms,)*
+                _ => ::std::result::Result::Ok(()),
+            }
+        }
+    };
+    let finish_arms = subcommand.variants.iter().enumerate().map(|(index, variant)| {
+        let partial_variant = format_ident!("V{index}");
+        let variant_ident = &variant.ident;
+        variant.payload.as_ref().map_or_else(
+            || {
+                quote! {
+                    Partial::#partial_variant => ::std::result::Result::Ok(
+                        ::std::option::Option::Some(Self::#variant_ident),
+                    )
+                }
+            },
+            |ty| {
+                quote! {
+                    Partial::#partial_variant(selected) => {
+                        ::std::result::Result::Ok(::std::option::Option::Some(
+                            Self::#variant_ident(
+                                <#ty as #facade::__private::CommandArgs>::finish(selected)?,
+                            ),
+                        ))
+                    }
+                }
+            },
+        )
+    });
+
+    quote! {
+        #[doc(hidden)]
+        const _: () = {
+            #keys
+            #(#command_tables)*
+            static ARGX_SUBCOMMANDS: &[&#facade::__private::Command<'static>] =
+                &[#(#command_refs),*];
+
+            #[doc(hidden)]
+            pub enum Partial {
+                /// No command has been selected yet.
+                Unselected,
+                #(#partial_variants)*
+            }
+
+            impl #impl_generics #facade::__private::Subcommands
+                for #ident #ty_generics #where_clause
+            {
+                type Partial = Partial;
+
+                const COMMANDS: &'static [&'static #facade::__private::Command<'static>] =
+                    ARGX_SUBCOMMANDS;
+
+                fn start() -> Self::Partial {
+                    Partial::Unselected
+                }
+
+                fn selected(partial: &Self::Partial) -> bool {
+                    !::std::matches!(partial, Partial::Unselected)
+                }
+
+                fn apply(
+                    partial: &mut Self::Partial,
+                    event: &#facade::__private::Event<'_, '_>,
+                ) -> bool {
+                    match partial {
+                        Partial::Unselected => {}
+                        #(#selected_apply_arms)*
+                    }
+                    let #facade::__private::Event::Command { command } = *event else {
+                        return false;
+                    };
+                    match command.key {
+                        #(#select_arms,)*
+                        _ => false,
+                    }
+                }
+
+                fn check_occurrences(
+                    #occurrence_partial: &mut Self::Partial,
+                ) -> ::std::result::Result<(), #facade::Error> {
+                    #occurrence_body
+                }
+
+                fn check_required(
+                    #required_partial: &mut Self::Partial,
+                ) -> ::std::result::Result<(), #facade::Error> {
+                    #required_body
+                }
+
+                fn finish(
+                    partial: Self::Partial,
+                ) -> ::std::result::Result<::std::option::Option<Self>, #facade::Error> {
+                    match partial {
+                        Partial::Unselected => ::std::result::Result::Ok(
+                            ::std::option::Option::None,
+                        ),
+                        #(#finish_arms,)*
+                    }
+                }
+            }
+        };
+    }
+}
+
+/// Adds the payload bounds required by generated subcommand binding.
+fn subcommand_generics(subcommand: &model::Subcommand, facade: &TokenStream) -> Generics {
+    let mut generics = subcommand.generics.clone();
+    let mut bounded = Vec::new();
+    for variant in &subcommand.variants {
+        let Some(ty) = &variant.payload else {
+            continue;
+        };
+        let rendered = quote!(#ty).to_string();
+        if bounded.contains(&rendered) {
+            continue;
+        }
+        bounded.push(rendered);
+        generics
+            .make_where_clause()
+            .predicates
+            .push(parse_quote!(#ty: #facade::__private::FlattenArgs));
+    }
+    generics
 }

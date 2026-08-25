@@ -38,6 +38,16 @@ pub enum Error {
         /// Encoded token supplied by the caller.
         token: Vec<u8>,
     },
+    /// A word did not match any child command when command selection was required.
+    UnknownCommand {
+        /// Encoded token supplied by the caller.
+        token: Vec<u8>,
+    },
+    /// A required subcommand field was not selected.
+    MissingSubcommand {
+        /// Canonical field name.
+        name: &'static str,
+    },
     /// A required field was not supplied.
     MissingRequired {
         /// Canonical argument name.
@@ -87,6 +97,12 @@ impl fmt::Display for Error {
             }
             Self::UnexpectedArgument { token } => {
                 write!(formatter, "unexpected argument `{}`", display_bytes(token))
+            }
+            Self::UnknownCommand { token } => {
+                write!(formatter, "unknown command `{}`", display_bytes(token))
+            }
+            Self::MissingSubcommand { name } => {
+                write!(formatter, "required subcommand `{name}` was not provided")
             }
             Self::MissingRequired { name } => {
                 write!(formatter, "required argument `{name}` was not provided")

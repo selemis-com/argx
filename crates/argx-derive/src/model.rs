@@ -27,6 +27,28 @@ pub(crate) struct Command {
     pub fields: Vec<Field>,
 }
 
+/// One enum deriving `Subcommand`.
+pub(crate) struct Subcommand {
+    /// Rust enum receiving the generated implementation.
+    pub ident: syn::Ident,
+    /// Generic parameters copied to generated implementations.
+    pub generics: syn::Generics,
+    /// Whole declaration token stream used to seed stable variant keys.
+    pub fingerprint: String,
+    /// Variants in declaration order.
+    pub variants: Vec<Variant>,
+}
+
+/// One selectable subcommand variant.
+pub(crate) struct Variant {
+    /// Rust enum variant name.
+    pub ident: syn::Ident,
+    /// Command-line spelling used to select this variant.
+    pub name: String,
+    /// Optional reusable `Args` payload.
+    pub payload: Option<Type>,
+}
+
 /// One named Rust field and the parse-table entry it contributes.
 pub(crate) struct Field {
     /// Rust field identifier used when generated code builds the destination value.
@@ -61,6 +83,11 @@ pub(crate) enum FieldKind {
     /// Another independently derived `Args` declaration composed inline.
     Flatten {
         /// Child declaration type.
+        ty: Type,
+    },
+    /// A required nested command selected from a derived subcommand enum.
+    Subcommand {
+        /// Derived subcommand enum type.
         ty: Type,
     },
 }
@@ -107,7 +134,7 @@ impl Command {
         };
 
         validate_fields(&fields)?;
-        validate_flatten_generics(&fields, &input.generics)?;
+        validate_composed_generics(&fields, &input.generics)?;
 
         let attributes = attrs::command(&input.attrs)?;
         let rust_name = ident_name(&input.ident);
@@ -128,6 +155,73 @@ impl Command {
     }
 }
 
+impl Subcommand {
+    /// Parses and validates a subcommand enum before code generation.
+    pub(crate) fn from_input(input: &DeriveInput) -> syn::Result<Self> {
+        let Data::Enum(data) = &input.data else {
+            return Err(syn::Error::new_spanned(
+                &input.ident,
+                "Subcommand can only be derived for enums",
+            ));
+        };
+        attrs::reject(&input.attrs, "subcommand")?;
+
+        let mut names = Vec::<String>::new();
+        let mut variants = Vec::with_capacity(data.variants.len());
+        for variant in &data.variants {
+            let attributes = attrs::variant(&variant.attrs)?;
+            let rust_name = ident_name(&variant.ident);
+            let name = attributes.name.unwrap_or_else(|| case::to_kebab(&rust_name));
+            validate_subcommand_name(&name, variant.ident.span())?;
+            if names.contains(&name) {
+                return Err(syn::Error::new(
+                    variant.ident.span(),
+                    format!("duplicate subcommand `{name}`"),
+                ));
+            }
+            names.push(name.clone());
+
+            let payload = match &variant.fields {
+                Fields::Unit => None,
+                Fields::Unnamed(fields) if fields.unnamed.len() == 1 => {
+                    let field = &fields.unnamed[0];
+                    attrs::reject(&field.attrs, "subcommand payload")?;
+                    if peel_option(&field.ty).is_some() || peel_vec(&field.ty).is_some() {
+                        return Err(syn::Error::new_spanned(
+                            &field.ty,
+                            "subcommand payload must be one direct Args type",
+                        ));
+                    }
+                    Some(field.ty.clone())
+                }
+                Fields::Unnamed(_) => {
+                    return Err(syn::Error::new_spanned(
+                        &variant.fields,
+                        "subcommand tuple variants must contain exactly one Args payload",
+                    ));
+                }
+                Fields::Named(_) => {
+                    return Err(syn::Error::new_spanned(
+                        &variant.fields,
+                        "subcommand variants support only unit variants or one unnamed Args payload",
+                    ));
+                }
+            };
+
+            variants.push(Variant { ident: variant.ident.clone(), name, payload });
+        }
+
+        validate_variant_generics(&variants, &input.generics)?;
+
+        Ok(Self {
+            ident: input.ident.clone(),
+            generics: input.generics.clone(),
+            fingerprint: input.to_token_stream().to_string(),
+            variants,
+        })
+    }
+}
+
 impl Field {
     /// Converts one named Rust field into static parse and typed-binding metadata.
     fn from_syn(field: &syn::Field) -> syn::Result<Self> {
@@ -136,6 +230,48 @@ impl Field {
         })?;
         let attributes = attrs::field(&field.attrs)?;
         let name = ident_name(&ident);
+
+        if attributes.flatten && attributes.subcommand {
+            return Err(syn::Error::new(
+                ident.span(),
+                "`flatten` and `subcommand` cannot be combined",
+            ));
+        }
+
+        if attributes.subcommand {
+            if attributes.long.is_some()
+                || attributes.short.is_some()
+                || attributes.allow_hyphen_values
+                || attributes.allow_negative_numbers
+            {
+                return Err(syn::Error::new(
+                    ident.span(),
+                    "`subcommand` cannot be combined with flag or value attributes",
+                ));
+            }
+            if peel_option(&field.ty).is_some() {
+                return Err(syn::Error::new_spanned(
+                    &field.ty,
+                    "`subcommand` does not support `Option<T>`; hold the Subcommand enum directly",
+                ));
+            }
+            if peel_vec(&field.ty).is_some() {
+                return Err(syn::Error::new_spanned(
+                    &field.ty,
+                    "`subcommand` does not support collection wrappers",
+                ));
+            }
+            return Ok(Self {
+                span: ident.span(),
+                ident,
+                ty: field.ty.clone(),
+                name,
+                kind: FieldKind::Subcommand { ty: field.ty.clone() },
+                shape: Shape::Required,
+                allow_hyphen_values: false,
+                allow_negative_numbers: false,
+            });
+        }
 
         if attributes.flatten {
             if attributes.long.is_some()
@@ -233,6 +369,11 @@ impl Field {
         matches!(self.kind, FieldKind::Flatten { .. })
     }
 
+    /// Reports whether this field selects a nested command enum.
+    pub(crate) const fn is_subcommand(&self) -> bool {
+        matches!(self.kind, FieldKind::Subcommand { .. })
+    }
+
     /// Reports whether this field is a value-less boolean flag.
     pub(crate) fn is_switch(&self) -> bool {
         matches!(&self.kind, FieldKind::Flag { .. }) && self.shape == Shape::Bool
@@ -240,7 +381,10 @@ impl Field {
 
     /// Returns the Rust type receiving one parsed value.
     pub(crate) fn value_type(&self) -> &Type {
-        assert!(!self.is_flatten(), "flattened fields do not have a scalar value type");
+        assert!(
+            !self.is_flatten() && !self.is_subcommand(),
+            "composed fields do not have a scalar value type",
+        );
         match self.shape {
             Shape::Bool | Shape::Required => &self.ty,
             Shape::Optional => {
@@ -410,6 +554,7 @@ fn validate_fields(fields: &[Field]) -> syn::Result<()> {
     let mut shorts: Vec<u8> = Vec::new();
     let mut optional_positional_seen = false;
     let mut variadic_positional_span = None;
+    let mut subcommand_seen = false;
 
     for field in fields {
         match &field.kind {
@@ -457,18 +602,27 @@ fn validate_fields(fields: &[Field]) -> syn::Result<()> {
                 }
             }
             FieldKind::Flatten { .. } => {}
+            FieldKind::Subcommand { .. } => {
+                if subcommand_seen {
+                    return Err(syn::Error::new(
+                        field.span,
+                        "a command can contain only one `subcommand` field",
+                    ));
+                }
+                subcommand_seen = true;
+            }
         }
     }
 
     Ok(())
 }
 
-/// Rejects flattened types that depend on the containing declaration's generic parameters.
+/// Rejects composed types that depend on the containing declaration's generic parameters.
 ///
-/// Flattened tables are materialized as one static command table. A concrete generic child such
-/// as `Shared<String>` is fine, but a child whose type still depends on `T`, `'a`, or a const
+/// Flattened tables and subcommand tables are materialized statically. A concrete generic child
+/// such as `Shared<String>` is fine, but a child whose type still depends on `T`, `'a`, or a const
 /// parameter cannot be named from that static initializer on stable Rust.
-fn validate_flatten_generics(fields: &[Field], generics: &syn::Generics) -> syn::Result<()> {
+fn validate_composed_generics(fields: &[Field], generics: &syn::Generics) -> syn::Result<()> {
     let params = generics
         .params
         .iter()
@@ -483,7 +637,42 @@ fn validate_flatten_generics(fields: &[Field], generics: &syn::Generics) -> syn:
     }
 
     for field in fields {
-        let FieldKind::Flatten { ty } = &field.kind else {
+        let (ty, attribute) = match &field.kind {
+            FieldKind::Flatten { ty } => (ty, "flatten"),
+            FieldKind::Subcommand { ty } => (ty, "subcommand"),
+            _ => continue,
+        };
+        let mut visitor = GenericUse { params: &params, found: false };
+        visitor.visit_type(ty);
+        if visitor.found {
+            return Err(syn::Error::new_spanned(
+                ty,
+                format!(
+                    "`{attribute}` cannot depend on the containing struct's generic parameters; use a concrete derived type"
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Rejects subcommand payloads that depend on the enum's generic parameters.
+fn validate_variant_generics(variants: &[Variant], generics: &syn::Generics) -> syn::Result<()> {
+    let params = generics
+        .params
+        .iter()
+        .map(|param| match param {
+            GenericParam::Type(param) => GenericName::Ident(param.ident.clone()),
+            GenericParam::Const(param) => GenericName::Ident(param.ident.clone()),
+            GenericParam::Lifetime(param) => GenericName::Lifetime(param.lifetime.ident.clone()),
+        })
+        .collect::<Vec<_>>();
+    if params.is_empty() {
+        return Ok(());
+    }
+
+    for variant in variants {
+        let Some(ty) = &variant.payload else {
             continue;
         };
         let mut visitor = GenericUse { params: &params, found: false };
@@ -491,14 +680,29 @@ fn validate_flatten_generics(fields: &[Field], generics: &syn::Generics) -> syn:
         if visitor.found {
             return Err(syn::Error::new_spanned(
                 ty,
-                "`flatten` cannot depend on the containing struct's generic parameters; use a concrete Args type",
+                "subcommand payload cannot depend on the enum's generic parameters; use a concrete Args type",
             ));
         }
     }
     Ok(())
 }
 
-/// One generic parameter name relevant while inspecting a flattened field type.
+/// Validates one command-line spelling used to select a subcommand.
+fn validate_subcommand_name(name: &str, span: Span) -> syn::Result<()> {
+    if name.is_empty()
+        || name.starts_with('-')
+        || name.contains('=')
+        || name.chars().any(|character| character.is_whitespace() || character.is_control())
+    {
+        return Err(syn::Error::new(
+            span,
+            "subcommand name must be non-empty, must not start with `-`, and cannot contain `=`, whitespace, or controls",
+        ));
+    }
+    Ok(())
+}
+
+/// One generic parameter name relevant while inspecting a composed field type.
 #[derive(Debug)]
 enum GenericName {
     /// Type or const parameter identifier.

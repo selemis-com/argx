@@ -157,6 +157,108 @@ mod tests {
     #[derive(Debug, PartialEq, Eq, argx::Parser)]
     struct Empty;
 
+    #[derive(Debug, PartialEq, Eq, argx::Args)]
+    struct CommandShared {
+        #[argx(long)]
+        dry_run: bool,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Args)]
+    struct AddArgs {
+        #[argx(flatten)]
+        shared: CommandShared,
+        #[argx(long)]
+        force: bool,
+        name: String,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Args)]
+    struct GetArgs {
+        key: String,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Args)]
+    struct SetArgs {
+        #[argx(long)]
+        raw: bool,
+        key: String,
+        value: String,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Subcommand)]
+    enum ConfigCommand {
+        Get(GetArgs),
+        Set(SetArgs),
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Args)]
+    struct ConfigArgs {
+        #[argx(long)]
+        local: bool,
+        #[argx(subcommand)]
+        command: ConfigCommand,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Subcommand)]
+    enum RootCommand {
+        Add(AddArgs),
+        Config(ConfigArgs),
+        #[argx(name = "show-status")]
+        Status,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    struct SubcommandCli {
+        #[argx(long)]
+        verbose: bool,
+        workspace: String,
+        #[argx(subcommand)]
+        command: RootCommand,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Args)]
+    struct ReusedArgs {
+        #[argx(long)]
+        value: Option<String>,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Subcommand)]
+    enum ReusedCommand {
+        Child(ReusedArgs),
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    struct ReusedAcrossScopes {
+        #[argx(flatten)]
+        root: ReusedArgs,
+        #[argx(subcommand)]
+        command: ReusedCommand,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Args)]
+    struct StartArgs {
+        #[argx(long)]
+        force: bool,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Args)]
+    struct StopArgs {
+        #[argx(long)]
+        force: bool,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Subcommand)]
+    enum SiblingCommand {
+        Start(StartArgs),
+        Stop(StopArgs),
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    struct SiblingCli {
+        #[argx(subcommand)]
+        command: SiblingCommand,
+    }
+
     #[test]
     fn parses_typed_switches_values_and_positionals() {
         let parsed = Cli::try_parse_args([
@@ -418,6 +520,151 @@ mod tests {
         assert_eq!(
             TextCli::try_parse_args([raw]),
             Err(Error::InvalidUtf8 { name: "value", value: vec![b'x', 0xff] })
+        );
+    }
+
+    #[test]
+    fn subcommands_bind_unit_payload_and_nested_command_trees() {
+        assert_eq!(
+            SubcommandCli::try_parse_args([
+                "--verbose",
+                "acme",
+                "add",
+                "--dry-run",
+                "--force",
+                "widget",
+            ]),
+            Ok(SubcommandCli {
+                verbose: true,
+                workspace: String::from("acme"),
+                command: RootCommand::Add(AddArgs {
+                    shared: CommandShared { dry_run: true },
+                    force: true,
+                    name: String::from("widget"),
+                }),
+            }),
+        );
+
+        assert_eq!(
+            SubcommandCli::try_parse_args(["acme", "config", "get", "theme"]),
+            Ok(SubcommandCli {
+                verbose: false,
+                workspace: String::from("acme"),
+                command: RootCommand::Config(ConfigArgs {
+                    local: false,
+                    command: ConfigCommand::Get(GetArgs { key: String::from("theme") }),
+                }),
+            }),
+        );
+
+        assert_eq!(
+            SubcommandCli::try_parse_args([
+                "acme", "config", "--local", "set", "--raw", "theme", "dark",
+            ]),
+            Ok(SubcommandCli {
+                verbose: false,
+                workspace: String::from("acme"),
+                command: RootCommand::Config(ConfigArgs {
+                    local: true,
+                    command: ConfigCommand::Set(SetArgs {
+                        raw: true,
+                        key: String::from("theme"),
+                        value: String::from("dark"),
+                    }),
+                }),
+            }),
+        );
+
+        assert_eq!(
+            SubcommandCli::try_parse_args(["acme", "show-status"]),
+            Ok(SubcommandCli {
+                verbose: false,
+                workspace: String::from("acme"),
+                command: RootCommand::Status,
+            }),
+        );
+    }
+
+    #[test]
+    fn command_selection_is_exact_and_reports_missing_or_unknown_commands() {
+        assert_eq!(
+            SubcommandCli::try_parse_args(["acme"]),
+            Err(Error::MissingSubcommand { name: "command" }),
+        );
+        assert_eq!(
+            SubcommandCli::try_parse_args(["acme", "bogus"]),
+            Err(Error::UnknownCommand { token: b"bogus".to_vec() }),
+        );
+        assert_eq!(
+            SubcommandCli::try_parse_args(["acme", "conf"]),
+            Err(Error::UnknownCommand { token: b"conf".to_vec() }),
+        );
+        assert_eq!(
+            SubcommandCli::try_parse_args(["acme", "config"]),
+            Err(Error::MissingSubcommand { name: "command" }),
+        );
+        assert_eq!(
+            SubcommandCli::try_parse_args(["acme", "config", "bogus"]),
+            Err(Error::UnknownCommand { token: b"bogus".to_vec() }),
+        );
+    }
+
+    #[test]
+    fn sibling_commands_may_reuse_flag_spellings_in_separate_scopes() {
+        assert_eq!(
+            SiblingCli::try_parse_args(["start", "--force"]),
+            Ok(SiblingCli { command: SiblingCommand::Start(StartArgs { force: true }) }),
+        );
+        assert_eq!(
+            SiblingCli::try_parse_args(["stop", "--force"]),
+            Ok(SiblingCli { command: SiblingCommand::Stop(StopArgs { force: true }) }),
+        );
+    }
+
+    #[test]
+    fn selected_commands_own_all_following_parser_events() {
+        assert_eq!(
+            ReusedAcrossScopes::try_parse_args(["--value=root", "child", "--value=child"]),
+            Ok(ReusedAcrossScopes {
+                root: ReusedArgs { value: Some(String::from("root")) },
+                command: ReusedCommand::Child(ReusedArgs { value: Some(String::from("child")) }),
+            }),
+        );
+        assert_eq!(
+            SubcommandCli::try_parse_args(["acme", "add", "widget", "--verbose"]),
+            Err(Error::UnknownFlag { token: b"--verbose".to_vec() }),
+        );
+        assert_eq!(
+            SubcommandCli::try_parse_args(["acme", "--force", "add", "widget"]),
+            Err(Error::UnknownFlag { token: b"--force".to_vec() }),
+        );
+    }
+
+    #[test]
+    fn child_syntax_errors_precede_deferred_parent_cardinality_errors() {
+        assert_eq!(
+            SubcommandCli::try_parse_args(["--verbose", "--verbose", "acme", "add", "--unknown",]),
+            Err(Error::UnknownFlag { token: b"--unknown".to_vec() }),
+        );
+    }
+
+    #[test]
+    fn separator_stops_command_selection_in_the_current_scope() {
+        assert_eq!(
+            SubcommandCli::try_parse_args(["acme", "--", "add"]),
+            Err(Error::UnexpectedArgument { token: b"add".to_vec() }),
+        );
+        assert_eq!(
+            SubcommandCli::try_parse_args(["acme", "add", "--", "--force"]),
+            Ok(SubcommandCli {
+                verbose: false,
+                workspace: String::from("acme"),
+                command: RootCommand::Add(AddArgs {
+                    shared: CommandShared { dry_run: false },
+                    force: false,
+                    name: String::from("--force"),
+                }),
+            }),
         );
     }
 }

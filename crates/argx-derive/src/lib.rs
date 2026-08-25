@@ -35,11 +35,17 @@ pub fn derive_args(input: TokenStream) -> TokenStream {
 #[proc_macro_derive(Subcommand, attributes(argx))]
 pub fn derive_subcommand(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
-    codegen::subcommands(&input).unwrap_or_else(syn::Error::into_compile_error).into()
+    expand_subcommand(&input).unwrap_or_else(syn::Error::into_compile_error).into()
 }
 
 /// Builds the semantic model and emits one command declaration.
 fn expand_command(input: &DeriveInput, root: bool) -> syn::Result<proc_macro2::TokenStream> {
     let command = model::Command::from_input(input, root)?;
     Ok(codegen::command(&command))
+}
+
+/// Builds the semantic model and emits one subcommand enum.
+fn expand_subcommand(input: &DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
+    let subcommand = model::Subcommand::from_input(input)?;
+    Ok(codegen::subcommands(&subcommand))
 }

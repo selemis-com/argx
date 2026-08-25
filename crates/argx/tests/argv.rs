@@ -298,4 +298,105 @@ mod tests {
         assert_eq!(parser.next_event(), Some(Err(Error::UnexpectedArg { token: b"two" })));
         assert_eq!(parser.next_event(), None);
     }
+
+    #[test]
+    fn subcommands_switch_parser_scope_and_emit_selection_events() {
+        static CHILD_VALUE: Arg<'static> = Arg { key: 31, name: "value", ..Arg::REQUIRED };
+        static NESTED: Command<'static> = Command { name: "nested", key: 33, ..Command::EMPTY };
+        static CHILD: Command<'static> = Command {
+            name: "child",
+            args: &[&CHILD_VALUE],
+            subcommands: &[&NESTED],
+            key: 32,
+            ..Command::EMPTY
+        };
+        static ROOT_VALUE: Arg<'static> = Arg { key: 30, name: "root", ..Arg::REQUIRED };
+        static ROOT: Command<'static> = Command {
+            name: "root",
+            flags: &[&VERBOSE],
+            args: &[&ROOT_VALUE],
+            subcommands: &[&CHILD],
+            key: 29,
+        };
+
+        let argv = argv(&["--verbose", "root-value", "child", "child-value", "nested"]);
+        let mut parser = ArgvParser::new(&ROOT, &argv);
+        assert_eq!(parser.next_event(), Some(Ok(Event::Flag { flag: &VERBOSE, value: None })));
+        assert_eq!(
+            parser.next_event(),
+            Some(Ok(Event::Arg { arg: &ROOT_VALUE, value: b"root-value" }))
+        );
+        assert_eq!(parser.next_event(), Some(Ok(Event::Command { command: &CHILD })));
+        assert_eq!(
+            parser.next_event(),
+            Some(Ok(Event::Arg { arg: &CHILD_VALUE, value: b"child-value" }))
+        );
+        assert_eq!(parser.next_event(), Some(Ok(Event::Command { command: &NESTED })));
+        assert_eq!(parser.next_event(), None);
+    }
+
+    #[test]
+    fn subcommand_matching_is_exact_and_separator_disables_selection() {
+        static CHILD: Command<'static> = Command { name: "child", key: 41, ..Command::EMPTY };
+        static ROOT: Command<'static> =
+            Command { name: "root", subcommands: &[&CHILD], key: 40, ..Command::EMPTY };
+
+        let args = argv(&["chi"]);
+        let mut parser = ArgvParser::new(&ROOT, &args);
+        assert_eq!(parser.next_event(), Some(Err(Error::UnknownCommand { token: b"chi" })));
+        assert_eq!(parser.next_event(), None);
+
+        let args = argv(&["--", "child"]);
+        let mut parser = ArgvParser::new(&ROOT, &args);
+        assert_eq!(parser.next_event(), Some(Err(Error::UnexpectedArg { token: b"child" })));
+        assert_eq!(parser.next_event(), None);
+    }
+
+    #[test]
+    fn detached_flag_values_are_consumed_before_subcommand_matching() {
+        static VALUE: Flag<'static> =
+            Flag { key: 45, name: "value", longs: &["value"], ..Flag::VALUE };
+        static CHILD: Command<'static> = Command { name: "child", key: 47, ..Command::EMPTY };
+        static ROOT: Command<'static> = Command {
+            name: "root",
+            flags: &[&VALUE],
+            subcommands: &[&CHILD],
+            key: 46,
+            ..Command::EMPTY
+        };
+
+        let argv = argv(&["--value", "child", "child"]);
+        let mut parser = ArgvParser::new(&ROOT, &argv);
+        assert_eq!(
+            parser.next_event(),
+            Some(Ok(Event::Flag { flag: &VALUE, value: Some(b"child") })),
+        );
+        assert_eq!(parser.next_event(), Some(Ok(Event::Command { command: &CHILD })));
+        assert_eq!(parser.next_event(), None);
+    }
+
+    #[test]
+    fn exact_subcommand_names_take_precedence_over_positionals() {
+        static CHILD: Command<'static> = Command { name: "child", key: 51, ..Command::EMPTY };
+        static VALUE: Arg<'static> = Arg {
+            key: 52,
+            name: "value",
+            required: false,
+            variadic: true,
+            allow_negative_numbers: false,
+        };
+        static ROOT: Command<'static> = Command {
+            name: "root",
+            args: &[&VALUE],
+            subcommands: &[&CHILD],
+            key: 50,
+            ..Command::EMPTY
+        };
+
+        let argv = argv(&["word", "child"]);
+        let mut parser = ArgvParser::new(&ROOT, &argv);
+        assert_eq!(parser.next_event(), Some(Ok(Event::Arg { arg: &VALUE, value: b"word" })));
+        assert_eq!(parser.next_event(), Some(Ok(Event::Command { command: &CHILD })));
+        assert_eq!(parser.next_event(), None);
+    }
 }

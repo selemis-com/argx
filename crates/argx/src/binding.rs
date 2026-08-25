@@ -36,6 +36,7 @@ fn raw_error(error: RawError<'static, '_>) -> Error {
         RawError::MissingFlagValue { flag } => Error::MissingValue { name: flag.name },
         RawError::UnexpectedFlagValue { flag } => Error::UnexpectedValue { name: flag.name },
         RawError::UnexpectedArg { token } => Error::UnexpectedArgument { token: token.to_vec() },
+        RawError::UnknownCommand { token } => Error::UnknownCommand { token: token.to_vec() },
     }
 }
 

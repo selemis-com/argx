@@ -21,6 +21,11 @@ pub enum Event<'t, 'v> {
         /// Encoded value bound to the positional argument.
         value: &'v [u8],
     },
+    /// A nested command was selected.
+    Command {
+        /// Static metadata for the selected child command.
+        command: &'t Command<'t>,
+    },
 }
 
 /// A failure while binding command-line tokens to static argument metadata.
@@ -44,6 +49,11 @@ pub enum Error<'t, 'v> {
     },
     /// A word could not be assigned to any positional argument.
     UnexpectedArg {
+        /// Whole encoded token supplied by the caller.
+        token: &'v [u8],
+    },
+    /// A word was encountered where one of the current command's child commands was expected.
+    UnknownCommand {
         /// Whole encoded token supplied by the caller.
         token: &'v [u8],
     },
@@ -232,10 +242,22 @@ impl<'t, 'a, 'v> ArgvParser<'t, 'a, 'v> {
         Ok(value)
     }
 
-    /// Binds a word to the positional table entry currently in scope.
+    /// Selects an exact child command or binds a word to the next positional in scope.
     fn word(&mut self, token: &'v [u8]) -> Result<Event<'t, 'v>, Error<'t, 'v>> {
+        if !self.flags_stopped
+            && let Some(command) = self.find_subcommand(token)
+        {
+            self.command = command;
+            self.arg_position = 0;
+            return Ok(Event::Command { command });
+        }
+
         let Some(arg) = self.next_arg() else {
-            return Err(Error::UnexpectedArg { token });
+            return if !self.flags_stopped && !self.command.subcommands.is_empty() {
+                Err(Error::UnknownCommand { token })
+            } else {
+                Err(Error::UnexpectedArg { token })
+            };
         };
         if !arg.variadic {
             self.arg_position += 1;
@@ -246,6 +268,11 @@ impl<'t, 'a, 'v> ArgvParser<'t, 'a, 'v> {
     /// Returns the positional argument that would receive the next word.
     fn next_arg(&self) -> Option<&'t Arg<'t>> {
         self.command.args.get(self.arg_position).copied()
+    }
+
+    /// Looks up one child command by exact command-line spelling.
+    fn find_subcommand(&self, name: &[u8]) -> Option<&'t Command<'t>> {
+        self.command.subcommands.iter().copied().find(|command| command.name.as_bytes() == name)
     }
 
     /// Looks up a long flag spelling in declaration order.

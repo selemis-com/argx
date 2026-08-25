@@ -14,6 +14,7 @@ mod tests {
             ("renamed_dependency", "cli_args"),
             ("typed", "argx"),
             ("flatten", "argx"),
+            ("subcommands", "argx"),
         ] {
             let output = support::ui_output("pass", fixture, dependency);
             assert!(
@@ -132,5 +133,31 @@ mod tests {
                 >= 2,
             "missing tuple-struct diagnostics:\n{stderr}"
         );
+    }
+
+    #[test]
+    fn invalid_subcommand_models_are_rejected_before_codegen() {
+        let output = support::ui_output("fail", "invalid_subcommands", "argx");
+        assert!(!output.status.success());
+        let stderr = String::from_utf8(output.stderr).expect("UTF-8 compiler diagnostics");
+        for expected in [
+            "duplicate subcommand `same`",
+            "subcommand name must be non-empty",
+            "subcommand variants support only unit variants or one unnamed Args payload",
+            "subcommand tuple variants must contain exactly one Args payload",
+            "subcommand payload must be one direct Args type",
+            "unsupported Argx subcommand payload attribute",
+            "FlattenArgs",
+            "`subcommand` does not support `Option<T>`",
+            "`subcommand` does not support collection wrappers",
+            "`subcommand` cannot be combined with flag or value attributes",
+            "`subcommand` takes no value",
+            "`flatten` and `subcommand` cannot be combined",
+            "a command can contain only one `subcommand` field",
+            "`subcommand` cannot depend on the containing struct's generic parameters",
+            "subcommand payload cannot depend on the enum's generic parameters",
+        ] {
+            assert!(stderr.contains(expected), "missing diagnostic: {expected}\n{stderr}");
+        }
     }
 }
