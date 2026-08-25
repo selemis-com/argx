@@ -99,6 +99,8 @@ pub struct Flag<'a> {
     pub takes_value: bool,
     /// Whether this flag must occur at least once.
     pub required: bool,
+    /// Whether the final value is required when the configured environment variable is unset.
+    pub required_if_env_unset: bool,
     /// Whether a detached value may itself be flag-like.
     pub allow_hyphen_values: bool,
     /// Whether a detached negative number may be consumed while other flag-like values are
@@ -119,6 +121,7 @@ impl Flag<'static> {
         env: None,
         takes_value: false,
         required: false,
+        required_if_env_unset: false,
         allow_hyphen_values: false,
         allow_negative_numbers: false,
     };

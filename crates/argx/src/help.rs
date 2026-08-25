@@ -149,6 +149,9 @@ fn flag_help(flag: &Flag<'_>) -> String {
         }
         help.push_str("[env: ");
         help.push_str(env);
+        if flag.required_if_env_unset {
+            help.push_str("; required if unset");
+        }
         help.push(']');
     }
     help

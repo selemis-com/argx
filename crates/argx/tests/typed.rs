@@ -1047,7 +1047,7 @@ Options:
 
         let required = RequiredEnvironmentCli::render_help();
         assert!(!required.contains("Usage: required-environment-cli --port"));
-        assert!(required.contains("[env: ARGX_TEST_REQUIRED_PORT]"));
+        assert!(required.contains("[env: ARGX_TEST_REQUIRED_PORT; required if unset]"));
     }
 
     #[test]

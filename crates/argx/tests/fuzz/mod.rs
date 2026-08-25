@@ -774,6 +774,7 @@ fn production_parse(command: &CommandSpec, argv: &[OsString]) -> ParseRun {
             env: None,
             takes_value: flag.takes_value,
             required: false,
+            required_if_env_unset: false,
             allow_hyphen_values: flag.allow_hyphen_values,
             allow_negative_numbers: flag.allow_negative_numbers,
         })

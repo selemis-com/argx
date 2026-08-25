@@ -79,6 +79,9 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
         let required = argument.shape == model::Shape::Required
             && argument.env.is_none()
             && !argument.has_default;
+        let required_if_env_unset = argument.shape == model::Shape::Required
+            && argument.env.is_some()
+            && !argument.has_default;
         let allow_hyphen_values = argument.allow_hyphen_values;
         let allow_negative_numbers = argument.allow_negative_numbers;
         quote! {
@@ -93,6 +96,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                 env: #env,
                 takes_value: #takes_value,
                 required: #required,
+                required_if_env_unset: #required_if_env_unset,
                 allow_hyphen_values: #allow_hyphen_values,
                 allow_negative_numbers: #allow_negative_numbers,
             };
