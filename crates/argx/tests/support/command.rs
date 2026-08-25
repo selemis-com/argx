@@ -2,7 +2,7 @@
 
 use std::{path::PathBuf, sync::OnceLock};
 
-use snapbox::{Data, cmd::Command};
+use snapbox::cmd::Command;
 
 /// Compiled path for the basic public example.
 static BASIC_EXAMPLE: OnceLock<PathBuf> = OnceLock::new();
@@ -17,14 +17,6 @@ pub(crate) fn example_command(name: &str) -> Command {
         other => panic!("unsupported CLI-test example `{other}`"),
     };
     Command::new(binary).env("NO_COLOR", "1")
-}
-
-/// Loads one checked-in CLI output fixture.
-pub(crate) fn cli_fixture(name: &str) -> Data {
-    Data::read_from(
-        &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/cli").join(name),
-        None,
-    )
 }
 
 /// Compiles one public example for executable integration testing.

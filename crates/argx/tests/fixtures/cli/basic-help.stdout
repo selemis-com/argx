@@ -1,6 +1,0 @@
-Minimal command with no declared arguments.
-
-Usage: cli [OPTIONS]
-
-Options:
-  -h, --help  Print help

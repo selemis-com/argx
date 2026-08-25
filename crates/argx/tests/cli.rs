@@ -19,7 +19,12 @@ mod tests {
             .assert()
             .failure()
             .stdout_eq("")
-            .stderr_eq(support::cli_fixture("basic-unknown.stderr"));
+            .stderr_eq(snapbox::str![[r#"
+error: unknown flag `--unknown`
+
+For more information, try '--help'.
+
+"#]]);
     }
 
     #[test]
@@ -28,7 +33,15 @@ mod tests {
             .arg("--help")
             .assert()
             .success()
-            .stdout_eq(support::cli_fixture("basic-help.stdout"))
+            .stdout_eq(snapbox::str![[r#"
+Minimal command with no declared arguments.
+
+Usage: cli [OPTIONS]
+
+Options:
+  -h, --help  Print help
+
+"#]])
             .stderr_eq("");
     }
 
@@ -38,13 +51,38 @@ mod tests {
             .arg("--help")
             .assert()
             .success()
-            .stdout_eq(support::cli_fixture("subcommands-help.stdout"))
+            .stdout_eq(snapbox::str![[r#"
+Root command.
+
+Usage: cli [OPTIONS] <COMMAND>
+
+Commands:
+  add     Adds one value.
+  remove  Removes one value using the same argument shape.
+  status  Shows status without additional arguments.
+
+Options:
+  -h, --help  Print help
+
+"#]])
             .stderr_eq("");
         support::example_command("subcommands")
             .args(["add", "--help"])
             .assert()
             .success()
-            .stdout_eq(support::cli_fixture("subcommands-add-help.stdout"))
+            .stdout_eq(snapbox::str![[r#"
+Adds one value.
+
+Usage: cli add [OPTIONS] <VALUE>
+
+Arguments:
+  <VALUE>  Value to add.
+
+Options:
+  --force     Forces the operation.
+  -h, --help  Print help
+
+"#]])
             .stderr_eq("");
     }
 }
