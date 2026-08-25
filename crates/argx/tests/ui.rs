@@ -37,4 +37,49 @@ mod tests {
             assert!(stderr.contains(expected), "missing diagnostic: {expected}\n{stderr}");
         }
     }
+
+    #[test]
+    fn invalid_attributes_report_contract_errors() {
+        let output = support::ui_output("fail", "invalid_attributes", "argx");
+        assert!(!output.status.success());
+        let stderr = String::from_utf8(output.stderr).expect("UTF-8 compiler diagnostics");
+        for expected in [
+            "unsupported Argx command attribute",
+            "unsupported Argx field attribute",
+            "short flag must be one visible ASCII character other than `-` or `=`",
+            "unsupported Argx subcommand attribute",
+        ] {
+            assert!(stderr.contains(expected), "missing diagnostic: {expected}\n{stderr}");
+        }
+    }
+
+    #[test]
+    fn invalid_command_models_are_rejected_before_codegen() {
+        let output = support::ui_output("fail", "invalid_command_model", "argx");
+        assert!(!output.status.success());
+        let stderr = String::from_utf8(output.stderr).expect("UTF-8 compiler diagnostics");
+        for expected in [
+            "duplicate long flag `--same`",
+            "duplicate short flag `-x`",
+            "long flag must be non-empty, must not start with `-`, and cannot contain `=`, whitespace, or controls",
+            "required positional arguments cannot follow optional positional arguments",
+            "variadic positional argument must be the last positional argument",
+        ] {
+            assert!(stderr.contains(expected), "missing diagnostic: {expected}\n{stderr}");
+        }
+    }
+
+    #[test]
+    fn tuple_structs_are_rejected_before_codegen() {
+        let output = support::ui_output("fail", "tuple_structs", "argx");
+        assert!(!output.status.success());
+        let stderr = String::from_utf8(output.stderr).expect("UTF-8 compiler diagnostics");
+        assert!(
+            stderr
+                .matches("Parser and Args do not support tuple structs; use named fields")
+                .count()
+                >= 2,
+            "missing tuple-struct diagnostics:\n{stderr}"
+        );
+    }
 }
