@@ -941,6 +941,10 @@ fn reference_short(
 ) -> Vec<Trace> {
     let mut remaining = &token[1..];
     while let Some((&short, tail)) = remaining.split_first() {
+        if short == b'h' {
+            remaining = tail;
+            continue;
+        }
         match find_short(command, short) {
             None => return vec![Trace::Error(ErrorTrace::UnknownFlag(token.to_vec()))],
             Some(flag) if flag.takes_value => break,
@@ -951,6 +955,10 @@ fn reference_short(
     let mut trace = Vec::new();
     remaining = &token[1..];
     while let Some((&short, tail)) = remaining.split_first() {
+        if short == b'h' {
+            trace.push(Trace::Error(ErrorTrace::DisplayHelp));
+            break;
+        }
         let flag = find_short(command, short).expect("short bundle was preflighted");
         if !flag.takes_value {
             trace.push(Trace::Flag { key: flag.key, value: None });

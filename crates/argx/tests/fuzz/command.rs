@@ -7,8 +7,8 @@ use proptest::{collection, prelude::*, test_runner::TestRunner};
 
 use super::{os_string, proptest_config};
 use crate::tests::{
-    ArgvDisplay, Coverage, Trace, TraceDisplay, env_flag, passthrough_parse, production_parse,
-    reference_parse, render_argv, scenario_strategy,
+    ArgvDisplay, CommandSpec, Coverage, FlagSpec, Trace, TraceDisplay, env_flag, passthrough_parse,
+    production_parse, reference_parse, render_argv, scenario_strategy,
 };
 
 /// Token classes used by the nested-command raw parser property.
@@ -302,6 +302,27 @@ fn reference_tree_parse(tokens: &[TreeToken]) -> Vec<TreeTrace> {
         break;
     }
     trace
+}
+
+/// Keeps the reference grammar aligned with bundled built-in help semantics.
+#[test]
+fn bundled_help_matches_reference_grammar() {
+    let command = CommandSpec {
+        flags: vec![FlagSpec {
+            key: 0x1000,
+            name: "alpha".to_owned(),
+            longs: Vec::new(),
+            shorts: vec![b'a'],
+            takes_value: false,
+            allow_hyphen_values: false,
+            allow_negative_numbers: false,
+        }],
+        args: Vec::new(),
+    };
+    let encoded = vec![b"-ah".to_vec()];
+    let argv = encoded.iter().map(|token| os_string(token)).collect::<Vec<_>>();
+
+    assert_eq!(production_parse(&command, &argv).trace, reference_parse(&command, &encoded));
 }
 
 /// Fuzzes generated valid command schemas and argv against the reference grammar.
