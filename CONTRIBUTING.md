@@ -66,6 +66,12 @@ Pull requests may be asked to change substantially or be declined if the propose
 
 ## Compatibility
 
+`argx` supports Linux and macOS natively. Windows development and execution are
+supported through the Windows Subsystem for Linux (WSL); native Windows targets
+are not supported. Changes should remain portable across the supported Unix
+platforms and avoid Linux-specific assumptions unless they are explicitly
+required and guarded.
+
 `argx` is currently pre-1.0. Breaking changes may still be made when they materially improve the API.
 
 ## Security

@@ -15,6 +15,11 @@
   <a href="#license"><picture><source media="(prefers-color-scheme: dark)" srcset="https://img.shields.io/crates/l/argx?colorA=21262d&colorB=21262d&style=flat"><img src="https://img.shields.io/crates/l/argx?colorA=f6f8fa&colorB=f6f8fa&style=flat" alt="MIT OR Apache-2.0"></picture></a>
 </p>
 
+## Support
+
+Argx supports Linux and macOS natively. Windows is supported through the
+Windows Subsystem for Linux (WSL); native Windows targets are not supported.
+
 ## MSRV
 
 <!--

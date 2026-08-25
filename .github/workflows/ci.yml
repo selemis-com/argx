@@ -23,7 +23,11 @@ concurrency:
 
 jobs:
   msrv:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     permissions:
       contents: read
@@ -52,7 +56,11 @@ jobs:
         run: cargo +1.95 check --workspace --all-targets --all-features --locked
 
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     permissions:
       contents: read
@@ -86,7 +94,11 @@ jobs:
         run: make test-unit && make test-examples
 
   test-fuzz:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     permissions:
       contents: read
