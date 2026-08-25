@@ -1192,6 +1192,205 @@ mod tests {
         value: String,
     }
 
+    /// Typed named OS value used by the Unix attached-value preservation property.
+    #[cfg(all(feature = "derive", unix))]
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    struct TypedPathFlag {
+        /// Operating-system-backed named value.
+        #[argx(long)]
+        path: PathBuf,
+    }
+
+    /// Typed named UTF-8 value used by the Unix attached-value rejection property.
+    #[cfg(all(feature = "derive", unix))]
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    struct TypedTextFlag {
+        /// UTF-8 named value.
+        #[argx(long)]
+        value: String,
+    }
+
+    /// Aggregate measurements for the typed round-trip campaign.
+    #[cfg(feature = "derive")]
+    #[derive(Debug, Default)]
+    struct TypedRoundTripCoverage {
+        /// Arguments-only, complete-argv, and non-ASCII argv0 case counts.
+        entry_points: [usize; 3],
+        /// False/true switches and absent/present optional scalar counts.
+        scalars: [usize; 4],
+        /// Empty/items counts for `Vec`, `Option<Vec>`, and trailing positionals.
+        collections: [usize; 8],
+        /// Total, empty, non-ASCII, and Unicode-scalar string counts.
+        strings: [usize; 4],
+    }
+
+    #[cfg(feature = "derive")]
+    impl TypedRoundTripCoverage {
+        /// Records one successfully verified round-trip case.
+        fn record(&mut self, value: &TypedRoundTrip, argv0: &str) {
+            self.entry_points[0] += 1;
+            self.entry_points[1] += 1;
+            if !argv0.is_ascii() {
+                self.entry_points[2] += 1;
+            }
+            if value.verbose {
+                self.scalars[1] += 1;
+            } else {
+                self.scalars[0] += 1;
+            }
+            if value.number.is_some() {
+                self.scalars[3] += 1;
+            } else {
+                self.scalars[2] += 1;
+            }
+
+            if value.value.is_empty() {
+                self.collections[0] += 1;
+            }
+            self.collections[1] += value.value.len();
+            match &value.optional_value {
+                None => self.collections[2] += 1,
+                Some(items) => {
+                    self.collections[3] += 1;
+                    self.collections[4] += items.iter().filter(|item| item.is_empty()).count();
+                    self.collections[5] += items.len();
+                }
+            }
+            if value.rest.is_empty() {
+                self.collections[6] += 1;
+            }
+            self.collections[7] += value.rest.len();
+
+            self.record_string(&value.input);
+            for item in &value.value {
+                self.record_string(item);
+            }
+            if let Some(items) = &value.optional_value {
+                for item in items {
+                    self.record_string(item);
+                }
+            }
+            for item in &value.rest {
+                self.record_string(item);
+            }
+        }
+
+        /// Records one generated typed UTF-8 value.
+        fn record_string(&mut self, value: &str) {
+            self.strings[0] += 1;
+            if value.is_empty() {
+                self.strings[1] += 1;
+            }
+            if !value.is_ascii() {
+                self.strings[2] += 1;
+            }
+            self.strings[3] += value.chars().count();
+        }
+    }
+
+    /// Semantic class deliberately generated for scalar conversion fuzzing.
+    #[cfg(feature = "derive")]
+    #[derive(Debug, Clone, Copy)]
+    enum ScalarTextKind {
+        /// Text that parses successfully as `u16`.
+        Valid,
+        /// Unsigned decimal text above the `u16` range.
+        Overflow,
+        /// Negative decimal text, which is invalid for `u16`.
+        Negative,
+        /// Empty text.
+        Empty,
+        /// Arbitrary non-numeric Unicode text.
+        NonNumeric,
+    }
+
+    #[cfg(feature = "derive")]
+    impl ScalarTextKind {
+        /// Number of semantic classes represented in coverage counters.
+        const COUNT: usize = 5;
+
+        /// Stable coverage-counter index for this scalar class.
+        const fn index(self) -> usize {
+            match self {
+                Self::Valid => 0,
+                Self::Overflow => 1,
+                Self::Negative => 2,
+                Self::Empty => 3,
+                Self::NonNumeric => 4,
+            }
+        }
+    }
+
+    /// One generated scalar input paired with its intended semantic class.
+    #[cfg(feature = "derive")]
+    #[derive(Debug, Clone)]
+    struct ScalarText {
+        /// Generated text supplied to the typed parser.
+        value: String,
+        /// Semantic class selected by the generator.
+        kind: ScalarTextKind,
+    }
+
+    /// Aggregate measurements for scalar conversion and precedence fuzzing.
+    #[cfg(feature = "derive")]
+    #[derive(Debug, Default)]
+    struct TypedScalarCoverage {
+        /// Counts for each generated first-value semantic class.
+        classes: [usize; ScalarTextKind::COUNT],
+        /// Parsed and invalid single-value outcomes.
+        outcomes: [usize; 2],
+        /// Duplicate-over-conversion and syntax-over-duplicate checks.
+        precedence: [usize; 2],
+        /// First values containing non-ASCII Unicode.
+        non_ascii_values: usize,
+    }
+
+    #[cfg(feature = "derive")]
+    impl TypedScalarCoverage {
+        /// Records one successfully verified scalar-precedence case.
+        fn record(&mut self, first: &ScalarText, parsed: bool) {
+            self.classes[first.kind.index()] += 1;
+            if parsed {
+                self.outcomes[0] += 1;
+            } else {
+                self.outcomes[1] += 1;
+            }
+            self.precedence[0] += 1;
+            self.precedence[1] += 1;
+            if !first.value.is_ascii() {
+                self.non_ascii_values += 1;
+            }
+        }
+    }
+
+    /// Aggregate measurements for Unix non-UTF-8 typed binding fuzzing.
+    #[cfg(all(feature = "derive", unix))]
+    #[derive(Debug, Default)]
+    struct TypedOsCoverage {
+        /// Total bytes, high-bit bytes, and values containing NUL.
+        generated: [usize; 3],
+        /// Positional and attached `PathBuf` round trips.
+        path_round_trips: [usize; 2],
+        /// Positional and attached `String` rejections.
+        text_rejections: [usize; 2],
+    }
+
+    #[cfg(all(feature = "derive", unix))]
+    impl TypedOsCoverage {
+        /// Records one successfully verified non-UTF-8 case.
+        fn record(&mut self, bytes: &[u8]) {
+            self.generated[0] += bytes.len();
+            self.generated[1] += bytes.iter().filter(|byte| **byte >= 0x80).count();
+            if bytes.contains(&0) {
+                self.generated[2] += 1;
+            }
+            self.path_round_trips[0] += 1;
+            self.path_round_trips[1] += 1;
+            self.text_rejections[0] += 1;
+            self.text_rejections[1] += 1;
+        }
+    }
+
     /// Generates bounded arbitrary Unicode strings for typed-binding campaigns.
     #[cfg(feature = "derive")]
     fn typed_string_strategy() -> impl Strategy<Value = String> {
@@ -1247,6 +1446,39 @@ mod tests {
         argv
     }
 
+    /// Generates scalar text across meaningful `u16` conversion classes.
+    #[cfg(feature = "derive")]
+    fn scalar_text_strategy() -> impl Strategy<Value = ScalarText> {
+        prop_oneof![
+            4 => any::<u16>().prop_map(|value| ScalarText {
+                value: value.to_string(),
+                kind: ScalarTextKind::Valid,
+            }),
+            2 => (65_536_u32..=1_065_535_u32).prop_map(|value| ScalarText {
+                value: value.to_string(),
+                kind: ScalarTextKind::Overflow,
+            }),
+            2 => any::<u16>().prop_map(|value| {
+                let magnitude = u32::from(value) + 1;
+                ScalarText {
+                    value: format!("-{magnitude}"),
+                    kind: ScalarTextKind::Negative,
+                }
+            }),
+            1 => Just(ScalarText { value: String::new(), kind: ScalarTextKind::Empty }),
+            4 => (
+                any::<char>().prop_filter("first character must be non-numeric", |character| {
+                    !character.is_ascii_digit() && !matches!(*character, '-' | '+')
+                }),
+                collection::vec(any::<char>(), 0..=23),
+            )
+                .prop_map(|(first, rest)| {
+                    let value = std::iter::once(first).chain(rest).collect::<String>();
+                    ScalarText { value, kind: ScalarTextKind::NonNumeric }
+                }),
+        ]
+    }
+
     /// Generates encoded Unix values that are not valid UTF-8.
     #[cfg(all(feature = "derive", unix))]
     fn invalid_utf8_strategy() -> impl Strategy<Value = Vec<u8>> {
@@ -1263,6 +1495,7 @@ mod tests {
         let strategy = (typed_round_trip_strategy(), typed_string_strategy());
         let config = proptest_config("typed_binding_round_trips_generated_values");
         let cases = config.cases;
+        let coverage = RefCell::new(TypedRoundTripCoverage::default());
         let mut runner = TestRunner::new(config);
 
         let result = runner.run(&strategy, |(expected, argv0)| {
@@ -1271,43 +1504,83 @@ mod tests {
             prop_assert_eq!(parsed, Ok(expected.clone()));
 
             let mut complete = Vec::with_capacity(argv.len() + 1);
-            complete.push(OsString::from(argv0));
+            complete.push(OsString::from(argv0.as_str()));
             complete.extend(argv);
             let parsed = TypedRoundTrip::try_parse_from(complete);
-            prop_assert_eq!(parsed, Ok(expected));
+            prop_assert_eq!(parsed, Ok(expected.clone()));
+            coverage.borrow_mut().record(&expected, &argv0);
             Ok(())
         });
         if let Err(error) = result {
             panic!("Argx typed round-trip property failed: {error}");
         }
+
+        let coverage = coverage.into_inner();
         eprintln!("[typed fuzz] PASS: {cases} typed round-trip cases");
+        eprintln!(
+            "[typed fuzz] entry points: args={} | argv0={} | non_ascii_argv0={}",
+            coverage.entry_points[0], coverage.entry_points[1], coverage.entry_points[2],
+        );
+        eprintln!(
+            "[typed fuzz] scalars: bool_true={} | bool_false={} | option_i64_some={} | option_i64_none={}",
+            coverage.scalars[1], coverage.scalars[0], coverage.scalars[3], coverage.scalars[2],
+        );
+        eprintln!(
+            "[typed fuzz] collections: vec_empty={} | vec_items={} | option_vec_some={} | option_vec_none={} | option_vec_empty_items={} | option_vec_items={} | rest_empty={} | rest_items={}",
+            coverage.collections[0],
+            coverage.collections[1],
+            coverage.collections[3],
+            coverage.collections[2],
+            coverage.collections[4],
+            coverage.collections[5],
+            coverage.collections[6],
+            coverage.collections[7],
+        );
+        eprintln!(
+            "[typed fuzz] strings: values={} | empty={} | non_ascii={} | unicode_scalars={}",
+            coverage.strings[0],
+            coverage.strings[1],
+            coverage.strings[2],
+            coverage.strings[3],
+        );
     }
 
     /// Fuzzes deferred duplicate checking and raw syntax error precedence.
     #[cfg(feature = "derive")]
     #[test]
     fn typed_scalar_errors_follow_binding_precedence() {
-        let strategy = (typed_string_strategy(), typed_string_strategy());
+        let strategy = (scalar_text_strategy(), scalar_text_strategy());
         let config = proptest_config("typed_scalar_errors_follow_binding_precedence");
         let cases = config.cases;
+        let coverage = RefCell::new(TypedScalarCoverage::default());
         let mut runner = TestRunner::new(config);
 
         let result = runner.run(&strategy, |(first, second)| {
-            let first_arg = OsString::from(format!("--port={first}"));
-            let second_arg = OsString::from(format!("--port={second}"));
+            let first_value = first.value.as_str();
+            let second_value = second.value.as_str();
+            let first_arg = OsString::from(format!("--port={first_value}"));
+            let second_arg = OsString::from(format!("--port={second_value}"));
 
             let single = TypedScalar::try_parse_args([first_arg.clone()]);
-            match first.parse::<u16>() {
-                Ok(port) => prop_assert_eq!(single, Ok(TypedScalar { port: Some(port) })),
-                Err(_) => match single {
-                    Err(TypedError::InvalidValue(error)) => {
-                        prop_assert_eq!(error.name, "port");
-                        prop_assert_eq!(error.value.as_str(), first.as_str());
-                        prop_assert!(!error.reason.is_empty());
+            let parsed = match first_value.parse::<u16>() {
+                Ok(port) => {
+                    prop_assert_eq!(single, Ok(TypedScalar { port: Some(port) }));
+                    true
+                }
+                Err(_) => {
+                    match single {
+                        Err(TypedError::InvalidValue(error)) => {
+                            prop_assert_eq!(error.name, "port");
+                            prop_assert_eq!(error.value.as_str(), first_value);
+                            prop_assert!(!error.reason.is_empty());
+                        }
+                        other => {
+                            prop_assert!(false, "unexpected scalar conversion result: {other:?}")
+                        }
                     }
-                    other => prop_assert!(false, "unexpected scalar conversion result: {other:?}"),
-                },
-            }
+                    false
+                }
+            };
 
             prop_assert_eq!(
                 TypedScalar::try_parse_args([first_arg.clone(), second_arg.clone()]),
@@ -1317,12 +1590,32 @@ mod tests {
                 TypedScalar::try_parse_args([first_arg, second_arg, OsString::from("--unknown")]),
                 Err(TypedError::UnknownFlag { token: b"--unknown".to_vec() }),
             );
+            coverage.borrow_mut().record(&first, parsed);
             Ok(())
         });
         if let Err(error) = result {
             panic!("Argx typed error-precedence property failed: {error}");
         }
+
+        let coverage = coverage.into_inner();
         eprintln!("[typed fuzz] PASS: {cases} typed scalar/error-precedence cases");
+        eprintln!(
+            "[typed fuzz] first-value classes: valid_u16={} | overflow={} | negative={} | empty={} | non_numeric={} | non_ascii={}",
+            coverage.classes[0],
+            coverage.classes[1],
+            coverage.classes[2],
+            coverage.classes[3],
+            coverage.classes[4],
+            coverage.non_ascii_values,
+        );
+        eprintln!(
+            "[typed fuzz] single outcomes: parsed={} | invalid_value={}",
+            coverage.outcomes[0], coverage.outcomes[1],
+        );
+        eprintln!(
+            "[typed fuzz] precedence checks: duplicate_over_conversion={} | raw_syntax_over_duplicate={}",
+            coverage.precedence[0], coverage.precedence[1],
+        );
     }
 
     /// Fuzzes lossless OS-backed binding and strict UTF-8 rejection on Unix.
@@ -1334,6 +1627,7 @@ mod tests {
         let strategy = invalid_utf8_strategy();
         let config = proptest_config("typed_binding_preserves_non_utf8_os_values");
         let cases = config.cases;
+        let coverage = RefCell::new(TypedOsCoverage::default());
         let mut runner = TestRunner::new(config);
         let result = runner.run(&strategy, |bytes| {
             let raw = OsString::from_vec(bytes.clone());
@@ -1343,13 +1637,41 @@ mod tests {
 
             prop_assert_eq!(
                 TypedText::try_parse_args([OsString::from("--"), raw]),
-                Err(TypedError::InvalidUtf8 { name: "value", value: bytes }),
+                Err(TypedError::InvalidUtf8 { name: "value", value: bytes.clone() }),
             );
+
+            let mut attached_path = b"--path=".to_vec();
+            attached_path.extend_from_slice(&bytes);
+            let parsed = TypedPathFlag::try_parse_args([OsString::from_vec(attached_path)]);
+            let parsed = parsed.expect("attached arbitrary Unix OS bytes must bind to PathBuf");
+            prop_assert_eq!(parsed.path.as_os_str().as_bytes(), bytes.as_slice());
+
+            let mut attached_text = b"--value=".to_vec();
+            attached_text.extend_from_slice(&bytes);
+            prop_assert_eq!(
+                TypedTextFlag::try_parse_args([OsString::from_vec(attached_text)]),
+                Err(TypedError::InvalidUtf8 { name: "value", value: bytes.clone() }),
+            );
+            coverage.borrow_mut().record(&bytes);
             Ok(())
         });
         if let Err(error) = result {
             panic!("Argx typed non-UTF-8 property failed: {error}");
         }
+
+        let coverage = coverage.into_inner();
         eprintln!("[typed fuzz] PASS: {cases} non-UTF-8 typed binding cases");
+        eprintln!(
+            "[typed fuzz] generated bytes: total={} | high_bit={} | values_with_nul={}",
+            coverage.generated[0], coverage.generated[1], coverage.generated[2],
+        );
+        eprintln!(
+            "[typed fuzz] PathBuf round-trips: positional={} | attached={}",
+            coverage.path_round_trips[0], coverage.path_round_trips[1],
+        );
+        eprintln!(
+            "[typed fuzz] String rejections: positional={} | attached={}",
+            coverage.text_rejections[0], coverage.text_rejections[1],
+        );
     }
 }
