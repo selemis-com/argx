@@ -14,6 +14,8 @@ pub use compose::{
 };
 pub use model::{Action, ActionKind, Arg, Command, Flag, HELP_ACTION, Key, key_base};
 pub use traits::{CommandArgs, Subcommands};
-pub use value::{os_value, os_values, parsed_value, parsed_values, text_value, text_values};
+pub use value::{
+    RawValue, os_value, os_values, parsed_value, parsed_values, text_value, text_values,
+};
 
 pub use crate::argv::{ArgvParser, Error, Event};

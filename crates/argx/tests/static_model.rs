@@ -13,7 +13,7 @@ mod tests {
         #[argx(short, long, global)]
         verbose: bool,
         /// Documentation overridden by explicit field help.
-        #[argx(long = "output", help = "Optional output path")]
+        #[argx(long = "output", env = "ARGX_OUTPUT", help = "Optional output path")]
         output: Option<String>,
         /// Input value to process.
         input: String,
@@ -157,6 +157,7 @@ mod tests {
         assert!(!command.flags[0].allow_negative_numbers);
 
         assert_eq!(command.flags[1].name, "output");
+        assert_eq!(command.flags[1].env, Some("ARGX_OUTPUT"));
         assert_eq!(command.flags[1].longs, ["output"]);
         assert!(command.flags[1].shorts.is_empty());
         assert_eq!(command.flags[1].help, Some("Optional output path"));

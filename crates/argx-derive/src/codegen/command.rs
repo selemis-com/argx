@@ -73,8 +73,11 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
         let name = &field.binding.name;
         let help = option_str(argument.help.as_deref());
         let global = argument.global;
+        let env = option_str(argument.env.as_deref());
         let takes_value = !field.is_switch();
-        let required = argument.shape == model::Shape::Required && !argument.has_default;
+        let required = argument.shape == model::Shape::Required
+            && argument.env.is_none()
+            && !argument.has_default;
         let allow_hyphen_values = argument.allow_hyphen_values;
         let allow_negative_numbers = argument.allow_negative_numbers;
         quote! {
@@ -85,6 +88,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                 longs: &[#(#longs),*],
                 shorts: &[#(#shorts),*],
                 global: #global,
+                env: #env,
                 takes_value: #takes_value,
                 required: #required,
                 allow_hyphen_values: #allow_hyphen_values,
@@ -134,7 +138,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
             quote!(::std::vec::Vec<::std::vec::Vec<u8>>)
         }
         _ if field.is_switch() => quote!((bool, bool)),
-        _ => quote!((::std::option::Option<::std::vec::Vec<u8>>, bool)),
+        _ => quote!((::std::option::Option<#facade::__private::RawValue>, bool)),
     });
     let partial_start = command.fields.iter().map(|field| match &field.semantics {
         model::FieldSemantics::Flatten => {
@@ -157,11 +161,11 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
 
     let flag_apply = flags.iter().enumerate().map(|(index, (field_index, field))| {
         let key = key::ident("FLAG", Some(index));
-        apply_arm(field, *field_index, &key, true)
+        apply_arm(field, *field_index, &key, true, &facade)
     });
     let arg_apply = args.iter().enumerate().map(|(index, (field_index, field))| {
         let key = key::ident("ARG", Some(index));
-        apply_arm(field, *field_index, &key, false)
+        apply_arm(field, *field_index, &key, false, &facade)
     });
     let flattened_apply = command.fields.iter().enumerate().filter_map(|(field_index, field)| {
         if !matches!(&field.semantics, model::FieldSemantics::Flatten) {
@@ -203,6 +207,51 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
             }
         }
     });
+
+    let own_env_apply = command.fields.iter().enumerate().filter_map(|(field_index, field)| {
+        let argument = field.argument()?;
+        let env = argument.env.as_deref()?;
+        let slot = syn::Index::from(field_index);
+        Some(quote! {
+            if partial.#slot.0.is_none() {
+                if let ::std::option::Option::Some(value) = ::std::env::var_os(#env) {
+                    partial.#slot.0 = ::std::option::Option::Some(
+                        #facade::__private::RawValue::Environment(value),
+                    );
+                }
+            }
+        })
+    });
+    let flattened_env_apply =
+        command.fields.iter().enumerate().filter_map(|(field_index, field)| {
+            if !matches!(&field.semantics, model::FieldSemantics::Flatten) {
+                return None;
+            }
+            let ty = &field.binding.ty;
+            let slot = syn::Index::from(field_index);
+            Some(quote! {
+                <#ty as #facade::__private::CommandArgs>::apply_env(&mut partial.#slot);
+            })
+        });
+    let subcommand_env_apply = subcommand.map(|(field_index, field)| {
+        let ty = &field.binding.ty;
+        let slot = syn::Index::from(field_index);
+        quote! {
+            <#ty as #facade::__private::Subcommands>::apply_env(&mut partial.#slot);
+        }
+    });
+
+    let env_partial = if command.fields.iter().any(|field| {
+        field.argument().is_some_and(|argument| argument.env.is_some())
+            || matches!(
+                &field.semantics,
+                model::FieldSemantics::Flatten | model::FieldSemantics::Subcommand
+            )
+    }) {
+        quote!(partial)
+    } else {
+        quote!(_partial)
+    };
 
     let occurrence_checks = command
         .fields
@@ -273,15 +322,11 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                     )?;
                 })
             }
-            _ if field.is_switch()
-                || !field.argument().is_some_and(|argument| {
-                    matches!(argument.shape, model::Shape::Bool | model::Shape::Required)
-                        && !argument.has_default
-                }) =>
+            model::FieldSemantics::Argument(argument)
+                if !field.is_switch()
+                    && matches!(argument.shape, model::Shape::Bool | model::Shape::Required)
+                    && !argument.has_default =>
             {
-                None
-            }
-            _ => {
                 let slot = syn::Index::from(field_index);
                 let name = &field.binding.name;
                 Some(quote! {
@@ -292,6 +337,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                     }
                 })
             }
+            model::FieldSemantics::Argument(_) => None,
         })
         .collect::<Vec<_>>();
 
@@ -442,6 +488,12 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                     #(#flattened_apply)*
                     #subcommand_apply
                     false
+                }
+
+                fn apply_env(#env_partial: &mut Self::Partial) {
+                    #(#own_env_apply)*
+                    #(#flattened_env_apply)*
+                    #subcommand_env_apply
                 }
 
                 fn check_occurrences(
@@ -641,6 +693,7 @@ fn apply_arm(
     field_index: usize,
     key: &proc_macro2::Ident,
     flag: bool,
+    facade: &TokenStream,
 ) -> TokenStream {
     let slot = syn::Index::from(field_index);
 
@@ -682,7 +735,9 @@ fn apply_arm(
                 if partial.#slot.0.is_some() {
                     partial.#slot.1 = true;
                 } else {
-                    partial.#slot.0 = ::std::option::Option::Some(value.to_vec());
+                    partial.#slot.0 = ::std::option::Option::Some(
+                        #facade::__private::RawValue::Argv(value.to_vec()),
+                    );
                 }
                 true
             },
@@ -750,7 +805,9 @@ fn finish_field(field: &model::Field, field_index: usize, facade: &TokenStream) 
         }
     };
 
-    match field.argument().expect("value field must have argument semantics").shape {
+    let argument = field.argument().expect("value field must have argument semantics");
+
+    match argument.shape {
         model::Shape::Bool | model::Shape::Required => {
             let converted = one(quote!(value));
             default.as_ref().map_or_else(

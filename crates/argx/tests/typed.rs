@@ -3,7 +3,7 @@
 #[cfg(test)]
 #[cfg(feature = "derive")]
 mod tests {
-    use std::{ffi::OsString, path::PathBuf};
+    use std::{ffi::OsString, path::PathBuf, process::Command};
 
     use argx::{Error, Parser as _};
 
@@ -295,6 +295,60 @@ mod tests {
     struct DefaultShared {
         #[argx(long, default = 4_u16)]
         jobs: u16,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    #[argx(name = "environment")]
+    struct EnvironmentCli {
+        #[argx(long, env = "ARGX_TEST_PORT", default = 3000_u16)]
+        port: u16,
+        #[argx(long, env = "ARGX_TEST_PROFILE")]
+        profile: Option<String>,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    struct RequiredEnvironmentCli {
+        #[argx(long, env = "ARGX_TEST_REQUIRED_PORT")]
+        port: u16,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    struct EnvironmentRequirednessCli {
+        #[argx(long)]
+        value: Option<u16>,
+        #[argx(long, env = "ARGX_TEST_REQUIRED_PORT")]
+        port: u16,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Args)]
+    struct EnvironmentShared {
+        #[argx(long, env = "ARGX_TEST_JOBS")]
+        jobs: Option<u16>,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    struct FlattenedEnvironmentCli {
+        #[argx(flatten)]
+        shared: EnvironmentShared,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    struct EnvironmentPathCli {
+        #[argx(long, env = "ARGX_TEST_PATH")]
+        path: Option<PathBuf>,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Subcommand)]
+    enum EnvironmentCommand {
+        Child,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    struct GlobalEnvironmentCli {
+        #[argx(long, global, env = "ARGX_TEST_REGION")]
+        region: Option<String>,
+        #[argx(subcommand)]
+        command: EnvironmentCommand,
     }
 
     #[derive(Debug, PartialEq, Eq, argx::Parser)]
@@ -815,6 +869,179 @@ Options:
         assert!(help.contains("Usage: defaults [OPTIONS]"));
         assert!(!help.contains("Usage: defaults --port"));
         assert!(help.contains("--port <PORT>"));
+    }
+
+    #[test]
+    fn environment_value_sources_follow_argv_env_default_precedence() {
+        let executable = std::env::current_exe().expect("test executable should be available");
+        for case in [
+            "default",
+            "environment",
+            "argv",
+            "invalid-environment",
+            "incomplete-argv",
+            "required-missing",
+            "required-environment",
+            "required-before-conversion",
+            "flattened",
+            "global",
+        ] {
+            let mut command = Command::new(&executable);
+            command
+                .arg("--exact")
+                .arg("tests::environment_value_source_child")
+                .env("ARGX_TEST_CASE", case)
+                .env_remove("ARGX_TEST_PORT")
+                .env_remove("ARGX_TEST_PROFILE")
+                .env_remove("ARGX_TEST_REQUIRED_PORT")
+                .env_remove("ARGX_TEST_JOBS")
+                .env_remove("ARGX_TEST_PATH")
+                .env_remove("ARGX_TEST_REGION");
+            match case {
+                "environment" | "argv" | "incomplete-argv" => {
+                    command.env("ARGX_TEST_PORT", "4000").env("ARGX_TEST_PROFILE", "staging");
+                }
+                "invalid-environment" => {
+                    command.env("ARGX_TEST_PORT", "not-a-port");
+                }
+                "required-environment" => {
+                    command.env("ARGX_TEST_REQUIRED_PORT", "5000");
+                }
+                "flattened" => {
+                    command.env("ARGX_TEST_JOBS", "6");
+                }
+                "global" => {
+                    command.env("ARGX_TEST_REGION", "eu-west");
+                }
+                "default" | "required-missing" | "required-before-conversion" => {}
+                _ => unreachable!("case list is exhaustive"),
+            }
+
+            let output = command.output().expect("child environment test should run");
+            assert!(
+                output.status.success(),
+                "environment case {case} failed:\nstdout: {}\nstderr: {}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr),
+            );
+        }
+    }
+
+    #[test]
+    fn environment_value_source_child() {
+        let Ok(case) = std::env::var("ARGX_TEST_CASE") else {
+            return;
+        };
+
+        match case.as_str() {
+            "default" => assert_eq!(
+                EnvironmentCli::try_parse_args(std::iter::empty::<&str>()),
+                Ok(EnvironmentCli { port: 3000, profile: None }),
+            ),
+            "environment" => assert_eq!(
+                EnvironmentCli::try_parse_args(std::iter::empty::<&str>()),
+                Ok(EnvironmentCli { port: 4000, profile: Some(String::from("staging")) }),
+            ),
+            "argv" => assert_eq!(
+                EnvironmentCli::try_parse_args(["--port", "5000", "--profile", "production",]),
+                Ok(EnvironmentCli { port: 5000, profile: Some(String::from("production")) }),
+            ),
+            "invalid-environment" => {
+                let error = EnvironmentCli::try_parse_args(std::iter::empty::<&str>())
+                    .expect_err("an invalid environment value must not fall back to the default");
+                let Error::InvalidValue(error) = error else {
+                    panic!("unexpected error: {error:?}");
+                };
+                assert_eq!(error.name, "port");
+                assert_eq!(error.value, "not-a-port");
+            }
+            "incomplete-argv" => assert_eq!(
+                EnvironmentCli::try_parse_args(["--port"]),
+                Err(Error::MissingValue { name: "port" }),
+            ),
+            "required-missing" => assert_eq!(
+                RequiredEnvironmentCli::try_parse_args(std::iter::empty::<&str>()),
+                Err(Error::MissingRequired { name: "port" }),
+            ),
+            "required-environment" => assert_eq!(
+                RequiredEnvironmentCli::try_parse_args(std::iter::empty::<&str>()),
+                Ok(RequiredEnvironmentCli { port: 5000 }),
+            ),
+            "required-before-conversion" => assert_eq!(
+                EnvironmentRequirednessCli::try_parse_args(["--value", "not-a-number"]),
+                Err(Error::MissingRequired { name: "port" }),
+            ),
+            "flattened" => assert_eq!(
+                FlattenedEnvironmentCli::try_parse_args(std::iter::empty::<&str>()),
+                Ok(FlattenedEnvironmentCli { shared: EnvironmentShared { jobs: Some(6) } }),
+            ),
+            "global" => assert_eq!(
+                GlobalEnvironmentCli::try_parse_args(["child"]),
+                Ok(GlobalEnvironmentCli {
+                    region: Some(String::from("eu-west")),
+                    command: EnvironmentCommand::Child,
+                }),
+            ),
+            _ => panic!("unknown environment test case {case}"),
+        }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn environment_os_values_preserve_non_utf8_paths() {
+        use std::os::unix::ffi::{OsStrExt as _, OsStringExt as _};
+
+        let executable = std::env::current_exe().expect("test executable should be available");
+        let expected = OsString::from_vec(b"path-\xff".to_vec());
+        let output = Command::new(executable)
+            .arg("--exact")
+            .arg("tests::environment_os_value_child")
+            .env("ARGX_TEST_OS_CHILD", "1")
+            .env("ARGX_TEST_PATH", &expected)
+            .output()
+            .expect("child environment test should run");
+        assert!(
+            output.status.success(),
+            "non-UTF-8 environment case failed:\nstdout: {}\nstderr: {}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr),
+        );
+
+        // Keep the byte representation exercised in the parent too so the intended fixture is
+        // visibly non-UTF-8 rather than merely an opaque `OsString`.
+        assert_eq!(expected.as_os_str().as_bytes(), b"path-\xff");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn environment_os_value_child() {
+        use std::os::unix::ffi::OsStrExt as _;
+
+        if std::env::var_os("ARGX_TEST_OS_CHILD").is_none() {
+            return;
+        }
+        let path = std::env::var_os("ARGX_TEST_PATH")
+            .expect("OS environment child should receive its path value");
+        let parsed = EnvironmentPathCli::try_parse_args(std::iter::empty::<&str>())
+            .expect("OS environment value should bind");
+        assert_eq!(
+            parsed.path.as_deref().map(|value| value.as_os_str().as_bytes()),
+            Some(path.as_os_str().as_bytes()),
+        );
+    }
+
+    #[test]
+    fn environment_sources_are_documented_in_help() {
+        let help = EnvironmentCli::render_help();
+        assert!(help.contains("--port <PORT>"));
+        assert!(help.contains("[env: ARGX_TEST_PORT]"));
+        assert!(help.contains("--profile <PROFILE>"));
+        assert!(help.contains("[env: ARGX_TEST_PROFILE]"));
+        assert!(!help.contains("Usage: environment --port"));
+
+        let required = RequiredEnvironmentCli::render_help();
+        assert!(!required.contains("Usage: required-environment-cli --port"));
+        assert!(required.contains("[env: ARGX_TEST_REQUIRED_PORT]"));
     }
 
     #[test]

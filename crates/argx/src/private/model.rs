@@ -91,6 +91,8 @@ pub struct Flag<'a> {
     pub shorts: &'a [u8],
     /// Whether this flag remains in scope for descendant commands.
     pub global: bool,
+    /// Environment variable consulted when argv does not supply this flag.
+    pub env: Option<&'a str>,
     /// Whether one occurrence consumes a value.
     pub takes_value: bool,
     /// Whether this flag must occur at least once.
@@ -111,6 +113,7 @@ impl Flag<'static> {
         longs: &[],
         shorts: &[],
         global: false,
+        env: None,
         takes_value: false,
         required: false,
         allow_hyphen_values: false,

@@ -40,7 +40,7 @@ pub(crate) fn render(path: &[&Command<'_>]) -> String {
         let rows = command
             .args
             .iter()
-            .map(|arg| (arg_usage(arg), arg.help.unwrap_or("")))
+            .map(|arg| (arg_usage(arg), arg.help.unwrap_or("").to_owned()))
             .collect::<Vec<_>>();
         write_rows(&mut output, &rows);
     }
@@ -50,25 +50,24 @@ pub(crate) fn render(path: &[&Command<'_>]) -> String {
         let rows = command
             .subcommands
             .iter()
-            .map(|command| (command.name.to_owned(), command.about.unwrap_or("")))
+            .map(|command| (command.name.to_owned(), command.about.unwrap_or("").to_owned()))
             .collect::<Vec<_>>();
         write_rows(&mut output, &rows);
     }
 
     output.push_str("\nOptions:\n");
-    let mut rows = command
-        .flags
-        .iter()
-        .map(|flag| (flag_label(flag), flag.help.unwrap_or("")))
-        .collect::<Vec<_>>();
-    rows.extend(command.actions.iter().map(|action| (action_label(action), action.help)));
+    let mut rows =
+        command.flags.iter().map(|flag| (flag_label(flag), flag_help(flag))).collect::<Vec<_>>();
+    rows.extend(
+        command.actions.iter().map(|action| (action_label(action), action.help.to_owned())),
+    );
     write_rows(&mut output, &rows);
 
     output
 }
 
 /// Writes aligned help rows without terminal-width-dependent wrapping.
-fn write_rows(output: &mut String, rows: &[(String, &str)]) {
+fn write_rows(output: &mut String, rows: &[(String, String)]) {
     let width = rows.iter().map(|(label, _)| label.chars().count()).max().unwrap_or(0);
     for (label, help) in rows {
         if help.is_empty() {
@@ -82,6 +81,20 @@ fn write_rows(output: &mut String, rows: &[(String, &str)]) {
 /// Renders one named flag in an options table.
 fn flag_label(flag: &Flag<'_>) -> String {
     spellings_label(flag.shorts, flag.longs, flag.takes_value.then_some(flag.name))
+}
+
+/// Renders help text plus the explicit environment fallback, when present.
+fn flag_help(flag: &Flag<'_>) -> String {
+    let mut help = flag.help.unwrap_or("").to_owned();
+    if let Some(env) = flag.env {
+        if !help.is_empty() {
+            help.push(' ');
+        }
+        help.push_str("[env: ");
+        help.push_str(env);
+        help.push(']');
+    }
+    help
 }
 
 /// Renders one built-in action in an options table.
@@ -172,6 +185,14 @@ mod tests {
         required: true,
         ..Flag::VALUE
     };
+    static PROFILE: Flag<'static> = Flag {
+        key: 6,
+        name: "profile",
+        help: Some("Select a profile"),
+        longs: &["profile"],
+        env: Some("TOOL_PROFILE"),
+        ..Flag::VALUE
+    };
     static INPUT: Arg<'static> =
         Arg { key: 3, name: "input", help: Some("Input file"), ..Arg::REQUIRED };
     static REST: Arg<'static> = Arg {
@@ -187,7 +208,7 @@ mod tests {
     static CONFIG: Command<'static> = Command {
         name: "config",
         about: Some("Manage configuration"),
-        flags: &[&VERBOSE, &OUTPUT],
+        flags: &[&VERBOSE, &OUTPUT, &PROFILE],
         args: &[&INPUT, &REST],
         subcommands: &[&GET],
         key: 5,
@@ -217,9 +238,10 @@ Commands:
   get  Read one value
 
 Options:
-  -v, --verbose      Enable verbose output
-  --output <OUTPUT>  Write to this path
-  -h, --help         Print help
+  -v, --verbose        Enable verbose output
+  --output <OUTPUT>    Write to this path
+  --profile <PROFILE>  Select a profile [env: TOOL_PROFILE]
+  -h, --help           Print help
 
 "#]],
         );

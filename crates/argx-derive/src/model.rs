@@ -151,6 +151,8 @@ pub(crate) struct Argument {
     pub global: bool,
     /// Syntactic value shape relevant to CLI cardinality.
     pub shape: Shape,
+    /// Environment variable consulted when argv does not supply this argument.
+    pub env: Option<String>,
     /// Whether absence is satisfied by a typed Rust default.
     pub has_default: bool,
     /// Whether detached values may be flag-like.
@@ -337,6 +339,7 @@ impl Field {
             if attributes.long.is_some()
                 || attributes.short.is_some()
                 || attributes.global
+                || attributes.env.is_some()
                 || attributes.default.is_some()
                 || attributes.allow_hyphen_values
                 || attributes.allow_negative_numbers
@@ -366,6 +369,7 @@ impl Field {
             if attributes.long.is_some()
                 || attributes.short.is_some()
                 || attributes.global
+                || attributes.env.is_some()
                 || attributes.default.is_some()
                 || attributes.allow_hyphen_values
                 || attributes.allow_negative_numbers
@@ -435,6 +439,22 @@ impl Field {
                 "value policies are not valid on bool fields",
             ));
         }
+        if attributes.env.is_some()
+            && (!matches!(&kind, ArgumentKind::Flag { .. })
+                || matches!(shape, Shape::Bool | Shape::Many))
+        {
+            return Err(syn::Error::new(
+                binding.span,
+                "`env` is only supported on scalar value-taking flags",
+            ));
+        }
+        let env = attributes
+            .env
+            .map(|env| {
+                validate_env_name(&env.value(), env.span())?;
+                Ok::<_, syn::Error>(env.value())
+            })
+            .transpose()?;
         if attributes.default.is_some()
             && (!matches!(&kind, ArgumentKind::Flag { .. })
                 || matches!(shape, Shape::Bool | Shape::Many))
@@ -460,6 +480,7 @@ impl Field {
                 kind,
                 global: attributes.global,
                 shape,
+                env,
                 has_default,
                 allow_hyphen_values: attributes.allow_hyphen_values,
                 allow_negative_numbers: attributes.allow_negative_numbers,
@@ -800,6 +821,17 @@ impl<'ast> syn::visit::Visit<'ast> for GenericUse<'_> {
     }
 }
 
+/// Validates an explicit environment variable name without deferring invalid keys to runtime.
+fn validate_env_name(name: &str, span: Span) -> syn::Result<()> {
+    if name.is_empty() || name.contains('=') || name.contains('\0') {
+        return Err(syn::Error::new(
+            span,
+            "environment variable name must be non-empty and cannot contain `=` or NUL",
+        ));
+    }
+    Ok(())
+}
+
 /// Validates one explicit or inferred long spelling.
 fn validate_long(long: &str, span: Span) -> syn::Result<()> {
     if long.is_empty()
@@ -830,7 +862,7 @@ mod tests {
                 /// Enable verbose output.
                 #[argx(short, long, global)]
                 verbose: bool,
-                #[argx(long, default = std::path::PathBuf::from("out"))]
+                #[argx(long, env = "ARGX_OUTPUT", default = std::path::PathBuf::from("out"))]
                 output: Option<std::path::PathBuf>,
                 #[argx(flatten)]
                 shared: Shared,
@@ -859,6 +891,7 @@ mod tests {
         };
         assert!(matches!(&argument.kind, ArgumentKind::Flag { .. }));
         assert_eq!(argument.shape, Shape::Optional);
+        assert_eq!(argument.env.as_deref(), Some("ARGX_OUTPUT"));
         assert!(argument.has_default);
         assert_eq!(output.value_binding().conversion, ValueConversion::Os);
         assert!(output.binding.default.is_some());

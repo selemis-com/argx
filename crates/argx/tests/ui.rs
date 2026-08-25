@@ -14,6 +14,7 @@ mod tests {
             ("renamed_dependency", "cli_args"),
             ("typed", "argx"),
             ("defaults", "argx"),
+            ("environment", "argx"),
             ("flatten", "argx"),
             ("subcommands", "argx"),
         ] {
@@ -52,6 +53,24 @@ error: `global` is only valid on named flags
 error: `flatten` cannot be combined with flag, value, or help attributes
 error: `subcommand` cannot be combined with flag, value, or help attributes
 error: `global` takes no value
+
+"#]],
+        );
+    }
+
+    #[test]
+    fn invalid_environment_declarations_are_rejected_deterministically() {
+        support::assert_ui_failure(
+            "invalid_env",
+            "argx",
+            snapbox::str![[r#"
+error: `env` is only supported on scalar value-taking flags
+error: `env` is only supported on scalar value-taking flags
+error: `env` is only supported on scalar value-taking flags
+error: duplicate `env` attribute
+error: environment variable name must be non-empty and cannot contain `=` or NUL
+error: environment variable name must be non-empty and cannot contain `=` or NUL
+error: `env` requires a string value
 
 "#]],
         );

@@ -1,11 +1,20 @@
 //! Value-conversion entry points used by generated binding code.
 
+/// One unconverted value supplied by argv or an external fallback source.
+#[derive(Debug)]
+pub enum RawValue {
+    /// Encoded bytes borrowed from argv and copied into binding state.
+    Argv(Vec<u8>),
+    /// Operating-system value supplied by an environment variable.
+    Environment(std::ffi::OsString),
+}
+
 /// Converts one raw value directly into a UTF-8 string.
 ///
 /// # Errors
 ///
 /// Returns an error when the value is not valid UTF-8.
-pub fn text_value(value: Vec<u8>, name: &'static str) -> Result<String, crate::Error> {
+pub fn text_value(value: RawValue, name: &'static str) -> Result<String, crate::Error> {
     crate::binding::text_value(value, name)
 }
 
@@ -23,7 +32,7 @@ pub fn text_values(values: Vec<Vec<u8>>, name: &'static str) -> Result<Vec<Strin
 /// # Errors
 ///
 /// Returns an error for invalid UTF-8 or a destination conversion failure.
-pub fn parsed_value<T>(value: Vec<u8>, name: &'static str) -> Result<T, crate::Error>
+pub fn parsed_value<T>(value: RawValue, name: &'static str) -> Result<T, crate::Error>
 where
     T: std::str::FromStr,
     T::Err: std::fmt::Display,
@@ -48,16 +57,15 @@ where
 ///
 /// # Errors
 ///
-/// Returns an error when the encoded bytes cannot be reconstructed as an operating-system
-/// string.
-pub fn os_value<T>(value: Vec<u8>, name: &'static str) -> Result<T, crate::Error>
+/// Returns an error when argv bytes cannot be reconstructed as an operating-system string.
+pub fn os_value<T>(value: RawValue, name: &'static str) -> Result<T, crate::Error>
 where
     T: From<std::ffi::OsString>,
 {
     crate::binding::os_value(value, name)
 }
 
-/// Converts repeated raw values into an operating-system-backed destination type.
+/// Converts repeated raw values into operating-system-backed destination types.
 ///
 /// # Errors
 ///

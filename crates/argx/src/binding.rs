@@ -3,7 +3,7 @@
 use std::{ffi::OsString, fmt, str::FromStr};
 
 use crate::{
-    __private::{ActionKind, CommandArgs},
+    __private::{ActionKind, CommandArgs, RawValue},
     Error, InvalidValue,
     argv::{Error as RawError, Event},
     help,
@@ -80,13 +80,13 @@ fn render_version(name: &str, version: &str) -> String {
     rendered
 }
 
-/// Converts one raw value to UTF-8 text without copying valid bytes.
+/// Converts one raw value to UTF-8 text.
 ///
 /// # Errors
 ///
-/// Returns an error when the bytes are not valid UTF-8.
-pub(crate) fn text_value(value: Vec<u8>, name: &'static str) -> Result<String, Error> {
-    String::from_utf8(value).map_err(|bad| Error::InvalidUtf8 { name, value: bad.into_bytes() })
+/// Returns an error when the value is not valid UTF-8.
+pub(crate) fn text_value(value: RawValue, name: &'static str) -> Result<String, Error> {
+    text_bytes(encoded_value(value), name)
 }
 
 /// Converts repeated raw values to UTF-8 text.
@@ -97,7 +97,7 @@ pub(crate) fn text_value(value: Vec<u8>, name: &'static str) -> Result<String, E
 pub(crate) fn text_values(values: Vec<Vec<u8>>, name: &'static str) -> Result<Vec<String>, Error> {
     let mut parsed = Vec::with_capacity(values.len());
     for value in values {
-        parsed.push(text_value(value, name)?);
+        parsed.push(text_bytes(value, name)?);
     }
     Ok(parsed)
 }
@@ -106,8 +106,8 @@ pub(crate) fn text_values(values: Vec<Vec<u8>>, name: &'static str) -> Result<Ve
 ///
 /// # Errors
 ///
-/// Returns an error when the bytes are not UTF-8 or the destination rejects the text.
-pub(crate) fn parsed_value<T>(value: Vec<u8>, name: &'static str) -> Result<T, Error>
+/// Returns an error when the value is not UTF-8 or the destination rejects the text.
+pub(crate) fn parsed_value<T>(value: RawValue, name: &'static str) -> Result<T, Error>
 where
     T: FromStr,
     T::Err: fmt::Display,
@@ -134,24 +134,35 @@ where
 {
     let mut parsed = Vec::with_capacity(values.len());
     for value in values {
-        parsed.push(parsed_value(value, name)?);
+        let text = text_bytes(value, name)?;
+        parsed.push(T::from_str(&text).map_err(|reason| {
+            Error::InvalidValue(Box::new(InvalidValue {
+                name,
+                value: text,
+                reason: reason.to_string(),
+            }))
+        })?);
     }
     Ok(parsed)
 }
 
-/// Converts one raw value to an operating-system string without forcing UTF-8 on Unix.
+/// Converts one raw value to an operating-system-backed destination type.
 ///
 /// # Errors
 ///
-/// Returns an error when this platform cannot safely reconstruct the encoded bytes.
-pub(crate) fn os_value<T>(value: Vec<u8>, name: &'static str) -> Result<T, Error>
+/// Returns an error when argv bytes cannot be reconstructed as an operating-system string.
+pub(crate) fn os_value<T>(value: RawValue, name: &'static str) -> Result<T, Error>
 where
     T: From<OsString>,
 {
-    os_string(value, name).map(T::from)
+    let value = match value {
+        RawValue::Argv(value) => os_string(value, name)?,
+        RawValue::Environment(value) => value,
+    };
+    Ok(T::from(value))
 }
 
-/// Converts repeated raw values to operating-system strings.
+/// Converts repeated raw values to operating-system-backed destination types.
 ///
 /// # Errors
 ///
@@ -162,9 +173,22 @@ where
 {
     let mut parsed = Vec::with_capacity(values.len());
     for value in values {
-        parsed.push(os_value(value, name)?);
+        parsed.push(T::from(os_string(value, name)?));
     }
     Ok(parsed)
+}
+
+/// Converts encoded bytes into UTF-8 text.
+fn text_bytes(value: Vec<u8>, name: &'static str) -> Result<String, Error> {
+    String::from_utf8(value).map_err(|bad| Error::InvalidUtf8 { name, value: bad.into_bytes() })
+}
+
+/// Converts a raw source into the encoded bytes used by text-oriented bindings.
+fn encoded_value(value: RawValue) -> Vec<u8> {
+    match value {
+        RawValue::Argv(value) => value,
+        RawValue::Environment(value) => value.into_encoded_bytes(),
+    }
 }
 
 /// Reconstructs an operating-system string from bytes emitted by the raw argv parser.
