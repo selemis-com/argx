@@ -2,7 +2,12 @@
 
 use std::{ffi::OsString, fmt, str::FromStr};
 
-use crate::{__private::CommandArgs, Error, InvalidValue, argv::Error as RawError, help};
+use crate::{
+    __private::{ActionKind, CommandArgs},
+    Error, InvalidValue,
+    argv::{Error as RawError, Event},
+    help,
+};
 
 /// Parses already-separated argument references into one derived command value.
 ///
@@ -21,12 +26,25 @@ pub(crate) fn parse_refs<T: CommandArgs>(argv: &[&std::ffi::OsStr]) -> Result<T,
 
     while let Some(event) = parser.next_event() {
         let event = match event {
-            Ok(event) => event,
-            Err(RawError::DisplayHelp) => {
-                let command_path = parser.command_path().collect::<Vec<_>>();
-                let rendered = help::render(&command_path);
-                return Err(Error::DisplayHelp { help: rendered });
+            Ok(Event::Action { action, long: used_long }) => {
+                return match action.kind {
+                    ActionKind::Help => {
+                        let command_path = parser.command_path().collect::<Vec<_>>();
+                        Err(Error::DisplayHelp { help: help::render(&command_path) })
+                    }
+                    ActionKind::Version { short, long } => {
+                        let version = if used_long { long } else { short };
+                        let command = parser
+                            .command_path()
+                            .last()
+                            .expect("parser always has a selected command");
+                        Err(Error::DisplayVersion {
+                            version: render_version(command.name, version),
+                        })
+                    }
+                };
             }
+            Ok(event) => event,
             Err(error) => return Err(raw_error(error)),
         };
         let applied = T::apply(&mut partial, &event);
@@ -40,13 +58,26 @@ pub(crate) fn parse_refs<T: CommandArgs>(argv: &[&std::ffi::OsStr]) -> Result<T,
 /// Converts one raw-parser error into the owned public error type.
 fn raw_error(error: RawError<'static, '_>) -> Error {
     match error {
-        RawError::DisplayHelp => unreachable!("help requests are handled with command context"),
+        RawError::UnexpectedActionValue { action } => Error::UnexpectedValue { name: action.name },
         RawError::UnknownFlag { token } => Error::UnknownFlag { token: token.to_vec() },
         RawError::MissingFlagValue { flag } => Error::MissingValue { name: flag.name },
         RawError::UnexpectedFlagValue { flag } => Error::UnexpectedValue { name: flag.name },
         RawError::UnexpectedArg { token } => Error::UnexpectedArgument { token: token.to_vec() },
         RawError::UnknownCommand { token } => Error::UnknownCommand { token: token.to_vec() },
     }
+}
+
+/// Renders one successful version action deterministically.
+fn render_version(name: &str, version: &str) -> String {
+    let version = version.trim_end_matches('\n');
+    let mut rendered = String::with_capacity(name.len() + version.len() + 2);
+    rendered.push_str(name);
+    if !version.is_empty() {
+        rendered.push(' ');
+        rendered.push_str(version);
+    }
+    rendered.push('\n');
+    rendered
 }
 
 /// Converts one raw value to UTF-8 text without copying valid bytes.

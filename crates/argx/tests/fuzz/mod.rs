@@ -8,7 +8,7 @@ use std::{
     fmt::{self, Display, Formatter, Write as _},
 };
 
-use argx::__private::{Arg, ArgvParser, Command, Error, Event, Flag};
+use argx::__private::{ActionKind, Arg, ArgvParser, Command, Error, Event, Flag};
 use proptest::{
     collection,
     prelude::*,
@@ -797,6 +797,7 @@ fn production_parse(command: &CommandSpec, argv: &[OsString]) -> ParseRun {
         args: &arg_refs,
         subcommands: &[],
         key: 1,
+        ..Command::EMPTY
     };
     let argv_refs = argv.iter().map(OsString::as_os_str).collect::<Vec<_>>();
     let mut parser = ArgvParser::new(&table, &argv_refs);
@@ -808,6 +809,11 @@ fn collect_production_trace(parser: &mut ArgvParser<'_, '_, '_>) -> ParseRun {
     let mut trace = Vec::new();
     while let Some(result) = parser.next_event() {
         match result {
+            Ok(Event::Action { action, .. }) => {
+                assert_eq!(action.kind, ActionKind::Help);
+                trace.push(Trace::Error(ErrorTrace::DisplayHelp));
+                break;
+            }
             Ok(Event::Flag { flag, value }) => {
                 trace.push(Trace::Flag { key: flag.key, value: value.map(<[u8]>::to_vec) })
             }
@@ -833,11 +839,11 @@ fn collect_production_trace(parser: &mut ArgvParser<'_, '_, '_>) -> ParseRun {
 /// Normalizes one public parser error without relying on borrowed storage.
 fn normalize_error(error: Error<'_, '_>) -> ErrorTrace {
     match error {
+        Error::UnexpectedActionValue { action: _ } => ErrorTrace::UnexpectedFlagValue(0_u64),
         Error::UnknownFlag { token } => ErrorTrace::UnknownFlag(token.to_vec()),
         Error::MissingFlagValue { flag } => ErrorTrace::MissingFlagValue(flag.key),
         Error::UnexpectedFlagValue { flag } => ErrorTrace::UnexpectedFlagValue(flag.key),
         Error::UnexpectedArg { token } => ErrorTrace::UnexpectedArg(token.to_vec()),
-        Error::DisplayHelp => ErrorTrace::DisplayHelp,
         _ => panic!("property harness does not recognize this parser error variant"),
     }
 }
@@ -1043,6 +1049,7 @@ fn passthrough_parse(argv: &[OsString]) -> ParseRun {
         args: &[&VALUE],
         subcommands: &[],
         key: 2,
+        ..Command::EMPTY
     };
 
     let separator = OsStr::new("--");

@@ -2,21 +2,18 @@
 
 use std::ffi::OsStr;
 
-use crate::__private::{Arg, Command, Flag};
-
-/// Synthetic metadata for the built-in help switch.
-static HELP_FLAG: Flag<'static> = Flag {
-    key: 0,
-    name: "help",
-    help: Some("Print help"),
-    longs: &["help"],
-    shorts: b"h",
-    ..Flag::BOOL
-};
+use crate::__private::{Action, Arg, Command, Flag};
 
 /// One token binding produced by the raw argument parser.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Event<'t, 'v> {
+    /// A built-in parser action was selected.
+    Action {
+        /// Static metadata for the matched action.
+        action: &'t Action<'t>,
+        /// Whether the long spelling selected the action.
+        long: bool,
+    },
     /// A named flag was matched.
     Flag {
         /// Static metadata for the matched flag.
@@ -42,8 +39,11 @@ pub enum Event<'t, 'v> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Error<'t, 'v> {
-    /// Built-in help was requested for the current command scope.
-    DisplayHelp,
+    /// A value was attached to a built-in action that does not accept one.
+    UnexpectedActionValue {
+        /// Static metadata for the action receiving the value.
+        action: &'t Action<'t>,
+    },
     /// A flag-like token did not match any declared flag.
     UnknownFlag {
         /// Whole encoded token supplied by the caller.
@@ -115,21 +115,22 @@ impl<'t, 'a, 'v> ArgvParser<'t, 'a, 'v> {
 
     /// Produces the next token binding or terminal parser result.
     ///
-    /// A help request or error is terminal: subsequent calls return `None`. Events emitted before a
-    /// terminal result are a partial parse and must be discarded by callers. A short bundle is
-    /// preflighted before its first event, so an unknown short rejects the whole token atomically.
+    /// A built-in action or error is terminal: subsequent calls return `None`. Events emitted
+    /// before a terminal result are a partial parse and must be discarded by callers. A short
+    /// bundle is preflighted before its first event, so an unknown short rejects the whole token
+    /// atomically.
     ///
     /// # Errors
     ///
-    /// Returns [`Error::DisplayHelp`] for the built-in help switch, or a structured error when a
-    /// token cannot be bound according to the static command metadata.
+    /// Returns a structured error when a token cannot be bound according to the static command
+    /// metadata.
     pub fn next_event(&mut self) -> Option<Result<Event<'t, 'v>, Error<'t, 'v>>> {
         if self.done {
             return None;
         }
 
         let event = self.step();
-        if event.as_ref().is_some_and(Result::is_err) {
+        if matches!(event.as_ref(), Some(Err(_) | Ok(Event::Action { .. }))) {
             self.done = true;
         }
         event
@@ -185,11 +186,11 @@ impl<'t, 'a, 'v> ArgvParser<'t, 'a, 'v> {
             .iter()
             .position(|byte| *byte == b'=')
             .map_or((body, None), |index| (&body[..index], Some(&body[index + 1..])));
-        if name == b"help" {
+        if let Some(action) = self.find_long_action(name) {
             return if attached.is_some() {
-                Err(Error::UnexpectedFlagValue { flag: &HELP_FLAG })
+                Err(Error::UnexpectedActionValue { action })
             } else {
-                Err(Error::DisplayHelp)
+                Ok(Event::Action { action, long: true })
             };
         }
         let Some(flag) = self.find_long(name) else {
@@ -216,7 +217,7 @@ impl<'t, 'a, 'v> ArgvParser<'t, 'a, 'v> {
     fn check_short_bundle(&self, token: &'v [u8]) -> Result<(), Error<'t, 'v>> {
         let mut remaining = &token[1..];
         while let Some((&short, tail)) = remaining.split_first() {
-            if short == b'h' {
+            if self.find_short_action(short).is_some() {
                 remaining = tail;
                 continue;
             }
@@ -234,9 +235,9 @@ impl<'t, 'a, 'v> ArgvParser<'t, 'a, 'v> {
         let Some((&short, rest)) = self.bundle.split_first() else {
             return Err(Error::UnknownFlag { token: self.bundle_token });
         };
-        if short == b'h' {
+        if let Some(action) = self.find_short_action(short) {
             self.bundle = &[];
-            return Err(Error::DisplayHelp);
+            return Ok(Event::Action { action, long: false });
         }
         let Some(flag) = self.find_short(short) else {
             self.bundle = &[];
@@ -306,6 +307,20 @@ impl<'t, 'a, 'v> ArgvParser<'t, 'a, 'v> {
         self.command.subcommands.iter().copied().find(|command| command.name.as_bytes() == name)
     }
 
+    /// Looks up one long built-in action in the current command scope.
+    fn find_long_action(&self, name: &[u8]) -> Option<&'t Action<'t>> {
+        self.command
+            .actions
+            .iter()
+            .copied()
+            .find(|action| action.longs.iter().any(|long| long.as_bytes() == name))
+    }
+
+    /// Looks up one short built-in action in the current command scope.
+    fn find_short_action(&self, short: u8) -> Option<&'t Action<'t>> {
+        self.command.actions.iter().copied().find(|action| action.shorts.contains(&short))
+    }
+
     /// Looks up a long flag using the current command before inherited globals.
     ///
     /// Ancestors are searched nearest-first. This gives descendant declarations normal lexical
@@ -327,20 +342,15 @@ impl<'t, 'a, 'v> ArgvParser<'t, 'a, 'v> {
 
     /// Looks up one short spelling using the current command before inherited globals.
     fn find_short(&self, short: u8) -> Option<&'t Flag<'t>> {
-        self.command
-            .flags
-            .iter()
-            .copied()
-            .find(|flag| flag.shorts.contains(&short))
-            .or_else(|| {
-                self.ancestors.iter().rev().find_map(|command| {
-                    command
-                        .flags
-                        .iter()
-                        .copied()
-                        .find(|flag| flag.global && flag.shorts.contains(&short))
-                })
+        self.command.flags.iter().copied().find(|flag| flag.shorts.contains(&short)).or_else(|| {
+            self.ancestors.iter().rev().find_map(|command| {
+                command
+                    .flags
+                    .iter()
+                    .copied()
+                    .find(|flag| flag.global && flag.shorts.contains(&short))
             })
+        })
     }
 
     /// Returns the selected command chain from the root through the current command.

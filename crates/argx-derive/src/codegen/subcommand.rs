@@ -21,14 +21,40 @@ pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
 
     let command_tables = subcommand.variants.iter().enumerate().map(|(index, variant)| {
         let table = format_ident!("ARGX_SUBCOMMAND_{index}");
+        let version_table = format_ident!("ARGX_VERSION_ACTION_{index}");
         let key = key::ident("SUBCOMMAND", Some(index));
         let name = &variant.semantics.name;
         let about = option_str(variant.semantics.about.as_deref());
-        variant.binding.payload.as_ref().map_or_else(|| quote! {
+        let short_version =
+            variant.semantics.version.as_ref().or(variant.semantics.long_version.as_ref());
+        let long_version =
+            variant.semantics.long_version.as_ref().or(variant.semantics.version.as_ref());
+        let version_action = short_version.zip(long_version).map(|(short, long)| {
+            quote! {
+                static #version_table: #facade::__private::Action<'static> =
+                    #facade::__private::Action {
+                        name: "version",
+                        help: "Print version",
+                        longs: &["version"],
+                        shorts: b"V",
+                        kind: #facade::__private::ActionKind::Version {
+                            short: #short,
+                            long: #long,
+                        },
+                    };
+            }
+        });
+        let actions = if version_action.is_some() {
+            quote!(&[&#facade::__private::HELP_ACTION, &#version_table])
+        } else {
+            quote!(&[&#facade::__private::HELP_ACTION])
+        };
+        let command = variant.binding.payload.as_ref().map_or_else(|| quote! {
                 static #table: #facade::__private::Command<'static> =
                     #facade::__private::Command {
                         name: #name,
                         about: #about,
+                        actions: #actions,
                         flags: &[],
                         args: &[],
                         subcommands: &[],
@@ -39,12 +65,21 @@ pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
                     #facade::__private::Command {
                         name: #name,
                         about: #about,
+                        actions: #actions,
                         flags: <#ty as #facade::__private::CommandArgs>::COMMAND.flags,
                         args: <#ty as #facade::__private::CommandArgs>::COMMAND.args,
                         subcommands: <#ty as #facade::__private::CommandArgs>::COMMAND.subcommands,
                         key: #key,
                     };
-            })
+            });
+        quote! {
+            #version_action
+            #command
+            const _: () = ::core::assert!(
+                #facade::__private::action_flag_spellings_disjoint(#table.actions, #table.flags),
+                "subcommand contains a flag spelling reserved by a built-in action",
+            );
+        }
     });
     let command_refs = (0..subcommand.variants.len()).map(|index| {
         let table = format_ident!("ARGX_SUBCOMMAND_{index}");

@@ -9,10 +9,10 @@ mod traits;
 mod value;
 
 pub use compose::{
-    command_keys_unique, concat_args, concat_flags, flag_spellings_unique, positional_layout_valid,
-    table_len,
+    action_flag_spellings_disjoint, command_keys_unique, concat_args, concat_flags,
+    flag_spellings_unique, positional_layout_valid, table_len,
 };
-pub use model::{Arg, Command, Flag, Key, key_base};
+pub use model::{Action, ActionKind, Arg, Command, Flag, HELP_ACTION, Key, key_base};
 pub use traits::{CommandArgs, Subcommands};
 pub use value::{os_value, os_values, parsed_value, parsed_values, text_value, text_values};
 

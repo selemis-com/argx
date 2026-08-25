@@ -2,7 +2,7 @@
 
 use std::fmt::Write as _;
 
-use crate::__private::{Arg, Command, Flag};
+use crate::__private::{Action, Arg, Command, Flag};
 
 /// Renders short help for one selected command path.
 pub(crate) fn render(path: &[&Command<'_>]) -> String {
@@ -61,7 +61,7 @@ pub(crate) fn render(path: &[&Command<'_>]) -> String {
         .iter()
         .map(|flag| (flag_label(flag), flag.help.unwrap_or("")))
         .collect::<Vec<_>>();
-    rows.push(("-h, --help".to_owned(), "Print help"));
+    rows.extend(command.actions.iter().map(|action| (action_label(action), action.help)));
     write_rows(&mut output, &rows);
 
     output
@@ -81,24 +81,34 @@ fn write_rows(output: &mut String, rows: &[(String, &str)]) {
 
 /// Renders one named flag in an options table.
 fn flag_label(flag: &Flag<'_>) -> String {
+    spellings_label(flag.shorts, flag.longs, flag.takes_value.then_some(flag.name))
+}
+
+/// Renders one built-in action in an options table.
+fn action_label(action: &Action<'_>) -> String {
+    spellings_label(action.shorts, action.longs, None)
+}
+
+/// Renders short and long spellings with an optional value placeholder.
+fn spellings_label(shorts: &[u8], longs: &[&str], value_name: Option<&str>) -> String {
     let mut label = String::new();
-    for (index, short) in flag.shorts.iter().enumerate() {
+    for (index, short) in shorts.iter().enumerate() {
         if index > 0 {
             label.push_str(", ");
         }
         label.push('-');
         label.push(char::from(*short));
     }
-    for long in flag.longs {
+    for long in longs {
         if !label.is_empty() {
             label.push_str(", ");
         }
         label.push_str("--");
         label.push_str(long);
     }
-    if flag.takes_value {
+    if let Some(name) = value_name {
         label.push_str(" <");
-        label.push_str(&metavar(flag.name));
+        label.push_str(&metavar(name));
         label.push('>');
     }
     label
@@ -181,6 +191,7 @@ mod tests {
         args: &[&INPUT, &REST],
         subcommands: &[&GET],
         key: 5,
+        ..Command::EMPTY
     };
     static ROOT: Command<'static> = Command {
         name: "tool",

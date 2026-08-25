@@ -46,6 +46,10 @@ pub(crate) struct CommandSemantics {
     pub name: String,
     /// One-line help summary for this command.
     pub about: Option<String>,
+    /// Short version text expression.
+    pub version: Option<syn::Expr>,
+    /// Long version text expression.
+    pub long_version: Option<syn::Expr>,
 }
 
 /// One enum deriving `Subcommand`.
@@ -192,16 +196,25 @@ impl Command {
             }
         };
 
-        validate_fields(&fields)?;
+        let attributes = attrs::command(&input.attrs)?;
+        if !root && (attributes.version.is_some() || attributes.long_version.is_some()) {
+            return Err(syn::Error::new_spanned(
+                &input.ident,
+                "version metadata is only valid on Parser declarations and Subcommand variants",
+            ));
+        }
+        let has_version = attributes.version.is_some() || attributes.long_version.is_some();
+        validate_fields(&fields, has_version)?;
         validate_composed_generics(&fields, &input.generics)?;
 
-        let attributes = attrs::command(&input.attrs)?;
         let rust_name = ident_name(&input.ident);
         let name = attributes.name.unwrap_or_else(|| case::to_kebab(&rust_name));
         if name.is_empty() {
             return Err(syn::Error::new(Span::call_site(), "command name cannot be empty"));
         }
         let about = attributes.about.or_else(|| attrs::doc_summary(&input.attrs));
+        let version = attributes.version;
+        let long_version = attributes.long_version;
 
         Ok(Self {
             binding: CommandBinding {
@@ -211,7 +224,7 @@ impl Command {
                 root,
                 unit,
             },
-            semantics: CommandSemantics { name, about },
+            semantics: CommandSemantics { name, about, version, long_version },
             fields,
         })
     }
@@ -235,6 +248,8 @@ impl Subcommand {
             let rust_name = ident_name(&variant.ident);
             let name = attributes.name.unwrap_or_else(|| case::to_kebab(&rust_name));
             let about = attributes.about.or_else(|| attrs::doc_summary(&variant.attrs));
+            let version = attributes.version;
+            let long_version = attributes.long_version;
             validate_subcommand_name(&name, variant.ident.span())?;
             if names.contains(&name) {
                 return Err(syn::Error::new(
@@ -273,7 +288,7 @@ impl Subcommand {
 
             variants.push(Variant {
                 binding: VariantBinding { ident: variant.ident.clone(), payload },
-                semantics: CommandSemantics { name, about },
+                semantics: CommandSemantics { name, about, version, long_version },
             });
         }
 
@@ -398,10 +413,7 @@ impl Field {
             ));
         }
         if attributes.global && matches!(&kind, ArgumentKind::Positional) {
-            return Err(syn::Error::new(
-                binding.span,
-                "`global` is only valid on named flags",
-            ));
+            return Err(syn::Error::new(binding.span, "`global` is only valid on named flags"));
         }
         if (attributes.allow_hyphen_values || attributes.allow_negative_numbers)
             && shape == Shape::Bool
@@ -525,7 +537,7 @@ fn validate_short(character: char, span: Span) -> syn::Result<u8> {
 }
 
 /// Validates command-wide invariants that cannot be checked one field at a time.
-fn validate_fields(fields: &[Field]) -> syn::Result<()> {
+fn validate_fields(fields: &[Field], has_version: bool) -> syn::Result<()> {
     let mut longs: Vec<&str> = Vec::new();
     let mut shorts: Vec<u8> = Vec::new();
     let mut optional_positional_seen = false;
@@ -546,6 +558,12 @@ fn validate_fields(fields: &[Field]) -> syn::Result<()> {
                             "`--help` is reserved by Argx",
                         ));
                     }
+                    if has_version && long == "version" {
+                        return Err(syn::Error::new(
+                            field.binding.span,
+                            "`--version` is reserved when command version metadata is present",
+                        ));
+                    }
                     if longs.contains(&long.as_str()) {
                         return Err(syn::Error::new(
                             field.binding.span,
@@ -559,6 +577,12 @@ fn validate_fields(fields: &[Field]) -> syn::Result<()> {
                         return Err(syn::Error::new(
                             field.binding.span,
                             "`-h` is reserved by Argx",
+                        ));
+                    }
+                    if has_version && *short == b'V' {
+                        return Err(syn::Error::new(
+                            field.binding.span,
+                            "`-V` is reserved when command version metadata is present",
                         ));
                     }
                     if shorts.contains(short) {

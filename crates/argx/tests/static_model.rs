@@ -84,6 +84,23 @@ mod tests {
         command: Commands,
     }
 
+    const VERSION: &str = "1.2.3";
+    const LONG_VERSION: &str = "1.2.3 (build abc123)";
+
+    #[derive(argx::Subcommand)]
+    enum MetadataCommands {
+        #[argx(version = VERSION, long_version = LONG_VERSION)]
+        Versioned,
+        Plain,
+    }
+
+    #[derive(argx::Parser)]
+    #[argx(version = VERSION, long_version = LONG_VERSION)]
+    struct MetadataCli {
+        #[argx(subcommand)]
+        command: MetadataCommands,
+    }
+
     mod add {
         #[derive(argx::Args)]
         pub(super) struct Options {
@@ -289,6 +306,28 @@ mod tests {
         let value = CommandCli { verbose: false, command: Commands::Status };
         assert!(!value.verbose);
         assert!(matches!(value.command, Commands::Status));
+    }
+
+    #[test]
+    fn version_metadata_is_projected_into_private_command_actions() {
+        let value = MetadataCli { command: MetadataCommands::Plain };
+        assert!(matches!(value.command, MetadataCommands::Plain));
+
+        use argx::__private::{ActionKind, Subcommands as _};
+
+        let root = MetadataCli::COMMAND;
+        assert_eq!(root.actions.len(), 2);
+        assert_eq!(root.actions[0].name, "help");
+        assert_eq!(root.actions[1].name, "version");
+        assert_eq!(
+            root.actions[1].kind,
+            ActionKind::Version { short: VERSION, long: LONG_VERSION }
+        );
+
+        let commands = MetadataCommands::COMMANDS;
+        assert_eq!(commands.len(), 2);
+        assert_eq!(commands[0].actions.len(), 2);
+        assert_eq!(commands[1].actions.len(), 1);
     }
 
     #[test]

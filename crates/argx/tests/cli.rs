@@ -85,4 +85,101 @@ Options:
 "#]])
             .stderr_eq("");
     }
+
+    #[test]
+    fn version_actions_use_stdout_and_success_status() {
+        support::example_command("version")
+            .arg("-V")
+            .assert()
+            .success()
+            .stdout_eq("cli 1.2.3\n")
+            .stderr_eq("");
+        support::example_command("version")
+            .arg("--version")
+            .assert()
+            .success()
+            .stdout_eq("cli 1.2.3 (build abc123)\n")
+            .stderr_eq("");
+        support::example_command("version")
+            .args(["run", "-V"])
+            .assert()
+            .success()
+            .stdout_eq("run 1.2.3\n")
+            .stderr_eq("");
+        support::example_command("version")
+            .args(["run", "--version"])
+            .assert()
+            .success()
+            .stdout_eq("run 1.2.3 (build abc123)\n")
+            .stderr_eq("");
+        support::example_command("version")
+            .arg("internal")
+            .assert()
+            .success()
+            .stdout_eq("")
+            .stderr_eq("");
+        support::example_command("version")
+            .args(["internal", "--version"])
+            .assert()
+            .failure()
+            .stdout_eq("")
+            .stderr_eq(snapbox::str![[r#"
+error: unknown flag `--version`
+
+For more information, try '--help'.
+
+"#]]);
+    }
+
+    #[test]
+    fn version_actions_are_scoped_in_generated_help() {
+        support::example_command("version")
+            .arg("--help")
+            .assert()
+            .success()
+            .stdout_eq(snapbox::str![[r#"
+Version metadata example.
+
+Usage: cli [OPTIONS] <COMMAND>
+
+Commands:
+  run       Runs the versioned command.
+  internal  Runs an unversioned command.
+
+Options:
+  -h, --help     Print help
+  -V, --version  Print version
+
+"#]])
+            .stderr_eq("");
+        support::example_command("version")
+            .args(["run", "--help"])
+            .assert()
+            .success()
+            .stdout_eq(snapbox::str![[r#"
+Runs the versioned command.
+
+Usage: cli run [OPTIONS]
+
+Options:
+  -h, --help     Print help
+  -V, --version  Print version
+
+"#]])
+            .stderr_eq("");
+        support::example_command("version")
+            .args(["internal", "--help"])
+            .assert()
+            .success()
+            .stdout_eq(snapbox::str![[r#"
+Runs an unversioned command.
+
+Usage: cli internal [OPTIONS]
+
+Options:
+  -h, --help  Print help
+
+"#]])
+            .stderr_eq("");
+    }
 }

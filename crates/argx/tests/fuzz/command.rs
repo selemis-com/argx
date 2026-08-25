@@ -181,6 +181,7 @@ fn production_tree_parse(tokens: &[TreeToken]) -> Vec<TreeTrace> {
         args: &[&ROOT_VALUE],
         subcommands: &[&ADD, &CONFIG, &ROOT_STATUS],
         key: 0x4100,
+        ..Command::EMPTY
     };
 
     let owned =
@@ -190,6 +191,9 @@ fn production_tree_parse(tokens: &[TreeToken]) -> Vec<TreeTrace> {
     let mut trace = Vec::new();
     while let Some(item) = parser.next_event() {
         match item {
+            Ok(Event::Action { action, .. }) => {
+                panic!("fixed command-tree grammar selected unexpected action `{}`", action.name)
+            }
             Ok(Event::Flag { flag, .. }) => trace.push(TreeTrace::Flag(flag.key)),
             Ok(Event::Arg { arg, value }) => trace.push(TreeTrace::Arg(arg.key, value.to_vec())),
             Ok(Event::Command { command }) => trace.push(TreeTrace::Command(command.key)),

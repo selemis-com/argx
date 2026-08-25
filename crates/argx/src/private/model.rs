@@ -6,6 +6,44 @@
 /// comparing user-visible spellings.
 pub type Key = u64;
 
+/// Built-in parser action available in one command scope.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Action<'a> {
+    /// Canonical action name used by diagnostics.
+    pub name: &'a str,
+    /// One-line description shown in generated help.
+    pub help: &'a str,
+    /// Long spellings without the leading `--`.
+    pub longs: &'a [&'a str],
+    /// ASCII short spellings without the leading `-`.
+    pub shorts: &'a [u8],
+    /// Behavior triggered when the action is selected.
+    pub kind: ActionKind<'a>,
+}
+
+/// Behavior associated with one built-in parser action.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ActionKind<'a> {
+    /// Render generated help for the selected command scope.
+    Help,
+    /// Render command version information.
+    Version {
+        /// Text rendered when the short spelling is used.
+        short: &'a str,
+        /// Text rendered when the long spelling is used.
+        long: &'a str,
+    },
+}
+
+/// Help is present in every command scope and is modeled as an ordinary built-in action.
+pub static HELP_ACTION: Action<'static> = Action {
+    name: "help",
+    help: "Print help",
+    longs: &["help"],
+    shorts: b"h",
+    kind: ActionKind::Help,
+};
+
 /// Static command semantics consumed by parsing and help generation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Command<'a> {
@@ -13,6 +51,8 @@ pub struct Command<'a> {
     pub name: &'a str,
     /// One-line description shown in generated help.
     pub about: Option<&'a str>,
+    /// Built-in parser actions available in this command scope.
+    pub actions: &'a [&'a Action<'a>],
     /// Flags accepted by this command.
     pub flags: &'a [&'a Flag<'a>],
     /// Positional arguments accepted by this command.
@@ -25,8 +65,15 @@ pub struct Command<'a> {
 
 impl Command<'static> {
     /// Empty command metadata for use with struct update syntax.
-    pub const EMPTY: Self =
-        Self { name: "", about: None, flags: &[], args: &[], subcommands: &[], key: 0 };
+    pub const EMPTY: Self = Self {
+        name: "",
+        about: None,
+        actions: &[&HELP_ACTION],
+        flags: &[],
+        args: &[],
+        subcommands: &[],
+        key: 0,
+    };
 }
 
 /// Static semantics for one named argument.

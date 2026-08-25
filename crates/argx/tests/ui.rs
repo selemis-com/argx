@@ -75,6 +75,22 @@ error: `-h` is reserved by Argx
     }
 
     #[test]
+    fn invalid_version_metadata_is_rejected_deterministically() {
+        support::assert_ui_failure(
+            "invalid_version",
+            "argx",
+            snapbox::str![[r#"
+error: `--version` is reserved when command version metadata is present
+error: `-V` is reserved when command version metadata is present
+error: version metadata is only valid on Parser declarations and Subcommand variants
+error[..]: [..]command contains a flag spelling reserved by a built-in action
+error[..]: [..]subcommand contains a flag spelling reserved by a built-in action
+
+"#]],
+        );
+    }
+
+    #[test]
     fn invalid_flatten_models_are_rejected_before_codegen() {
         support::assert_ui_failure(
             "invalid_flatten",

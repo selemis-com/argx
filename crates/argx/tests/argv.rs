@@ -4,7 +4,9 @@
 mod tests {
     use std::ffi::OsStr;
 
-    use argx::__private::{Arg, ArgvParser, Command, Error, Event, Flag};
+    use argx::__private::{
+        Action, ActionKind, Arg, ArgvParser, Command, Error, Event, Flag, HELP_ACTION,
+    };
 
     static VERBOSE: Flag<'static> =
         Flag { key: 1, name: "verbose", longs: &["verbose"], shorts: b"v", ..Flag::BOOL };
@@ -282,21 +284,27 @@ mod tests {
     fn built_in_help_is_terminal_scope_control_and_respects_separator_rules() {
         let values = argv(&["--help"]);
         let mut parser = ArgvParser::new(&COMMAND, &values);
-        assert_eq!(parser.next_event(), Some(Err(Error::DisplayHelp)));
+        assert_eq!(
+            parser.next_event(),
+            Some(Ok(Event::Action { action: &HELP_ACTION, long: true }))
+        );
         assert_eq!(parser.next_event(), None);
 
         let values = argv(&["-vh"]);
         let mut parser = ArgvParser::new(&COMMAND, &values);
         assert_eq!(parser.next_event(), Some(Ok(Event::Flag { flag: &VERBOSE, value: None })));
-        assert_eq!(parser.next_event(), Some(Err(Error::DisplayHelp)));
+        assert_eq!(
+            parser.next_event(),
+            Some(Ok(Event::Action { action: &HELP_ACTION, long: false }))
+        );
         assert_eq!(parser.next_event(), None);
 
         let values = argv(&["--help=value"]);
         let mut parser = ArgvParser::new(&COMMAND, &values);
-        let Some(Err(Error::UnexpectedFlagValue { flag })) = parser.next_event() else {
+        let Some(Err(Error::UnexpectedActionValue { action })) = parser.next_event() else {
             panic!("attached help value did not produce the expected error")
         };
-        assert_eq!(flag.name, "help");
+        assert_eq!(action.name, "help");
 
         let values = argv(&["--", "--help"]);
         let mut parser = ArgvParser::new(&COMMAND, &values);
@@ -318,6 +326,40 @@ mod tests {
             Some(Ok(Event::Flag { flag: &RAW, value: Some(b"--help") }))
         );
         assert_eq!(parser.next_event(), None);
+    }
+
+    #[test]
+    fn version_actions_are_scope_local_and_select_short_or_long_text() {
+        static VERSION: Action<'static> = Action {
+            name: "version",
+            help: "Print version",
+            longs: &["version"],
+            shorts: b"V",
+            kind: ActionKind::Version { short: "1.2.3", long: "1.2.3 (build abc)" },
+        };
+        static VERSIONED: Command<'static> =
+            Command { name: "versioned", actions: &[&HELP_ACTION, &VERSION], ..Command::EMPTY };
+
+        let args = argv(&["-V"]);
+        let mut parser = ArgvParser::new(&VERSIONED, &args);
+        assert_eq!(parser.next_event(), Some(Ok(Event::Action { action: &VERSION, long: false })));
+        assert_eq!(parser.next_event(), None);
+
+        let args = argv(&["--version"]);
+        let mut parser = ArgvParser::new(&VERSIONED, &args);
+        assert_eq!(parser.next_event(), Some(Ok(Event::Action { action: &VERSION, long: true })));
+        assert_eq!(parser.next_event(), None);
+
+        let args = argv(&["--version=value"]);
+        let mut parser = ArgvParser::new(&VERSIONED, &args);
+        assert_eq!(
+            parser.next_event(),
+            Some(Err(Error::UnexpectedActionValue { action: &VERSION }))
+        );
+
+        let args = argv(&["--version"]);
+        let mut parser = ArgvParser::new(&COMMAND, &args);
+        assert_eq!(parser.next_event(), Some(Err(Error::UnknownFlag { token: b"--version" })));
     }
 
     #[test]
@@ -361,6 +403,7 @@ mod tests {
             args: &[&ROOT_VALUE],
             subcommands: &[&CHILD],
             key: 29,
+            ..Command::EMPTY
         };
 
         let argv = argv(&["--verbose", "root-value", "child", "child-value", "nested"]);
@@ -389,21 +432,12 @@ mod tests {
             global: true,
             ..Flag::VALUE
         };
-        static MID_GLOBAL: Flag<'static> = Flag {
-            key: 62,
-            name: "region",
-            longs: &["region"],
-            global: true,
-            ..Flag::VALUE
-        };
+        static MID_GLOBAL: Flag<'static> =
+            Flag { key: 62, name: "region", longs: &["region"], global: true, ..Flag::VALUE };
         static LEAF_JOBS: Flag<'static> =
             Flag { key: 63, name: "jobs", longs: &["jobs"], ..Flag::VALUE };
-        static LEAF: Command<'static> = Command {
-            name: "leaf",
-            flags: &[&LEAF_JOBS],
-            key: 66,
-            ..Command::EMPTY
-        };
+        static LEAF: Command<'static> =
+            Command { name: "leaf", flags: &[&LEAF_JOBS], key: 66, ..Command::EMPTY };
         static MID: Command<'static> = Command {
             name: "mid",
             flags: &[&MID_GLOBAL],
@@ -473,49 +507,28 @@ mod tests {
             global: true,
             ..Flag::BOOL
         };
-        static CHILD: Command<'static> = Command {
-            name: "child",
-            flags: &[&CHILD_GLOBAL],
-            key: 73,
-            ..Command::EMPTY
-        };
+        static CHILD: Command<'static> =
+            Command { name: "child", flags: &[&CHILD_GLOBAL], key: 73, ..Command::EMPTY };
         static ROOT: Command<'static> =
             Command { name: "root", subcommands: &[&CHILD], key: 72, ..Command::EMPTY };
 
         let args = argv(&["--child-global", "child"]);
         let mut parser = ArgvParser::new(&ROOT, &args);
-        assert_eq!(
-            parser.next_event(),
-            Some(Err(Error::UnknownFlag { token: b"--child-global" }))
-        );
+        assert_eq!(parser.next_event(), Some(Err(Error::UnknownFlag { token: b"--child-global" })));
 
         let args = argv(&["child", "--child-global"]);
         let mut parser = ArgvParser::new(&ROOT, &args);
         assert_eq!(parser.next_event(), Some(Ok(Event::Command { command: &CHILD })));
-        assert_eq!(
-            parser.next_event(),
-            Some(Ok(Event::Flag { flag: &CHILD_GLOBAL, value: None }))
-        );
+        assert_eq!(parser.next_event(), Some(Ok(Event::Flag { flag: &CHILD_GLOBAL, value: None })));
     }
 
     #[test]
     fn nearest_inherited_global_wins_when_ancestors_reuse_a_spelling() {
-        static ROOT_SCOPE: Flag<'static> = Flag {
-            key: 81,
-            name: "root-scope",
-            longs: &["scope"],
-            global: true,
-            ..Flag::BOOL
-        };
-        static MID_SCOPE: Flag<'static> = Flag {
-            key: 82,
-            name: "mid-scope",
-            longs: &["scope"],
-            global: true,
-            ..Flag::BOOL
-        };
-        static LEAF: Command<'static> =
-            Command { name: "leaf", key: 85, ..Command::EMPTY };
+        static ROOT_SCOPE: Flag<'static> =
+            Flag { key: 81, name: "root-scope", longs: &["scope"], global: true, ..Flag::BOOL };
+        static MID_SCOPE: Flag<'static> =
+            Flag { key: 82, name: "mid-scope", longs: &["scope"], global: true, ..Flag::BOOL };
+        static LEAF: Command<'static> = Command { name: "leaf", key: 85, ..Command::EMPTY };
         static MID: Command<'static> = Command {
             name: "mid",
             flags: &[&MID_SCOPE],

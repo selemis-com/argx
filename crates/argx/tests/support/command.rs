@@ -6,6 +6,8 @@ use snapbox::cmd::Command;
 
 /// Compiled path for the basic public example.
 static BASIC_EXAMPLE: OnceLock<PathBuf> = OnceLock::new();
+/// Compiled path for the version public example.
+static VERSION_EXAMPLE: OnceLock<PathBuf> = OnceLock::new();
 /// Compiled path for the subcommand public example.
 static SUBCOMMANDS_EXAMPLE: OnceLock<PathBuf> = OnceLock::new();
 
@@ -13,6 +15,7 @@ static SUBCOMMANDS_EXAMPLE: OnceLock<PathBuf> = OnceLock::new();
 pub(crate) fn example_command(name: &str) -> Command {
     let binary = match name {
         "basic" => BASIC_EXAMPLE.get_or_init(|| compile_example("basic")),
+        "version" => VERSION_EXAMPLE.get_or_init(|| compile_example("version")),
         "subcommands" => SUBCOMMANDS_EXAMPLE.get_or_init(|| compile_example("subcommands")),
         other => panic!("unsupported CLI-test example `{other}`"),
     };

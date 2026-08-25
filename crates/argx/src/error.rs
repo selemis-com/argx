@@ -27,6 +27,11 @@ pub enum Error {
         /// Fully rendered help text for the selected command scope.
         help: String,
     },
+    /// Version information requested through the built-in version action.
+    DisplayVersion {
+        /// Fully rendered version text for the selected command scope.
+        version: String,
+    },
     /// A flag-like token did not match any declared flag.
     UnknownFlag {
         /// Encoded token supplied by the caller.
@@ -90,20 +95,25 @@ impl Error {
     #[must_use]
     pub const fn exit_code(&self) -> i32 {
         match self {
-            Self::DisplayHelp { .. } => 0,
+            Self::DisplayHelp { .. } | Self::DisplayVersion { .. } => 0,
             _ => 2,
         }
     }
 
     /// Prints this result to the appropriate stream and terminates the process.
     ///
-    /// Help requests are written to standard output and exit successfully. Parse and binding
-    /// failures are written to standard error and exit with status 2.
+    /// Help and version requests are written to standard output and exit successfully. Parse and
+    /// binding failures are written to standard error and exit with status 2.
     pub fn exit(&self) -> ! {
         match self {
             Self::DisplayHelp { help } => {
                 let mut stdout = io::stdout().lock();
                 let _ = stdout.write_all(help.as_bytes());
+                let _ = stdout.flush();
+            }
+            Self::DisplayVersion { version } => {
+                let mut stdout = io::stdout().lock();
+                let _ = stdout.write_all(version.as_bytes());
                 let _ = stdout.flush();
             }
             _ => {
@@ -120,6 +130,7 @@ impl fmt::Display for Error {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::DisplayHelp { help } => formatter.write_str(help),
+            Self::DisplayVersion { version } => formatter.write_str(version),
             Self::UnknownFlag { token } => {
                 write!(formatter, "unknown flag `{}`", display_bytes(token))
             }
@@ -183,7 +194,7 @@ mod tests {
     }
 
     #[test]
-    fn help_requests_use_success_status_and_render_verbatim() {
+    fn display_actions_use_success_status_and_render_verbatim() {
         let help = Error::DisplayHelp { help: "Usage: tool [OPTIONS]\n".to_owned() };
         assert_eq!(help.exit_code(), 0);
         snapbox::Assert::new().action_env("SNAPSHOTS").eq(
@@ -193,6 +204,10 @@ Usage: tool [OPTIONS]
 
 "#]],
         );
+
+        let version = Error::DisplayVersion { version: "tool 1.2.3\n".to_owned() };
+        assert_eq!(version.exit_code(), 0);
+        assert_eq!(version.to_string(), "tool 1.2.3\n");
 
         let failure = Error::UnknownFlag { token: b"--bad".to_vec() };
         assert_eq!(failure.exit_code(), 2);

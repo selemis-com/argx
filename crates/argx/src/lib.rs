@@ -37,8 +37,8 @@ pub trait Args: Sized + __private::CommandArgs {}
 pub trait Parser: Sized + __private::CommandArgs {
     /// Parses the current process arguments, excluding the program name.
     ///
-    /// Help requests are printed to standard output and terminate successfully. Parse failures are
-    /// printed to standard error and terminate the process with status 2.
+    /// Help and version requests are printed to standard output and terminate successfully. Parse
+    /// failures are printed to standard error and terminate the process with status 2.
     fn parse() -> Self {
         Self::try_parse().unwrap_or_else(|error| error.exit())
     }
@@ -47,16 +47,17 @@ pub trait Parser: Sized + __private::CommandArgs {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::DisplayHelp`] when help is requested, or an error when argv cannot be bound
-    /// to this command or a bound value cannot be converted to its Rust field type.
+    /// Returns [`Error::DisplayHelp`] or [`Error::DisplayVersion`] when the corresponding built-in
+    /// action is requested, or an error when argv cannot be bound to this command or a bound value
+    /// cannot be converted to its Rust field type.
     fn try_parse() -> Result<Self, Error> {
         Self::try_parse_args(std::env::args_os().skip(1))
     }
 
     /// Parses a complete argv sequence whose first item is the program name.
     ///
-    /// Help requests are printed to standard output and terminate successfully. Parse failures are
-    /// printed to standard error and terminate the process with status 2.
+    /// Help and version requests are printed to standard output and terminate successfully. Parse
+    /// failures are printed to standard error and terminate the process with status 2.
     fn parse_from<I, T>(argv: I) -> Self
     where
         I: IntoIterator<Item = T>,
@@ -72,8 +73,9 @@ pub trait Parser: Sized + __private::CommandArgs {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::DisplayHelp`] when help is requested, or an error when argv cannot be bound
-    /// to this command or a bound value cannot be converted to its Rust field type.
+    /// Returns [`Error::DisplayHelp`] or [`Error::DisplayVersion`] when the corresponding built-in
+    /// action is requested, or an error when argv cannot be bound to this command or a bound value
+    /// cannot be converted to its Rust field type.
     fn try_parse_from<I, T>(argv: I) -> Result<Self, Error>
     where
         I: IntoIterator<Item = T>,
@@ -86,8 +88,8 @@ pub trait Parser: Sized + __private::CommandArgs {
 
     /// Parses arguments that do not include a program name.
     ///
-    /// Help requests are printed to standard output and terminate successfully. Parse failures are
-    /// printed to standard error and terminate the process with status 2.
+    /// Help and version requests are printed to standard output and terminate successfully. Parse
+    /// failures are printed to standard error and terminate the process with status 2.
     fn parse_args<I, T>(argv: I) -> Self
     where
         I: IntoIterator<Item = T>,
@@ -103,8 +105,9 @@ pub trait Parser: Sized + __private::CommandArgs {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::DisplayHelp`] when help is requested, or an error when argv cannot be bound
-    /// to this command or a bound value cannot be converted to its Rust field type.
+    /// Returns [`Error::DisplayHelp`] or [`Error::DisplayVersion`] when the corresponding built-in
+    /// action is requested, or an error when argv cannot be bound to this command or a bound value
+    /// cannot be converted to its Rust field type.
     fn try_parse_args<I, T>(argv: I) -> Result<Self, Error>
     where
         I: IntoIterator<Item = T>,

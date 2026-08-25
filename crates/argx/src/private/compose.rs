@@ -1,6 +1,6 @@
 //! Const-time composition and validation of independently derived command tables.
 
-use super::model::{Arg, Flag};
+use super::model::{Action, Arg, Flag};
 
 /// Returns the total number of entries across several static table slices.
 pub const fn table_len<T>(groups: &[&[T]]) -> usize {
@@ -132,6 +132,42 @@ pub const fn flag_spellings_unique(flags: &[&Flag<'_>]) -> bool {
             right += 1;
         }
         left += 1;
+    }
+    true
+}
+
+/// Reports whether built-in actions and declared flags have disjoint spellings in one scope.
+pub const fn action_flag_spellings_disjoint(actions: &[&Action<'_>], flags: &[&Flag<'_>]) -> bool {
+    let mut action = 0;
+    while action < actions.len() {
+        let mut flag = 0;
+        while flag < flags.len() {
+            let mut long = 0;
+            while long < actions[action].longs.len() {
+                let mut other = 0;
+                while other < flags[flag].longs.len() {
+                    if str_eq(actions[action].longs[long], flags[flag].longs[other]) {
+                        return false;
+                    }
+                    other += 1;
+                }
+                long += 1;
+            }
+
+            let mut short = 0;
+            while short < actions[action].shorts.len() {
+                let mut other = 0;
+                while other < flags[flag].shorts.len() {
+                    if actions[action].shorts[short] == flags[flag].shorts[other] {
+                        return false;
+                    }
+                    other += 1;
+                }
+                short += 1;
+            }
+            flag += 1;
+        }
+        action += 1;
     }
     true
 }

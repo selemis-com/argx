@@ -12,12 +12,16 @@ pub(crate) enum Inferred<T> {
 }
 
 /// Attributes accepted on a command struct.
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub(crate) struct CommandAttrs {
     /// Explicit command-line name.
     pub name: Option<String>,
     /// Explicit one-line command description.
     pub about: Option<String>,
+    /// Short version text expression.
+    pub version: Option<Expr>,
+    /// Long version text expression.
+    pub long_version: Option<Expr>,
 }
 
 /// Attributes accepted on a command field.
@@ -43,32 +47,16 @@ pub(crate) struct FieldAttrs {
 
 /// Parses every `#[argx(...)]` attribute on a command declaration.
 pub(crate) fn command(attributes: &[Attribute]) -> syn::Result<CommandAttrs> {
-    let mut parsed = CommandAttrs::default();
-    for attribute in attributes.iter().filter(|attribute| attribute.path().is_ident("argx")) {
-        attribute.parse_nested_meta(|meta| {
-            if meta.path.is_ident("name") {
-                if parsed.name.is_some() {
-                    return Err(meta.error("duplicate `name` attribute"));
-                }
-                let value = meta.value()?.parse::<LitStr>()?;
-                parsed.name = Some(value.value());
-                Ok(())
-            } else if meta.path.is_ident("about") {
-                if parsed.about.is_some() {
-                    return Err(meta.error("duplicate `about` attribute"));
-                }
-                parsed.about = Some(meta.value()?.parse::<LitStr>()?.value());
-                Ok(())
-            } else {
-                Err(meta.error("unsupported Argx command attribute"))
-            }
-        })?;
-    }
-    Ok(parsed)
+    command_like(attributes, "command")
 }
 
 /// Parses every `#[argx(...)]` attribute on a subcommand variant.
 pub(crate) fn variant(attributes: &[Attribute]) -> syn::Result<CommandAttrs> {
+    command_like(attributes, "subcommand variant")
+}
+
+/// Parses metadata shared by root commands and selectable subcommands.
+fn command_like(attributes: &[Attribute], context: &str) -> syn::Result<CommandAttrs> {
     let mut parsed = CommandAttrs::default();
     for attribute in attributes.iter().filter(|attribute| attribute.path().is_ident("argx")) {
         attribute.parse_nested_meta(|meta| {
@@ -85,8 +73,20 @@ pub(crate) fn variant(attributes: &[Attribute]) -> syn::Result<CommandAttrs> {
                 }
                 parsed.about = Some(meta.value()?.parse::<LitStr>()?.value());
                 Ok(())
+            } else if meta.path.is_ident("version") {
+                if parsed.version.is_some() {
+                    return Err(meta.error("duplicate `version` attribute"));
+                }
+                parsed.version = Some(meta.value()?.parse::<Expr>()?);
+                Ok(())
+            } else if meta.path.is_ident("long_version") {
+                if parsed.long_version.is_some() {
+                    return Err(meta.error("duplicate `long_version` attribute"));
+                }
+                parsed.long_version = Some(meta.value()?.parse::<Expr>()?);
+                Ok(())
             } else {
-                Err(meta.error("unsupported Argx subcommand variant attribute"))
+                Err(meta.error(format!("unsupported Argx {context} attribute")))
             }
         })?;
     }

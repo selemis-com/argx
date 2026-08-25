@@ -309,7 +309,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
     let built =
         if command.binding.unit { quote!(Self) } else { quote!(Self { #(#built_fields),* }) };
 
-    let composed_checks = command.fields.iter().any(model::Field::is_flatten).then(|| {
+    let flattened_checks = command.fields.iter().any(model::Field::is_flatten).then(|| {
         quote! {
             const _: () = ::core::assert!(
                 #facade::__private::command_keys_unique(ARGX_COMMAND.flags, ARGX_COMMAND.args),
@@ -328,6 +328,30 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
 
     let name = &command.semantics.name;
     let about = option_str(command.semantics.about.as_deref());
+    let short_version =
+        command.semantics.version.as_ref().or(command.semantics.long_version.as_ref());
+    let long_version =
+        command.semantics.long_version.as_ref().or(command.semantics.version.as_ref());
+    let version_action = short_version.zip(long_version).map(|(short, long)| {
+        quote! {
+            static ARGX_VERSION_ACTION: #facade::__private::Action<'static> =
+                #facade::__private::Action {
+                    name: "version",
+                    help: "Print version",
+                    longs: &["version"],
+                    shorts: b"V",
+                    kind: #facade::__private::ActionKind::Version {
+                        short: #short,
+                        long: #long,
+                    },
+                };
+        }
+    });
+    let command_actions = if version_action.is_some() {
+        quote!(&[&#facade::__private::HELP_ACTION, &ARGX_VERSION_ACTION])
+    } else {
+        quote!(&[&#facade::__private::HELP_ACTION])
+    };
     let command_subcommands = subcommand.map_or_else(
         || quote!(&[]),
         |(_, field)| {
@@ -355,18 +379,27 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
             #(#flag_tables)*
             #(#arg_tables)*
             #table_decls
+            #version_action
 
             static ARGX_COMMAND: #facade::__private::Command<'static> =
                 #facade::__private::Command {
                     name: #name,
                     about: #about,
+                    actions: #command_actions,
                     flags: #command_flags,
                     args: #command_args,
                     subcommands: #command_subcommands,
                     key: #command_key,
                 };
 
-            #composed_checks
+            const _: () = ::core::assert!(
+                #facade::__private::action_flag_spellings_disjoint(
+                    ARGX_COMMAND.actions,
+                    ARGX_COMMAND.flags,
+                ),
+                "command contains a flag spelling reserved by a built-in action",
+            );
+            #flattened_checks
 
             impl #impl_generics #facade::__private::CommandArgs
                 for #ident #ty_generics #where_clause
@@ -400,6 +433,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                             }
                         },
                         #facade::__private::Event::Command { .. } => false,
+                        #facade::__private::Event::Action { .. } => false,
                     };
                     if matched {
                         return true;

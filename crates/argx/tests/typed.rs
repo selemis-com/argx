@@ -249,6 +249,37 @@ mod tests {
         key: String,
     }
 
+    const SHORT_VERSION: &str = "1.2.3";
+    const LONG_VERSION: &str = "1.2.3 (build abc123)";
+
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    #[argx(name = "meta", version = SHORT_VERSION, long_version = LONG_VERSION)]
+    struct MetadataCli {
+        #[argx(subcommand)]
+        command: MetadataCommand,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Subcommand)]
+    enum MetadataCommand {
+        #[argx(version = SHORT_VERSION, long_version = LONG_VERSION)]
+        Run,
+        Internal,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    #[argx(name = "short-only", version = SHORT_VERSION)]
+    struct ShortVersionOnly;
+
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    #[argx(name = "long-only", long_version = LONG_VERSION)]
+    struct LongVersionOnly;
+
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    struct UserVersionFlag {
+        #[argx(short = 'V', long = "version")]
+        version: bool,
+    }
+
     #[derive(Debug, PartialEq, Eq, argx::Args)]
     struct ReusedArgs {
         #[argx(long)]
@@ -679,6 +710,49 @@ Options:
     }
 
     #[test]
+    fn version_metadata_is_scoped_to_the_selected_command() {
+        assert_eq!(
+            MetadataCli::try_parse_args(["-V"]),
+            Err(Error::DisplayVersion { version: String::from("meta 1.2.3\n") }),
+        );
+        assert_eq!(
+            MetadataCli::try_parse_args(["--version"]),
+            Err(Error::DisplayVersion { version: String::from("meta 1.2.3 (build abc123)\n") }),
+        );
+        assert_eq!(
+            MetadataCli::try_parse_args(["--version=value"]),
+            Err(Error::UnexpectedValue { name: "version" }),
+        );
+        assert_eq!(
+            MetadataCli::try_parse_args(["run", "--version"]),
+            Err(Error::DisplayVersion { version: String::from("run 1.2.3 (build abc123)\n") }),
+        );
+        assert_eq!(
+            MetadataCli::try_parse_args(["internal", "--version"]),
+            Err(Error::UnknownFlag { token: b"--version".to_vec() }),
+        );
+        assert_eq!(
+            MetadataCli::try_parse_args(["internal"]),
+            Ok(MetadataCli { command: MetadataCommand::Internal }),
+        );
+        assert_eq!(
+            ShortVersionOnly::try_parse_args(["--version"]),
+            Err(Error::DisplayVersion { version: String::from("short-only 1.2.3\n") }),
+        );
+        assert_eq!(
+            LongVersionOnly::try_parse_args(["-V"]),
+            Err(Error::DisplayVersion {
+                version: String::from("long-only 1.2.3 (build abc123)\n"),
+            }),
+        );
+        assert_eq!(
+            UserVersionFlag::try_parse_args(["--version"]),
+            Ok(UserVersionFlag { version: true }),
+        );
+        assert_eq!(UserVersionFlag::try_parse_args(["-V"]), Ok(UserVersionFlag { version: true }),);
+    }
+
+    #[test]
     fn subcommands_bind_unit_payload_and_nested_command_trees() {
         assert_eq!(
             SubcommandCli::try_parse_args([
@@ -786,10 +860,7 @@ Options:
             assert_eq!(
                 GlobalCli::try_parse_args(argv),
                 Ok(GlobalCli {
-                    common: GlobalCommon {
-                        verbose: false,
-                        profile: Some(String::from("dev")),
-                    },
+                    common: GlobalCommon { verbose: false, profile: Some(String::from("dev")) },
                     command: GlobalCommand::Outer(GlobalOuterArgs {
                         region: Some(String::from("eu")),
                         command: GlobalNestedCommand::Leaf(GlobalLeafArgs { verbose: false }),
