@@ -766,6 +766,7 @@ fn production_parse(command: &CommandSpec, argv: &[OsString]) -> ParseRun {
         .map(|(flag, longs)| Flag {
             key: flag.key,
             name: &flag.name,
+            diagnostic: &flag.name,
             help: None,
             longs,
             shorts: &flag.shorts,

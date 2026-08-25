@@ -147,6 +147,7 @@ mod tests {
         assert!(command.subcommands.is_empty());
 
         assert_eq!(command.flags[0].name, "verbose");
+        assert_eq!(command.flags[0].diagnostic, "--verbose");
         assert_eq!(command.flags[0].longs, ["verbose"]);
         assert_eq!(command.flags[0].shorts, [b'v']);
         assert_eq!(command.flags[0].help, Some("Enable verbose output."));
@@ -157,6 +158,7 @@ mod tests {
         assert!(!command.flags[0].allow_negative_numbers);
 
         assert_eq!(command.flags[1].name, "output");
+        assert_eq!(command.flags[1].diagnostic, "--output");
         assert_eq!(command.flags[1].env, Some("ARGX_OUTPUT"));
         assert_eq!(command.flags[1].longs, ["output"]);
         assert!(command.flags[1].shorts.is_empty());

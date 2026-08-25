@@ -34,6 +34,7 @@ pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
                 static #version_table: #facade::__private::Action<'static> =
                     #facade::__private::Action {
                         name: "version",
+                        diagnostic: "--version",
                         help: "Print version",
                         longs: &["version"],
                         shorts: b"V",

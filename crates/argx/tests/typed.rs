@@ -494,7 +494,7 @@ mod tests {
         );
         assert_eq!(
             RequiredFlag::try_parse_args(std::iter::empty::<&str>()),
-            Err(Error::MissingRequired { name: "output" })
+            Err(Error::MissingRequired { name: "--output" })
         );
     }
 
@@ -502,15 +502,15 @@ mod tests {
     fn scalar_occurrences_are_strict_and_collections_repeat() {
         assert_eq!(
             Cli::try_parse_args(["--port", "1", "--port", "2", "input"]),
-            Err(Error::DuplicateArgument { name: "port" })
+            Err(Error::DuplicateArgument { name: "--port" })
         );
         assert_eq!(
             Cli::try_parse_args(["-v", "--verbose", "input"]),
-            Err(Error::DuplicateArgument { name: "verbose" })
+            Err(Error::DuplicateArgument { name: "--verbose" })
         );
         assert_eq!(
             Cli::try_parse_args(["--port", "not-a-port", "--port", "2", "input"]),
-            Err(Error::DuplicateArgument { name: "port" })
+            Err(Error::DuplicateArgument { name: "--port" })
         );
 
         let parsed = Cli::try_parse_args(["--define", "one", "--define", "two", "input"])
@@ -532,10 +532,10 @@ mod tests {
             Empty::try_parse_args(["--unknown"]),
             Err(Error::UnknownFlag { token: b"--unknown".to_vec() })
         );
-        assert_eq!(Cli::try_parse_args(["--port"]), Err(Error::MissingValue { name: "port" }));
+        assert_eq!(Cli::try_parse_args(["--port"]), Err(Error::MissingValue { name: "--port" }));
         assert_eq!(
             Cli::try_parse_args(["--verbose=true", "input"]),
-            Err(Error::UnexpectedValue { name: "verbose" })
+            Err(Error::UnexpectedValue { name: "--verbose" })
         );
         assert_eq!(
             Empty::try_parse_args(["extra"]),
@@ -549,7 +549,7 @@ mod tests {
             .expect_err("invalid integer must fail");
         match error {
             Error::InvalidValue(error) => {
-                assert_eq!(error.name, "port");
+                assert_eq!(error.name, "--port");
                 assert_eq!(error.value, "not-a-port");
                 assert!(!error.reason.is_empty());
             }
@@ -648,7 +648,7 @@ mod tests {
     fn flattened_checks_preserve_global_error_precedence() {
         assert_eq!(
             FlattenPrecedence::try_parse_args(["--duplicate=not-a-number", "--duplicate=2",]),
-            Err(Error::DuplicateArgument { name: "duplicate" })
+            Err(Error::DuplicateArgument { name: "--duplicate" })
         );
         assert_eq!(
             FlattenPrecedence::try_parse_args([
@@ -660,7 +660,7 @@ mod tests {
         );
         assert_eq!(
             FlattenPrecedence::try_parse_args(std::iter::empty::<&str>()),
-            Err(Error::MissingRequired { name: "required" })
+            Err(Error::MissingRequired { name: "--required" })
         );
     }
 
@@ -778,7 +778,7 @@ Options:
         ));
         assert_eq!(
             HelpCli::try_parse_args(["--output", "--help"]),
-            Err(Error::MissingValue { name: "output" }),
+            Err(Error::MissingValue { name: "--output" }),
         );
         assert_eq!(
             Empty::try_parse_args(["--", "--help"]),
@@ -798,7 +798,7 @@ Options:
         );
         assert_eq!(
             MetadataCli::try_parse_args(["--version=value"]),
-            Err(Error::UnexpectedValue { name: "version" }),
+            Err(Error::UnexpectedValue { name: "--version" }),
         );
         assert_eq!(
             MetadataCli::try_parse_args(["run", "--version"]),
@@ -841,7 +841,7 @@ Options:
         );
         assert_eq!(
             DefaultCli::try_parse_args(["--port", "1", "--port", "2"]),
-            Err(Error::DuplicateArgument { name: "port" }),
+            Err(Error::DuplicateArgument { name: "--port" }),
         );
         assert_eq!(
             FlattenedDefaults::try_parse_args(std::iter::empty::<&str>()),
@@ -853,13 +853,13 @@ Options:
     fn typed_defaults_do_not_repair_invalid_or_incomplete_argv() {
         assert_eq!(
             DefaultCli::try_parse_args(["--port"]),
-            Err(Error::MissingValue { name: "port" }),
+            Err(Error::MissingValue { name: "--port" }),
         );
 
         let error = DefaultCli::try_parse_args(["--port", "not-a-port"])
             .expect_err("an explicit invalid value must not fall back to the default");
         let Error::InvalidValue(error) = error else { panic!("unexpected error: {error:?}") };
-        assert_eq!(error.name, "port");
+        assert_eq!(error.name, "--port");
         assert_eq!(error.value, "not-a-port");
     }
 
@@ -949,19 +949,25 @@ Options:
             "invalid-environment" => {
                 let error = EnvironmentCli::try_parse_args(std::iter::empty::<&str>())
                     .expect_err("an invalid environment value must not fall back to the default");
-                let Error::InvalidValue(error) = error else {
+                let rendered = error.to_string();
+                assert!(rendered.contains("environment variable `ARGX_TEST_PORT`"));
+                assert!(rendered.contains("for `--port`"));
+                let Error::InvalidEnvironmentValue { name, environment, value, reason } = error
+                else {
                     panic!("unexpected error: {error:?}");
                 };
-                assert_eq!(error.name, "port");
-                assert_eq!(error.value, "not-a-port");
+                assert_eq!(name, "--port");
+                assert_eq!(environment, "ARGX_TEST_PORT");
+                assert_eq!(value, OsString::from("not-a-port"));
+                assert!(!reason.is_empty());
             }
             "incomplete-argv" => assert_eq!(
                 EnvironmentCli::try_parse_args(["--port"]),
-                Err(Error::MissingValue { name: "port" }),
+                Err(Error::MissingValue { name: "--port" }),
             ),
             "required-missing" => assert_eq!(
                 RequiredEnvironmentCli::try_parse_args(std::iter::empty::<&str>()),
-                Err(Error::MissingRequired { name: "port" }),
+                Err(Error::MissingRequired { name: "--port" }),
             ),
             "required-environment" => assert_eq!(
                 RequiredEnvironmentCli::try_parse_args(std::iter::empty::<&str>()),
@@ -969,7 +975,7 @@ Options:
             ),
             "required-before-conversion" => assert_eq!(
                 EnvironmentRequirednessCli::try_parse_args(["--value", "not-a-number"]),
-                Err(Error::MissingRequired { name: "port" }),
+                Err(Error::MissingRequired { name: "--port" }),
             ),
             "flattened" => assert_eq!(
                 FlattenedEnvironmentCli::try_parse_args(std::iter::empty::<&str>()),
@@ -1232,7 +1238,7 @@ Options:\n  --verbose\n  --region\n  --profile\n  -h, --help  Print help\n",
                 "--profile",
                 "second",
             ]),
-            Err(Error::DuplicateArgument { name: "profile" }),
+            Err(Error::DuplicateArgument { name: "--profile" }),
         );
     }
 

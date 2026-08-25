@@ -6,8 +6,10 @@ pub type Key = u64;
 /// Built-in parser action available in one command scope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Action<'a> {
-    /// Canonical action name used by diagnostics.
+    /// Canonical semantic action name.
     pub name: &'a str,
+    /// Canonical user-facing spelling used by diagnostics.
+    pub diagnostic: &'a str,
     /// One-line description shown in generated help.
     pub help: &'a str,
     /// Long spellings without the leading `--`.
@@ -35,6 +37,7 @@ pub enum ActionKind<'a> {
 /// Help is present in every command scope and is modeled as an ordinary built-in action.
 pub static HELP_ACTION: Action<'static> = Action {
     name: "help",
+    diagnostic: "--help",
     help: "Print help",
     longs: &["help"],
     shorts: b"h",
@@ -78,8 +81,10 @@ impl Command<'static> {
 pub struct Flag<'a> {
     /// Derive-assigned semantic argument identity.
     pub key: Key,
-    /// Canonical field name used by diagnostics and generated binding code.
+    /// Canonical field name used for value placeholders and semantic identity.
     pub name: &'a str,
+    /// Canonical user-facing spelling used by diagnostics.
+    pub diagnostic: &'a str,
     /// One-line description shown in generated help.
     pub help: Option<&'a str>,
     /// Long spellings without the leading `--`.
@@ -106,6 +111,7 @@ impl Flag<'static> {
     pub const BOOL: Self = Self {
         key: 0,
         name: "",
+        diagnostic: "",
         help: None,
         longs: &[],
         shorts: &[],
@@ -126,7 +132,7 @@ impl Flag<'static> {
 pub struct Arg<'a> {
     /// Derive-assigned semantic argument identity.
     pub key: Key,
-    /// Canonical field name used by diagnostics and generated binding code.
+    /// Canonical field name used by generated binding and help.
     pub name: &'a str,
     /// One-line description shown in generated help.
     pub help: Option<&'a str>,

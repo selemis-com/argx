@@ -332,6 +332,7 @@ mod tests {
     fn version_actions_are_scope_local_and_select_short_or_long_text() {
         static VERSION: Action<'static> = Action {
             name: "version",
+            diagnostic: "--version",
             help: "Print version",
             longs: &["version"],
             shorts: b"V",

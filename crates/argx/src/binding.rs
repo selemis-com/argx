@@ -48,7 +48,7 @@ pub(crate) fn parse_refs<T: CommandArgs>(argv: &[&std::ffi::OsStr]) -> Result<T,
             Err(error) => return Err(raw_error(error)),
         };
         let applied = T::apply(&mut partial, &event);
-        assert!(applied, "generated command metadata and binding keys diverged");
+        assert!(applied, "generated command metadata and binding diverged");
     }
 
     T::check(&mut partial)?;
@@ -58,10 +58,12 @@ pub(crate) fn parse_refs<T: CommandArgs>(argv: &[&std::ffi::OsStr]) -> Result<T,
 /// Converts one raw-parser error into the owned public error type.
 fn raw_error(error: RawError<'static, '_>) -> Error {
     match error {
-        RawError::UnexpectedActionValue { action } => Error::UnexpectedValue { name: action.name },
+        RawError::UnexpectedActionValue { action } => {
+            Error::UnexpectedValue { name: action.diagnostic }
+        }
         RawError::UnknownFlag { token } => Error::UnknownFlag { token: token.to_vec() },
-        RawError::MissingFlagValue { flag } => Error::MissingValue { name: flag.name },
-        RawError::UnexpectedFlagValue { flag } => Error::UnexpectedValue { name: flag.name },
+        RawError::MissingFlagValue { flag } => Error::MissingValue { name: flag.diagnostic },
+        RawError::UnexpectedFlagValue { flag } => Error::UnexpectedValue { name: flag.diagnostic },
         RawError::UnexpectedArg { token } => Error::UnexpectedArgument { token: token.to_vec() },
         RawError::UnknownCommand { token } => Error::UnknownCommand { token: token.to_vec() },
     }
@@ -86,7 +88,12 @@ fn render_version(name: &str, version: &str) -> String {
 ///
 /// Returns an error when the value is not valid UTF-8.
 pub(crate) fn text_value(value: RawValue, name: &'static str) -> Result<String, Error> {
-    text_bytes(encoded_value(value), name)
+    match value {
+        RawValue::Argv(value) => text_bytes(value, name),
+        RawValue::Environment { name: environment, value } => {
+            environment_text(value, name, environment)
+        }
+    }
 }
 
 /// Converts repeated raw values to UTF-8 text.
@@ -112,14 +119,27 @@ where
     T: FromStr,
     T::Err: fmt::Display,
 {
-    let text = text_value(value, name)?;
-    T::from_str(&text).map_err(|reason| {
-        Error::InvalidValue(Box::new(InvalidValue {
-            name,
-            value: text,
-            reason: reason.to_string(),
-        }))
-    })
+    match value {
+        RawValue::Argv(value) => {
+            let text = text_bytes(value, name)?;
+            T::from_str(&text).map_err(|reason| {
+                Error::InvalidValue(Box::new(InvalidValue {
+                    name,
+                    value: text,
+                    reason: reason.to_string(),
+                }))
+            })
+        }
+        RawValue::Environment { name: environment, value } => {
+            let text = environment_text(value, name, environment)?;
+            T::from_str(&text).map_err(|reason| Error::InvalidEnvironmentValue {
+                name,
+                environment,
+                value: OsString::from(text.as_str()),
+                reason: reason.to_string(),
+            })
+        }
+    }
 }
 
 /// Converts repeated raw values through UTF-8 and [`FromStr`].
@@ -157,7 +177,7 @@ where
 {
     let value = match value {
         RawValue::Argv(value) => os_string(value, name)?,
-        RawValue::Environment(value) => value,
+        RawValue::Environment { value, .. } => value,
     };
     Ok(T::from(value))
 }
@@ -183,12 +203,18 @@ fn text_bytes(value: Vec<u8>, name: &'static str) -> Result<String, Error> {
     String::from_utf8(value).map_err(|bad| Error::InvalidUtf8 { name, value: bad.into_bytes() })
 }
 
-/// Converts a raw source into the encoded bytes used by text-oriented bindings.
-fn encoded_value(value: RawValue) -> Vec<u8> {
-    match value {
-        RawValue::Argv(value) => value,
-        RawValue::Environment(value) => value.into_encoded_bytes(),
-    }
+/// Converts one environment value to text while preserving its source in failures.
+fn environment_text(
+    value: OsString,
+    name: &'static str,
+    environment: &'static str,
+) -> Result<String, Error> {
+    value.into_string().map_err(|value| Error::InvalidEnvironmentValue {
+        name,
+        environment,
+        value,
+        reason: String::from("value is not valid UTF-8"),
+    })
 }
 
 /// Reconstructs an operating-system string from bytes emitted by the raw argv parser.

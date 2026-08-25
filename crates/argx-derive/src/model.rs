@@ -147,6 +147,8 @@ pub(crate) struct Argument {
     pub help: Option<String>,
     /// Whether the argument is named or positional on the command line.
     pub kind: ArgumentKind,
+    /// Canonical user-facing label used by diagnostics.
+    pub diagnostic: String,
     /// Whether a named argument remains in scope for descendant commands.
     pub global: bool,
     /// Syntactic value shape relevant to CLI cardinality.
@@ -465,6 +467,18 @@ impl Field {
             ));
         }
 
+        let diagnostic = match &kind {
+            ArgumentKind::Flag { longs, shorts } => longs.first().map_or_else(
+                || {
+                    shorts.first().map_or_else(
+                        || binding.name.clone(),
+                        |short| format!("-{}", char::from(*short)),
+                    )
+                },
+                |long| format!("--{long}"),
+            ),
+            ArgumentKind::Positional => binding.name.clone(),
+        };
         let has_default = attributes.default.is_some();
         let switch = matches!(&kind, ArgumentKind::Flag { .. }) && shape == Shape::Bool;
         if !switch {
@@ -478,6 +492,7 @@ impl Field {
             semantics: FieldSemantics::Argument(Argument {
                 help,
                 kind,
+                diagnostic,
                 global: attributes.global,
                 shape,
                 env,
@@ -881,6 +896,7 @@ mod tests {
             panic!("verbose should be an argument");
         };
         assert!(matches!(&argument.kind, ArgumentKind::Flag { .. }));
+        assert_eq!(argument.diagnostic, "--verbose");
         assert!(argument.global);
         assert_eq!(argument.shape, Shape::Bool);
         assert!(verbose.binding.value.is_none());
@@ -890,6 +906,7 @@ mod tests {
             panic!("output should be an argument");
         };
         assert!(matches!(&argument.kind, ArgumentKind::Flag { .. }));
+        assert_eq!(argument.diagnostic, "--output");
         assert_eq!(argument.shape, Shape::Optional);
         assert_eq!(argument.env.as_deref(), Some("ARGX_OUTPUT"));
         assert!(argument.has_default);

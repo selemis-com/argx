@@ -1045,7 +1045,7 @@ fn flattened_binding_preserves_error_precedence() {
 
         prop_assert_eq!(
             FlattenErrors::try_parse_args([first_arg.clone(), second_arg.clone()]),
-            Err(TypedError::DuplicateArgument { name: "port" }),
+            Err(TypedError::DuplicateArgument { name: "--port" }),
         );
         prop_assert_eq!(
             FlattenErrors::try_parse_args([
@@ -1057,7 +1057,7 @@ fn flattened_binding_preserves_error_precedence() {
         );
         prop_assert_eq!(
             FlattenErrors::try_parse_args([first_arg.clone()]),
-            Err(TypedError::MissingRequired { name: "required" }),
+            Err(TypedError::MissingRequired { name: "--required" }),
         );
 
         let with_required =
@@ -1072,7 +1072,7 @@ fn flattened_binding_preserves_error_precedence() {
             ),
             Err(_) => match with_required {
                 Err(TypedError::InvalidValue(error)) => {
-                    prop_assert_eq!(error.name, "port");
+                    prop_assert_eq!(error.name, "--port");
                     prop_assert_eq!(error.value.as_str(), first.value.as_str());
                 }
                 other => {
@@ -1193,15 +1193,15 @@ fn subcommand_binding_preserves_error_precedence() {
                 second_arg,
                 OsString::from("--required=given"),
             ]),
-            Err(TypedError::DuplicateArgument { name: "port" }),
+            Err(TypedError::DuplicateArgument { name: "--port" }),
         );
         prop_assert_eq!(
             SubcommandErrors::try_parse_args([OsString::from("child"), first_arg]),
-            Err(TypedError::MissingRequired { name: "required" }),
+            Err(TypedError::MissingRequired { name: "--required" }),
         );
         prop_assert_eq!(
             SubcommandErrors::try_parse_args([OsString::from("--root"), OsString::from("--root"),]),
-            Err(TypedError::DuplicateArgument { name: "root" }),
+            Err(TypedError::DuplicateArgument { name: "--root" }),
         );
 
         let mut coverage = coverage.borrow_mut();
@@ -1256,7 +1256,7 @@ fn typed_scalar_errors_follow_binding_precedence() {
             Err(_) => {
                 match single {
                     Err(TypedError::InvalidValue(error)) => {
-                        prop_assert_eq!(error.name, "port");
+                        prop_assert_eq!(error.name, "--port");
                         prop_assert_eq!(error.value.as_str(), first_value);
                         prop_assert!(!error.reason.is_empty());
                     }
@@ -1270,7 +1270,7 @@ fn typed_scalar_errors_follow_binding_precedence() {
 
         prop_assert_eq!(
             TypedScalar::try_parse_args([first_arg.clone(), second_arg.clone()]),
-            Err(TypedError::DuplicateArgument { name: "port" }),
+            Err(TypedError::DuplicateArgument { name: "--port" }),
         );
         prop_assert_eq!(
             TypedScalar::try_parse_args([first_arg, second_arg, OsString::from("--unknown")]),
@@ -1336,7 +1336,7 @@ fn typed_binding_preserves_non_utf8_os_values() {
         attached_text.extend_from_slice(&bytes);
         prop_assert_eq!(
             TypedTextFlag::try_parse_args([OsString::from_vec(attached_text)]),
-            Err(TypedError::InvalidUtf8 { name: "value", value: bytes.clone() }),
+            Err(TypedError::InvalidUtf8 { name: "--value", value: bytes.clone() }),
         );
         coverage.borrow_mut().record(&bytes);
         Ok(())

@@ -5,8 +5,13 @@
 pub enum RawValue {
     /// Encoded bytes borrowed from argv and copied into binding state.
     Argv(Vec<u8>),
-    /// Operating-system value supplied by an environment variable.
-    Environment(std::ffi::OsString),
+    /// Operating-system value supplied by one environment variable.
+    Environment {
+        /// Environment variable that supplied this value.
+        name: &'static str,
+        /// Unconverted operating-system value.
+        value: std::ffi::OsString,
+    },
 }
 
 /// Converts one raw value directly into a UTF-8 string.

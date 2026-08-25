@@ -118,11 +118,7 @@ fn visible_flags<'a>(path: &[&'a Command<'a>]) -> Vec<VisibleFlag<'a>> {
                 })
                 .collect::<Vec<_>>();
 
-            (!longs.is_empty() || !shorts.is_empty()).then_some(VisibleFlag {
-                flag,
-                longs,
-                shorts,
-            })
+            (!longs.is_empty() || !shorts.is_empty()).then_some(VisibleFlag { flag, longs, shorts })
         })
         .collect()
 }
@@ -141,11 +137,7 @@ fn write_rows(output: &mut String, rows: &[(String, String)]) {
 
 /// Renders one named flag in an options table.
 fn flag_label(flag: &VisibleFlag<'_>) -> String {
-    spellings_label(
-        &flag.shorts,
-        &flag.longs,
-        flag.flag.takes_value.then_some(flag.flag.name),
-    )
+    spellings_label(&flag.shorts, &flag.longs, flag.flag.takes_value.then_some(flag.flag.name))
 }
 
 /// Renders help text plus the explicit environment fallback, when present.
@@ -360,6 +352,7 @@ Options:
         };
         static VERSION: Action<'static> = Action {
             name: "version",
+            diagnostic: "--version",
             help: "Print version",
             longs: &["version"],
             shorts: b"V",
@@ -371,12 +364,8 @@ Options:
             flags: &[&LOCAL_SCOPE],
             ..Command::EMPTY
         };
-        static MID: Command<'static> = Command {
-            name: "mid",
-            flags: &[&MID_SCOPE],
-            subcommands: &[&LEAF],
-            ..Command::EMPTY
-        };
+        static MID: Command<'static> =
+            Command { name: "mid", flags: &[&MID_SCOPE], subcommands: &[&LEAF], ..Command::EMPTY };
         static GLOBAL_ROOT: Command<'static> = Command {
             name: "tool",
             flags: &[&ROOT_SCOPE, &ROOT_PROFILE, &ROOT_VERSION],
@@ -401,5 +390,4 @@ Options:
 "#]],
         );
     }
-
 }

@@ -71,6 +71,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
             unreachable!("flag list only contains named arguments");
         };
         let name = &field.binding.name;
+        let diagnostic = &argument.diagnostic;
         let help = option_str(argument.help.as_deref());
         let global = argument.global;
         let env = option_str(argument.env.as_deref());
@@ -84,6 +85,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
             static #table: #facade::__private::Flag<'static> = #facade::__private::Flag {
                 key: #key,
                 name: #name,
+                diagnostic: #diagnostic,
                 help: #help,
                 longs: &[#(#longs),*],
                 shorts: &[#(#shorts),*],
@@ -216,7 +218,10 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
             if partial.#slot.0.is_none() {
                 if let ::std::option::Option::Some(value) = ::std::env::var_os(#env) {
                     partial.#slot.0 = ::std::option::Option::Some(
-                        #facade::__private::RawValue::Environment(value),
+                        #facade::__private::RawValue::Environment {
+                            name: #env,
+                            value,
+                        },
                     );
                 }
             }
@@ -263,7 +268,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                     && argument.shape != model::Shape::Many =>
             {
                 let slot = syn::Index::from(field_index);
-                let name = &field.binding.name;
+                let name = &argument.diagnostic;
                 Some(quote! {
                     if partial.#slot.1 {
                         return ::std::result::Result::Err(
@@ -328,7 +333,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                     && !argument.has_default =>
             {
                 let slot = syn::Index::from(field_index);
-                let name = &field.binding.name;
+                let name = &argument.diagnostic;
                 Some(quote! {
                     if partial.#slot.0.is_none() {
                         return ::std::result::Result::Err(
@@ -384,6 +389,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
             static ARGX_VERSION_ACTION: #facade::__private::Action<'static> =
                 #facade::__private::Action {
                     name: "version",
+                    diagnostic: "--version",
                     help: "Print version",
                     longs: &["version"],
                     shorts: b"V",
@@ -773,7 +779,8 @@ fn finish_field(field: &model::Field, field_index: usize, facade: &TokenStream) 
 
     let binding = field.value_binding();
     let ty = &binding.ty;
-    let name = &field.binding.name;
+    let argument = field.argument().expect("value field must have argument semantics");
+    let name = &argument.diagnostic;
     // Type-check the user's default expression directly against the value type. Relying on
     // surrounding branch unification instead would make rustc diagnose generated `match` arms
     // rather than the `default = ...` expression the user can actually fix.
@@ -801,8 +808,6 @@ fn finish_field(field: &model::Field, field_index: usize, facade: &TokenStream) 
             quote!(#facade::__private::parsed_values::<#ty>(#value, #name)?)
         }
     };
-
-    let argument = field.argument().expect("value field must have argument semantics");
 
     match argument.shape {
         model::Shape::Bool | model::Shape::Required => {

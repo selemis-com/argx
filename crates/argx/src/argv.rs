@@ -155,11 +155,11 @@ impl<'t, 'a, 'v> ArgvParser<'t, 'a, 'v> {
         }
 
         let declared_numeric_short = matches!(token, [b'-', short]
-            if short.is_ascii_digit()
-                && matches!(
-                    resolve_short(self.command, &self.ancestors, *short),
-                    Some(Named::Flag(_))
-                ));
+        if short.is_ascii_digit()
+            && matches!(
+                resolve_short(self.command, &self.ancestors, *short),
+                Some(Named::Flag(_))
+            ));
         if !declared_numeric_short
             && is_negative_number(token)
             && self.next_arg().is_some_and(|argument| argument.allow_negative_numbers)
@@ -223,9 +223,8 @@ impl<'t, 'a, 'v> ArgvParser<'t, 'a, 'v> {
         let mut remaining = &token[1..];
         while let Some((&short, tail)) = remaining.split_first() {
             match resolve_short(self.command, &self.ancestors, short) {
-                Some(Named::Action(_)) => remaining = tail,
                 Some(Named::Flag(flag)) if flag.takes_value => return Ok(()),
-                Some(Named::Flag(_)) => remaining = tail,
+                Some(Named::Action(_) | Named::Flag(_)) => remaining = tail,
                 None => return Err(Error::UnknownFlag { token }),
             }
         }

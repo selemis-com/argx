@@ -10,9 +10,9 @@ use std::{
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct InvalidValue {
-    /// Canonical argument name.
+    /// Canonical user-facing argument label.
     pub name: &'static str,
-    /// Text supplied by the caller.
+    /// Text supplied on argv.
     pub value: String,
     /// Conversion failure reported by the target type.
     pub reason: String,
@@ -39,12 +39,12 @@ pub enum Error {
     },
     /// A flag that consumes a value did not receive one.
     MissingValue {
-        /// Canonical argument name.
+        /// Canonical user-facing argument label.
         name: &'static str,
     },
     /// A value was attached to a switch that does not accept one.
     UnexpectedValue {
-        /// Canonical argument name.
+        /// Canonical user-facing argument label.
         name: &'static str,
     },
     /// A word could not be assigned to any positional argument.
@@ -64,26 +64,37 @@ pub enum Error {
     },
     /// A required field was not supplied.
     MissingRequired {
-        /// Canonical argument name.
+        /// Canonical user-facing argument label.
         name: &'static str,
     },
     /// A scalar argument was supplied more than once.
     DuplicateArgument {
-        /// Canonical argument name.
+        /// Canonical user-facing argument label.
         name: &'static str,
     },
     /// A text value was not valid UTF-8.
     InvalidUtf8 {
-        /// Canonical argument name.
+        /// Canonical user-facing argument label.
         name: &'static str,
         /// Encoded value supplied by the caller.
         value: Vec<u8>,
     },
     /// A UTF-8 value could not be converted to the field's Rust type.
     InvalidValue(Box<InvalidValue>),
+    /// A value supplied by an environment variable could not be converted.
+    InvalidEnvironmentValue {
+        /// Canonical user-facing argument label.
+        name: &'static str,
+        /// Environment variable that supplied the value.
+        environment: &'static str,
+        /// Operating-system value read from the environment.
+        value: std::ffi::OsString,
+        /// Conversion failure reported by Argx or the target type.
+        reason: String,
+    },
     /// Encoded argument bytes could not be reconstructed as an operating-system string.
     InvalidOsValue {
-        /// Canonical argument name.
+        /// Canonical user-facing argument label.
         name: &'static str,
         /// Encoded value supplied by the caller.
         value: Vec<u8>,
@@ -164,6 +175,12 @@ impl fmt::Display for Error {
                 display_bytes(error.value.as_bytes()),
                 error.name,
                 display_bytes(error.reason.as_bytes())
+            ),
+            Self::InvalidEnvironmentValue { name, environment, value, reason } => write!(
+                formatter,
+                "invalid value `{}` from environment variable `{environment}` for `{name}`: {}",
+                display_bytes(value.as_os_str().as_encoded_bytes()),
+                display_bytes(reason.as_bytes()),
             ),
             Self::InvalidOsValue { name, value } => write!(
                 formatter,

@@ -28,6 +28,33 @@ For more information, try '--help'.
     }
 
     #[test]
+    fn diagnostics_use_cli_spellings_and_environment_context() {
+        support::example_command("defaults")
+            .arg("--port")
+            .assert()
+            .failure()
+            .stdout_eq("")
+            .stderr_eq(snapbox::str![[r#"
+error: missing value for `--port`
+
+For more information, try '--help'.
+
+"#]]);
+
+        support::example_command("environment")
+            .env("ARGX_PORT", "not-a-port")
+            .assert()
+            .failure()
+            .stdout_eq("")
+            .stderr_eq(snapbox::str![[r#"
+error: invalid value `not-a-port` from environment variable `ARGX_PORT` for `--port`: invalid digit found in string
+
+For more information, try '--help'.
+
+"#]]);
+    }
+
+    #[test]
     fn parse_entry_point_prints_help_and_exits_successfully() {
         support::example_command("basic")
             .arg("--help")
