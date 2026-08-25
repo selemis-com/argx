@@ -41,7 +41,7 @@ If you believe you have found a security vulnerability, please do not report it 
 
 ## Credit
 
-Argx is inspired in part by [Usage](https://github.com/jdx/usage) and [Clap](https://github.com/clap-rs/clap).
+Argx is inspired in part by [Usage](https://github.com/jdx/usage), [Clap](https://github.com/clap-rs/clap) and [Incur](https://github.com/wevm/incur).
 
 ## License
 
