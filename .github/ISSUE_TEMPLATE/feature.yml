@@ -12,7 +12,7 @@ body:
       description: |
         Please describe the feature and what it is aiming to solve, if relevant.
 
-        If the feature changes argx's public API, please include a proposed API surface.
+        If the feature changes Argx's public API, please include a proposed API surface.
     validations:
       required: true
   - type: textarea

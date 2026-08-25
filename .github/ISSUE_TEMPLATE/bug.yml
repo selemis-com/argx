@@ -55,7 +55,7 @@ body:
   - type: input
     id: argx-version
     attributes:
-      label: argx version or commit
+      label: Argx version or commit
       placeholder: 0.1.0 or a git commit SHA
     validations:
       required: true
