@@ -191,9 +191,10 @@ mod tests {
 
     #[test]
     fn renders_scope_aware_aligned_help() {
-        snapbox::Assert::new().eq(
+        snapbox::Assert::new().action_env("SNAPSHOTS").eq(
             render(&[&ROOT, &CONFIG]),
-            r#"Manage configuration
+            snapbox::str![[r#"
+Manage configuration
 
 Usage: tool config [OPTIONS] --output <OUTPUT> <INPUT> [REST]... <COMMAND>
 
@@ -208,7 +209,8 @@ Options:
   -v, --verbose      Enable verbose output
   --output <OUTPUT>  Write to this path
   -h, --help         Print help
-"#,
+
+"#]],
         );
     }
 }

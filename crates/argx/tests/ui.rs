@@ -25,10 +25,12 @@ mod tests {
         support::assert_ui_failure(
             "invalid_shapes",
             "argx",
-            r#"error: Parser can only be derived for structs
+            snapbox::str![[r#"
+error: Parser can only be derived for structs
 error: Args can only be derived for structs
 error: Subcommand can only be derived for enums
-"#,
+
+"#]],
         );
     }
 
@@ -37,14 +39,16 @@ error: Subcommand can only be derived for enums
         support::assert_ui_failure(
             "invalid_attributes",
             "argx",
-            r#"error: unsupported Argx command attribute
+            snapbox::str![[r#"
+error: unsupported Argx command attribute
 error: unsupported Argx field attribute
 error: short flag must be one visible ASCII character other than `-` or `=`
 error: short flag must be one visible ASCII character other than `-` or `=`
 error: unsupported Argx subcommand attribute
 error: `allow_hyphen_values` is only valid on named flags
 error: value policies are not valid on bool fields
-"#,
+
+"#]],
         );
     }
 
@@ -53,14 +57,16 @@ error: value policies are not valid on bool fields
         support::assert_ui_failure(
             "invalid_command_model",
             "argx",
-            r#"error: duplicate long flag `--same`
+            snapbox::str![[r#"
+error: duplicate long flag `--same`
 error: duplicate short flag `-x`
 error: long flag must be non-empty, must not start with `-`, and cannot contain `=`, whitespace, or controls
 error: required positional arguments cannot follow optional positional arguments
 error: variadic positional argument must be the last positional argument
 error: `--help` is reserved by Argx
 error: `-h` is reserved by Argx
-"#,
+
+"#]],
         );
     }
 
@@ -69,7 +75,8 @@ error: `-h` is reserved by Argx
         support::assert_ui_failure(
             "invalid_flatten",
             "argx",
-            r#"error: `flatten` cannot depend on the containing struct's generic parameters; use a concrete derived type
+            snapbox::str![[r#"
+error: `flatten` cannot depend on the containing struct's generic parameters; use a concrete derived type
 error: `flatten` does not support `Option<T>`; hold the Args struct directly
 error: `flatten` does not support collection wrappers; hold one Args struct directly
 error: `flatten` cannot be combined with flag, value, or help attributes
@@ -78,7 +85,8 @@ error[..]: [..]flattened command contains duplicate long or short flag spellings
 error[..]: [..]flattened command contains duplicate long or short flag spellings
 error[..]: [..]flattened command contains duplicate argument keys
 error[..]: [..]flattened command has an invalid positional layout
-"#,
+
+"#]],
         );
     }
 
@@ -87,8 +95,10 @@ error[..]: [..]flattened command has an invalid positional layout
         support::assert_ui_failure(
             "parser_as_flatten",
             "argx",
-            r#"error[..]: the trait bound `Child: argx::Args` is not satisfied
-"#,
+            snapbox::str![[r#"
+error[..]: the trait bound `Child: argx::Args` is not satisfied
+
+"#]],
         );
     }
 
@@ -97,9 +107,11 @@ error[..]: [..]flattened command has an invalid positional layout
         support::assert_ui_failure(
             "nested_value_wrappers",
             "argx",
-            r#"error: nested Option and Vec value wrappers are not supported
+            snapbox::str![[r#"
 error: nested Option and Vec value wrappers are not supported
-"#,
+error: nested Option and Vec value wrappers are not supported
+
+"#]],
         );
     }
 
@@ -108,9 +120,11 @@ error: nested Option and Vec value wrappers are not supported
         support::assert_ui_failure(
             "tuple_structs",
             "argx",
-            r#"error: Parser and Args do not support tuple structs; use named fields
+            snapbox::str![[r#"
 error: Parser and Args do not support tuple structs; use named fields
-"#,
+error: Parser and Args do not support tuple structs; use named fields
+
+"#]],
         );
     }
 
@@ -119,7 +133,8 @@ error: Parser and Args do not support tuple structs; use named fields
         support::assert_ui_failure(
             "invalid_subcommands",
             "argx",
-            r#"error: duplicate subcommand `same`
+            snapbox::str![[r#"
+error: duplicate subcommand `same`
 error: subcommand name must be non-empty, must not start with `-`, and cannot contain `=`, whitespace, or controls
 error: subcommand variants support only unit variants or one unnamed Args payload
 error: subcommand tuple variants must contain exactly one Args payload
@@ -134,7 +149,8 @@ error: a command can contain only one `subcommand` field
 error: `subcommand` cannot depend on the containing struct's generic parameters; use a concrete derived type
 error: subcommand payload cannot depend on the enum's generic parameters; use a concrete Args type
 error[..]: the trait bound `ParserPayload: argx::Args` is not satisfied
-"#,
+
+"#]],
         );
     }
 }

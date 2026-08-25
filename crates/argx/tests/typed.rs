@@ -559,9 +559,10 @@ mod tests {
     #[test]
     fn generated_help_uses_static_metadata_and_selected_command_scope() {
         let root = HelpCli::render_help();
-        snapbox::Assert::new().eq(
+        snapbox::Assert::new().action_env("SNAPSHOTS").eq(
             root.as_str(),
-            r#"Manage things
+            snapbox::str![[r#"
+Manage things
 
 Usage: tool [OPTIONS] --output <OUTPUT> <WORKSPACE> <COMMAND>
 
@@ -576,7 +577,8 @@ Options:
   -v, --verbose      Enable verbose output.
   --output <OUTPUT>  Output path
   -h, --help         Print help
-"#,
+
+"#]],
         );
 
         assert_eq!(HelpCli::try_parse_args(["--help"]), Err(Error::DisplayHelp { help: root }),);
@@ -585,9 +587,10 @@ Options:
         let Err(Error::DisplayHelp { help }) = nested else {
             panic!("nested help request did not return generated help")
         };
-        snapbox::Assert::new().eq(
+        snapbox::Assert::new().action_env("SNAPSHOTS").eq(
             help,
-            r#"Configure values.
+            snapbox::str![[r#"
+Configure values.
 
 Usage: tool config [OPTIONS] <KEY>
 
@@ -597,7 +600,8 @@ Arguments:
 Options:
   --local     Use local configuration.
   -h, --help  Print help
-"#,
+
+"#]],
         );
 
         let status = HelpCli::try_parse_args(["--output", "out", "acme", "status"])
