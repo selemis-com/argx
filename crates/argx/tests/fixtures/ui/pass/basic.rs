@@ -20,6 +20,18 @@ enum Command {
     Run,
 }
 
+#[derive(argx::Parser)]
+struct Relations {
+    #[argx(long, requires = ["token", "quiet"])]
+    endpoint: Option<String>,
+    #[argx(long)]
+    token: Option<String>,
+    #[argx(long, conflicts = ["quiet", "endpoint"])]
+    verbose: bool,
+    #[argx(long)]
+    quiet: bool,
+}
+
 fn assert_parser<T: argx::Parser>() {}
 
 fn main() {
@@ -38,4 +50,9 @@ fn main() {
     let common = Common { output: None };
     assert!(common.output.is_none());
     let _ = Command::Run;
+    let relations = Relations { endpoint: None, token: None, verbose: false, quiet: false };
+    assert!(relations.endpoint.is_none());
+    assert!(relations.token.is_none());
+    assert!(!relations.verbose);
+    assert!(!relations.quiet);
 }

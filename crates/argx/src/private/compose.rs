@@ -1,6 +1,6 @@
 //! Const-time composition and validation of independently derived command tables.
 
-use super::model::{Action, Arg, Flag};
+use super::model::{Action, Arg, Constraint, ConstraintKind, Flag, Key};
 
 /// Returns the total number of entries across several static table slices.
 pub const fn table_len<T>(groups: &[&[T]]) -> usize {
@@ -63,6 +63,68 @@ pub const fn concat_args<const N: usize>(
     }
     assert!(at == N, "concatenated positional-table length must match table_len");
     joined
+}
+
+/// Concatenates constraint-table groups into one static array while preserving group order.
+///
+/// # Panics
+///
+/// Panics during const evaluation if `N` is not [`table_len`] of `groups`.
+pub const fn concat_constraints<const N: usize>(groups: &[&[Constraint]]) -> [Constraint; N] {
+    const PLACEHOLDER: Constraint = Constraint {
+        kind: ConstraintKind::Requires,
+        source: 0,
+        target: 0,
+    };
+    let mut joined = [PLACEHOLDER; N];
+    let mut at = 0;
+    let mut group = 0;
+    while group < groups.len() {
+        let entries = groups[group];
+        let mut index = 0;
+        while index < entries.len() {
+            joined[at] = entries[index];
+            at += 1;
+            index += 1;
+        }
+        group += 1;
+    }
+    assert!(at == N, "concatenated constraint-table length must match table_len");
+    joined
+}
+
+/// Resolves exactly one semantic argument key by its Rust declaration field name.
+///
+/// # Panics
+///
+/// Panics during const evaluation when no argument or more than one composed argument has `name`.
+pub const fn argument_key_by_name(flags: &[&Flag<'_>], args: &[&Arg<'_>], name: &str) -> Key {
+    let mut found = 0;
+    let mut key = 0;
+
+    let mut flag = 0;
+    while flag < flags.len() {
+        if str_eq(flags[flag].name, name) {
+            found += 1;
+            key = flags[flag].key;
+        }
+        flag += 1;
+    }
+
+    let mut arg = 0;
+    while arg < args.len() {
+        if str_eq(args[arg].name, name) {
+            found += 1;
+            key = args[arg].key;
+        }
+        arg += 1;
+    }
+
+    assert!(
+        found == 1,
+        "constraint target must name exactly one argument field in the composed command",
+    );
+    key
 }
 
 /// Reports whether every flag and positional key on one composed command is unique.

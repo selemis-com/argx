@@ -16,6 +16,8 @@ struct Tables {
     flags: TokenStream,
     /// Final positional slice expression stored on the command.
     args: TokenStream,
+    /// Final normalized constraint slice expression stored on the command.
+    constraints: TokenStream,
 }
 
 /// Generates static parse metadata and typed binding for one command struct.
@@ -127,10 +129,18 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                 };
         }
     });
-    let tables = command_tables(command, &facade, flags.len(), args.len());
+    let constraint_count = command
+        .fields
+        .iter()
+        .filter_map(model::Field::argument)
+        .map(|argument| argument.requires.len() + argument.conflicts.len())
+        .sum();
+    let tables = command_tables(command, &facade, flags.len(), args.len(), constraint_count);
     let table_decls = &tables.decls;
     let command_flags = &tables.flags;
     let command_args = &tables.args;
+    let command_constraints = &tables.constraints;
+    let constraint_tables = constraint_tables(command, &facade, command_flags, command_args);
 
     let partial_types = command.fields.iter().map(|field| match &field.semantics {
         model::FieldSemantics::Flatten => {
@@ -264,6 +274,36 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
     } else {
         quote!(_partial)
     };
+
+    let flag_state = flags.iter().enumerate().map(|(index, (field_index, field))| {
+        let key = key::ident("FLAG", Some(index));
+        argument_state_branch(field, *field_index, &key, &facade)
+    });
+    let arg_state = args.iter().enumerate().map(|(index, (field_index, field))| {
+        let key = key::ident("ARG", Some(index));
+        argument_state_branch(field, *field_index, &key, &facade)
+    });
+    let flattened_state = command.fields.iter().enumerate().filter_map(|(field_index, field)| {
+        if !matches!(&field.semantics, model::FieldSemantics::Flatten) {
+            return None;
+        }
+        let ty = &field.binding.ty;
+        let slot = syn::Index::from(field_index);
+        Some(quote! {
+            if let ::std::option::Option::Some(state) =
+                <#ty as #facade::__private::CommandArgs>::argument_state(&partial.#slot, key)
+            {
+                return ::std::option::Option::Some(state);
+            }
+        })
+    });
+    let subcommand_constraint_check = subcommand.map(|(field_index, field)| {
+        let ty = &field.binding.ty;
+        let slot = syn::Index::from(field_index);
+        quote! {
+            <#ty as #facade::__private::Subcommands>::check_constraints(&partial.#slot)?;
+        }
+    });
 
     let occurrence_checks = command
         .fields
@@ -440,6 +480,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
             #(#flag_tables)*
             #(#arg_tables)*
             #table_decls
+            #(#constraint_tables)*
             #version_action
 
             static ARGX_COMMAND: #facade::__private::Command<'static> =
@@ -450,6 +491,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                     actions: #command_actions,
                     flags: #command_flags,
                     args: #command_args,
+                    constraints: #command_constraints,
                     subcommands: #command_subcommands,
                     key: #command_key,
                 };
@@ -511,6 +553,52 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                     #subcommand_env_apply
                 }
 
+                fn argument_state(
+                    partial: &Self::Partial,
+                    key: #facade::__private::Key,
+                ) -> ::std::option::Option<#facade::__private::ArgumentState> {
+                    let _ = (partial, key);
+                    #(#flag_state)*
+                    #(#arg_state)*
+                    #(#flattened_state)*
+                    ::std::option::Option::None
+                }
+
+                fn check_constraints(
+                    partial: &Self::Partial,
+                ) -> ::std::result::Result<(), #facade::Error> {
+                    for constraint in Self::COMMAND.constraints {
+                        let source = Self::argument_state(partial, constraint.source)
+                            .expect("generated constraint source must belong to this command");
+                        if !source.given {
+                            continue;
+                        }
+                        let target = Self::argument_state(partial, constraint.target)
+                            .expect("generated constraint target must belong to this command");
+                        match constraint.kind {
+                            #facade::__private::ConstraintKind::Requires if !target.satisfied => {
+                                return ::std::result::Result::Err(
+                                    #facade::Error::MissingRequirement {
+                                        name: target.diagnostic,
+                                        required_by: source.diagnostic,
+                                    },
+                                );
+                            }
+                            #facade::__private::ConstraintKind::Conflicts if target.given => {
+                                return ::std::result::Result::Err(
+                                    #facade::Error::ConflictingArguments {
+                                        name: source.diagnostic,
+                                        other: target.diagnostic,
+                                    },
+                                );
+                            }
+                            _ => {}
+                        }
+                    }
+                    #subcommand_constraint_check
+                    ::std::result::Result::Ok(())
+                }
+
                 fn check_occurrences(
                     #occurrence_partial: &mut Self::Partial,
                 ) -> ::std::result::Result<(), #facade::Error> {
@@ -538,12 +626,100 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
     }
 }
 
+/// Generates normalized relationship tables for arguments declared directly on this command.
+fn constraint_tables(
+    command: &model::Command,
+    facade: &TokenStream,
+    flags: &TokenStream,
+    args: &TokenStream,
+) -> Vec<TokenStream> {
+    let mut generated = Vec::new();
+    let mut flag_index = 0_usize;
+    let mut arg_index = 0_usize;
+    let mut constraint_index = 0_usize;
+
+    for field in &command.fields {
+        let Some(argument) = field.argument() else {
+            continue;
+        };
+        let source = match &argument.kind {
+            model::ArgumentKind::Flag { .. } => {
+                let key = key::ident("FLAG", Some(flag_index));
+                flag_index += 1;
+                key
+            }
+            model::ArgumentKind::Positional => {
+                let key = key::ident("ARG", Some(arg_index));
+                arg_index += 1;
+                key
+            }
+        };
+
+        for (kind, target) in argument
+            .requires
+            .iter()
+            .map(|target| (quote!(#facade::__private::ConstraintKind::Requires), target))
+            .chain(argument.conflicts.iter().map(|target| {
+                (quote!(#facade::__private::ConstraintKind::Conflicts), target)
+            }))
+        {
+            let table = format_ident!("ARGX_CONSTRAINT_{constraint_index}");
+            constraint_index += 1;
+            let target = constraint_target(command, target, facade, flags, args);
+            generated.push(quote! {
+                const #table: #facade::__private::Constraint = #facade::__private::Constraint {
+                    kind: #kind,
+                    source: #source,
+                    target: #target,
+                };
+            });
+        }
+    }
+
+    generated
+}
+
+/// Resolves a relationship target to a direct semantic key or a composed flattened lookup.
+fn constraint_target(
+    command: &model::Command,
+    target: &str,
+    facade: &TokenStream,
+    flags: &TokenStream,
+    args: &TokenStream,
+) -> TokenStream {
+    let mut flag_index = 0_usize;
+    let mut arg_index = 0_usize;
+    for field in &command.fields {
+        let Some(argument) = field.argument() else {
+            continue;
+        };
+        let resolved = match &argument.kind {
+            model::ArgumentKind::Flag { .. } => {
+                let resolved = key::ident("FLAG", Some(flag_index));
+                flag_index += 1;
+                resolved
+            }
+            model::ArgumentKind::Positional => {
+                let resolved = key::ident("ARG", Some(arg_index));
+                arg_index += 1;
+                resolved
+            }
+        };
+        if field.binding.name == target {
+            return quote!(#resolved);
+        }
+    }
+
+    quote!(#facade::__private::argument_key_by_name(#flags, #args, #target))
+}
+
 /// Builds one flat parse table from this declaration's own fields and flattened children.
 fn command_tables(
     command: &model::Command,
     facade: &TokenStream,
     flag_count: usize,
     arg_count: usize,
+    constraint_count: usize,
 ) -> Tables {
     if !command.fields.iter().any(model::Field::is_flatten) {
         let flags = (0..flag_count).map(|index| {
@@ -554,19 +730,27 @@ fn command_tables(
             let table = format_ident!("ARGX_ARG_{index}");
             quote!(&#table)
         });
+        let constraints = (0..constraint_count).map(|index| {
+            let table = format_ident!("ARGX_CONSTRAINT_{index}");
+            quote!(#table)
+        });
         return Tables {
             decls: TokenStream::new(),
             flags: quote!(&[#(#flags),*]),
             args: quote!(&[#(#args),*]),
+            constraints: quote!(&[#(#constraints),*]),
         };
     }
 
     let mut flag_groups = Vec::new();
     let mut arg_groups = Vec::new();
+    let mut constraint_groups = Vec::new();
     let mut own_flags = Vec::new();
     let mut own_args = Vec::new();
+    let mut own_constraints = Vec::new();
     let mut flag_at = 0_usize;
     let mut arg_at = 0_usize;
+    let mut constraint_at = 0_usize;
     let mut flatten_checks = Vec::new();
 
     fn flush_flags(own: &mut Vec<usize>, groups: &mut Vec<TokenStream>) {
@@ -593,28 +777,51 @@ fn command_tables(
         own.clear();
     }
 
+    fn flush_constraints(own: &mut Vec<usize>, groups: &mut Vec<TokenStream>) {
+        if own.is_empty() {
+            return;
+        }
+        let entries = own.iter().map(|index| {
+            let table = format_ident!("ARGX_CONSTRAINT_{index}");
+            quote!(#table)
+        });
+        groups.push(quote!(&[#(#entries),*]));
+        own.clear();
+    }
+
     for field in &command.fields {
         match &field.semantics {
-            model::FieldSemantics::Argument(model::Argument {
+            model::FieldSemantics::Argument(argument @ model::Argument {
                 kind: model::ArgumentKind::Flag { .. },
                 ..
             }) => {
                 own_flags.push(flag_at);
                 flag_at += 1;
+                for _ in argument.requires.iter().chain(&argument.conflicts) {
+                    own_constraints.push(constraint_at);
+                    constraint_at += 1;
+                }
             }
-            model::FieldSemantics::Argument(model::Argument {
+            model::FieldSemantics::Argument(argument @ model::Argument {
                 kind: model::ArgumentKind::Positional,
                 ..
             }) => {
                 own_args.push(arg_at);
                 arg_at += 1;
+                for _ in argument.requires.iter().chain(&argument.conflicts) {
+                    own_constraints.push(constraint_at);
+                    constraint_at += 1;
+                }
             }
             model::FieldSemantics::Flatten => {
                 let ty = &field.binding.ty;
                 flush_flags(&mut own_flags, &mut flag_groups);
                 flush_args(&mut own_args, &mut arg_groups);
+                flush_constraints(&mut own_constraints, &mut constraint_groups);
                 flag_groups.push(quote!(<#ty as #facade::__private::CommandArgs>::COMMAND.flags));
                 arg_groups.push(quote!(<#ty as #facade::__private::CommandArgs>::COMMAND.args));
+                constraint_groups
+                    .push(quote!(<#ty as #facade::__private::CommandArgs>::COMMAND.constraints));
                 flatten_checks.push(quote! {
                     const _: () = ::core::assert!(
                         <#ty as #facade::__private::CommandArgs>::COMMAND.subcommands.is_empty(),
@@ -627,9 +834,11 @@ fn command_tables(
     }
     flush_flags(&mut own_flags, &mut flag_groups);
     flush_args(&mut own_args, &mut arg_groups);
+    flush_constraints(&mut own_constraints, &mut constraint_groups);
 
     debug_assert_eq!(flag_at, flag_count);
     debug_assert_eq!(arg_at, arg_count);
+    debug_assert_eq!(constraint_at, constraint_count);
 
     Tables {
         decls: quote! {
@@ -644,9 +853,15 @@ fn command_tables(
             static ARGX_ARGS: [&#facade::__private::Arg<'static>;
                 #facade::__private::table_len(ARGX_ARG_GROUPS)] =
                 #facade::__private::concat_args(ARGX_ARG_GROUPS);
+            const ARGX_CONSTRAINT_GROUPS: &[&[#facade::__private::Constraint]] =
+                &[#(#constraint_groups),*];
+            static ARGX_CONSTRAINTS: [#facade::__private::Constraint;
+                #facade::__private::table_len(ARGX_CONSTRAINT_GROUPS)] =
+                #facade::__private::concat_constraints(ARGX_CONSTRAINT_GROUPS);
         },
         flags: quote!(&ARGX_FLAGS),
         args: quote!(&ARGX_ARGS),
+        constraints: quote!(&ARGX_CONSTRAINTS),
     }
 }
 
@@ -760,6 +975,37 @@ fn apply_arm(
                 }
                 true
             },
+        }
+    }
+}
+
+/// Generates one semantic argument-presence lookup branch.
+fn argument_state_branch(
+    field: &model::Field,
+    field_index: usize,
+    key: &proc_macro2::Ident,
+    facade: &TokenStream,
+) -> TokenStream {
+    let argument = field.argument().expect("state branch requires argument semantics");
+    let slot = syn::Index::from(field_index);
+    let diagnostic = &argument.diagnostic;
+    let given = if field.is_switch() {
+        quote!(partial.#slot.0)
+    } else if argument.shape == model::Shape::Many {
+        quote!(!partial.#slot.is_empty())
+    } else {
+        quote!(partial.#slot.0.is_some())
+    };
+    let satisfied = if argument.has_default { quote!(true) } else { given.clone() };
+
+    quote! {
+        if key == #key {
+            let given = #given;
+            return ::std::option::Option::Some(#facade::__private::ArgumentState {
+                diagnostic: #diagnostic,
+                given,
+                satisfied: #satisfied,
+            });
         }
     }
 }

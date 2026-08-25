@@ -457,6 +457,69 @@ mod tests {
         command: GlobalCommand,
     }
 
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    struct ConstraintCli {
+        #[argx(long, requires = ["token", "format"])]
+        endpoint: Option<String>,
+        #[argx(long = "auth-token", alias = "token")]
+        token: Option<String>,
+        #[argx(long, conflicts = ["stdout", "mode"])]
+        output: Option<PathBuf>,
+        #[argx(long)]
+        stdout: bool,
+        #[argx(long, default = String::from("json"))]
+        format: String,
+        #[argx(long, requires = "format")]
+        schema: Option<PathBuf>,
+        #[argx(long, default = String::from("auto"), requires = "token", conflicts = "stdout")]
+        mode: String,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Args)]
+    struct ConstraintShared {
+        #[argx(long)]
+        token: Option<String>,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    struct FlattenedConstraintCli {
+        #[argx(long, requires = "token")]
+        endpoint: Option<String>,
+        #[argx(flatten)]
+        shared: ConstraintShared,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Args)]
+    struct ConstraintChildArgs {
+        #[argx(long, conflicts = "quiet")]
+        verbose: bool,
+        #[argx(long)]
+        quiet: bool,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Subcommand)]
+    enum ConstraintCommand {
+        Run(ConstraintChildArgs),
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    struct ConstraintSubcommandCli {
+        #[argx(subcommand)]
+        command: ConstraintCommand,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    struct EnvironmentConstraintCli {
+        #[argx(long, env = "ARGX_TEST_CONSTRAINT_ENDPOINT", requires = "token")]
+        endpoint: Option<String>,
+        #[argx(long, env = "ARGX_TEST_CONSTRAINT_TOKEN")]
+        token: Option<String>,
+        #[argx(long, env = "ARGX_TEST_CONSTRAINT_OUTPUT", conflicts = "stdout")]
+        output: Option<String>,
+        #[argx(long)]
+        stdout: bool,
+    }
+
     #[test]
     fn parses_typed_switches_values_and_positionals() {
         let parsed = Cli::try_parse_args([
@@ -901,6 +964,8 @@ Options:
             "required-before-conversion",
             "flattened",
             "global",
+            "constraint-env-requires",
+            "constraint-env-conflicts",
         ] {
             let mut command = Command::new(&executable);
             command
@@ -912,7 +977,10 @@ Options:
                 .env_remove("ARGX_TEST_REQUIRED_PORT")
                 .env_remove("ARGX_TEST_JOBS")
                 .env_remove("ARGX_TEST_PATH")
-                .env_remove("ARGX_TEST_REGION");
+                .env_remove("ARGX_TEST_REGION")
+                .env_remove("ARGX_TEST_CONSTRAINT_ENDPOINT")
+                .env_remove("ARGX_TEST_CONSTRAINT_TOKEN")
+                .env_remove("ARGX_TEST_CONSTRAINT_OUTPUT");
             match case {
                 "environment" | "argv" | "incomplete-argv" => {
                     command.env("ARGX_TEST_PORT", "4000").env("ARGX_TEST_PROFILE", "staging");
@@ -928,6 +996,12 @@ Options:
                 }
                 "global" => {
                     command.env("ARGX_TEST_REGION", "eu-west");
+                }
+                "constraint-env-requires" => {
+                    command.env("ARGX_TEST_CONSTRAINT_ENDPOINT", "https://example.test");
+                }
+                "constraint-env-conflicts" => {
+                    command.env("ARGX_TEST_CONSTRAINT_OUTPUT", "out.txt");
                 }
                 "default" | "required-missing" | "required-before-conversion" => {}
                 _ => unreachable!("case list is exhaustive"),
@@ -1003,6 +1077,17 @@ Options:
                     region: Some(String::from("eu-west")),
                     command: EnvironmentCommand::Child,
                 }),
+            ),
+            "constraint-env-requires" => assert_eq!(
+                EnvironmentConstraintCli::try_parse_args(std::iter::empty::<&str>()),
+                Err(Error::MissingRequirement {
+                    name: "--token",
+                    required_by: "--endpoint",
+                }),
+            ),
+            "constraint-env-conflicts" => assert_eq!(
+                EnvironmentConstraintCli::try_parse_args(["--stdout"]),
+                Err(Error::ConflictingArguments { name: "--output", other: "--stdout" }),
             ),
             _ => panic!("unknown environment test case {case}"),
         }
@@ -1153,6 +1238,110 @@ Commands:\n  remove\n  status\n\n\
 Options:\n  --color <COLOR>\n  -h, --help       Print help\n",
                 ),
             }),
+        );
+    }
+
+    #[test]
+    fn requires_and_conflicts_use_semantic_argument_identity() {
+        assert_eq!(
+            ConstraintCli::try_parse_args(["--endpoint", "https://example.test"]),
+            Err(Error::MissingRequirement { name: "--auth-token", required_by: "--endpoint" }),
+        );
+        assert_eq!(
+            ConstraintCli::try_parse_args([
+                "--endpoint",
+                "https://example.test",
+                "--token",
+                "secret",
+            ]),
+            Ok(ConstraintCli {
+                endpoint: Some(String::from("https://example.test")),
+                token: Some(String::from("secret")),
+                output: None,
+                stdout: false,
+                format: String::from("json"),
+                schema: None,
+                mode: String::from("auto"),
+            }),
+        );
+
+        for args in [
+            ["--output", "out.txt", "--stdout"],
+            ["--stdout", "--output", "out.txt"],
+        ] {
+            assert_eq!(
+                ConstraintCli::try_parse_args(args),
+                Err(Error::ConflictingArguments { name: "--output", other: "--stdout" }),
+            );
+        }
+
+        assert_eq!(
+            ConstraintCli::try_parse_args(["--output", "out.txt", "--mode", "manual"]),
+            Err(Error::ConflictingArguments { name: "--output", other: "--mode" }),
+        );
+    }
+
+    #[test]
+    fn defaults_satisfy_requirements_but_do_not_activate_or_conflict() {
+        assert_eq!(
+            ConstraintCli::try_parse_args(["--schema", "schema.json"]),
+            Ok(ConstraintCli {
+                endpoint: None,
+                token: None,
+                output: None,
+                stdout: false,
+                format: String::from("json"),
+                schema: Some(PathBuf::from("schema.json")),
+                mode: String::from("auto"),
+            }),
+        );
+        assert_eq!(
+            ConstraintCli::try_parse_args(std::iter::empty::<&str>()),
+            Ok(ConstraintCli {
+                endpoint: None,
+                token: None,
+                output: None,
+                stdout: false,
+                format: String::from("json"),
+                schema: None,
+                mode: String::from("auto"),
+            }),
+        );
+        assert_eq!(
+            ConstraintCli::try_parse_args(["--stdout"]),
+            Ok(ConstraintCli {
+                endpoint: None,
+                token: None,
+                output: None,
+                stdout: true,
+                format: String::from("json"),
+                schema: None,
+                mode: String::from("auto"),
+            }),
+        );
+    }
+
+    #[test]
+    fn constraints_resolve_across_flattening_and_selected_subcommands() {
+        assert_eq!(
+            FlattenedConstraintCli::try_parse_args(["--endpoint", "https://example.test"]),
+            Err(Error::MissingRequirement { name: "--token", required_by: "--endpoint" }),
+        );
+        assert_eq!(
+            FlattenedConstraintCli::try_parse_args([
+                "--endpoint",
+                "https://example.test",
+                "--token",
+                "secret",
+            ]),
+            Ok(FlattenedConstraintCli {
+                endpoint: Some(String::from("https://example.test")),
+                shared: ConstraintShared { token: Some(String::from("secret")) },
+            }),
+        );
+        assert_eq!(
+            ConstraintSubcommandCli::try_parse_args(["run", "--verbose", "--quiet"]),
+            Err(Error::ConflictingArguments { name: "--verbose", other: "--quiet" }),
         );
     }
 

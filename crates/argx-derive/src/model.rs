@@ -159,6 +159,10 @@ pub(crate) struct Argument {
     pub env: Option<String>,
     /// Whether absence is satisfied by a typed Rust default.
     pub has_default: bool,
+    /// Field names that must be satisfied when this argument is supplied.
+    pub requires: Vec<String>,
+    /// Field names that cannot be supplied together with this argument.
+    pub conflicts: Vec<String>,
     /// Whether detached values may be flag-like.
     pub allow_hyphen_values: bool,
     /// Whether negative numbers may be consumed while other flag-like values are refused.
@@ -223,6 +227,7 @@ impl Command {
         }
         let has_version = attributes.version.is_some() || attributes.long_version.is_some();
         validate_fields(&fields, has_version)?;
+        validate_constraints(&fields)?;
         validate_composed_generics(&fields, &input.generics)?;
 
         let rust_name = ident_name(&input.ident);
@@ -356,6 +361,14 @@ impl Field {
             return Err(syn::Error::new(
                 binding.span,
                 "`flatten` and `subcommand` cannot be combined",
+            ));
+        }
+        if (attributes.flatten || attributes.subcommand)
+            && (!attributes.requires.is_empty() || !attributes.conflicts.is_empty())
+        {
+            return Err(syn::Error::new(
+                binding.span,
+                "`requires` and `conflicts` are only valid on argument fields",
             ));
         }
 
@@ -528,6 +541,8 @@ impl Field {
                 shape,
                 env,
                 has_default,
+                requires: attributes.requires.into_iter().map(|value| value.value()).collect(),
+                conflicts: attributes.conflicts.into_iter().map(|value| value.value()).collect(),
                 allow_hyphen_values: attributes.allow_hyphen_values,
                 allow_negative_numbers: attributes.allow_negative_numbers,
             }),
@@ -723,6 +738,74 @@ fn validate_fields(fields: &[Field], has_version: bool) -> syn::Result<()> {
                     ));
                 }
                 subcommand_seen = true;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Validates declaration-local relationship references before code generation.
+///
+/// References into flattened `Args` are resolved later against the composed static tables because
+/// the parent proc macro cannot inspect an independently expanded child declaration.
+fn validate_constraints(fields: &[Field]) -> syn::Result<()> {
+    let has_flatten = fields.iter().any(Field::is_flatten);
+
+    for field in fields {
+        let Some(argument) = field.argument() else {
+            continue;
+        };
+        let source = field.binding.name.as_str();
+
+        for (kind, targets) in [("requires", &argument.requires), ("conflicts", &argument.conflicts)] {
+            let mut seen = Vec::<&str>::new();
+            for target in targets {
+                if target.is_empty() {
+                    return Err(syn::Error::new(
+                        field.binding.span,
+                        format!("`{kind}` must name a Rust argument field"),
+                    ));
+                }
+                if target == source {
+                    return Err(syn::Error::new(
+                        field.binding.span,
+                        format!("`{kind}` cannot reference its own field `{source}`"),
+                    ));
+                }
+                if seen.contains(&target.as_str()) {
+                    return Err(syn::Error::new(
+                        field.binding.span,
+                        format!("duplicate `{kind}` reference `{target}`"),
+                    ));
+                }
+                seen.push(target.as_str());
+
+                if argument.requires.contains(target) && argument.conflicts.contains(target) {
+                    return Err(syn::Error::new(
+                        field.binding.span,
+                        format!(
+                            "argument `{source}` cannot both require and conflict with `{target}`"
+                        ),
+                    ));
+                }
+
+                match fields.iter().find(|candidate| candidate.binding.name == *target) {
+                    Some(candidate) if candidate.argument().is_some() => {}
+                    Some(_) => {
+                        return Err(syn::Error::new(
+                            field.binding.span,
+                            format!("`{kind}` target `{target}` is not an argument field"),
+                        ));
+                    }
+                    None if has_flatten => {}
+                    None => {
+                        return Err(syn::Error::new(
+                            field.binding.span,
+                            format!("`{kind}` names no argument field `{target}` in this command"),
+                        ));
+                    }
+                }
             }
         }
     }

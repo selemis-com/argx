@@ -1,6 +1,6 @@
 //! Binding contracts implemented by generated parser, argument, and subcommand declarations.
 
-use super::model::Command;
+use super::model::{ArgumentState, Command, Key};
 use crate::argv::Event;
 
 /// Generated runtime projections of one normalized command declaration.
@@ -22,6 +22,16 @@ pub trait CommandArgs: Sized {
 
     /// Applies environment fallbacks to arguments left absent by argv.
     fn apply_env(partial: &mut Self::Partial);
+
+    /// Returns presence state for one argument owned by this composed command.
+    fn argument_state(partial: &Self::Partial, key: Key) -> Option<ArgumentState>;
+
+    /// Validates normalized argument relationships after source fallback and requiredness.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first unmet requirement or conflict in declaration order.
+    fn check_constraints(partial: &Self::Partial) -> Result<(), crate::Error>;
 
     /// Validates completed occurrence cardinality before requiredness or conversion.
     ///
@@ -45,7 +55,8 @@ pub trait CommandArgs: Sized {
     fn check(partial: &mut Self::Partial) -> Result<(), crate::Error> {
         Self::check_occurrences(partial)?;
         Self::apply_env(partial);
-        Self::check_required(partial)
+        Self::check_required(partial)?;
+        Self::check_constraints(partial)
     }
 
     /// Converts completed raw binding state into the destination Rust value.
@@ -93,6 +104,13 @@ pub trait Subcommands: Sized {
     ///
     /// Returns the first missing required argument or nested subcommand.
     fn check_required(partial: &mut Self::Partial) -> Result<(), crate::Error>;
+
+    /// Validates argument relationships in the selected command tree.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first unmet requirement or conflict in the selected branch.
+    fn check_constraints(partial: &Self::Partial) -> Result<(), crate::Error>;
 
     /// Converts selected raw binding state into the destination enum.
     ///

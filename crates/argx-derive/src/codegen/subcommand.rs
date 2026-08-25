@@ -60,6 +60,7 @@ pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
                         actions: #actions,
                         flags: &[],
                         args: &[],
+                        constraints: &[],
                         subcommands: &[],
                         key: #key,
                     };
@@ -72,6 +73,7 @@ pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
                         actions: #actions,
                         flags: <#ty as #facade::__private::CommandArgs>::COMMAND.flags,
                         args: <#ty as #facade::__private::CommandArgs>::COMMAND.args,
+                        constraints: <#ty as #facade::__private::CommandArgs>::COMMAND.constraints,
                         subcommands: <#ty as #facade::__private::CommandArgs>::COMMAND.subcommands,
                         key: #key,
                     };
@@ -180,6 +182,20 @@ pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
             })
         })
         .collect::<Vec<_>>();
+    let constraint_arms = subcommand
+        .variants
+        .iter()
+        .enumerate()
+        .filter_map(|(index, variant)| {
+            let ty = variant.binding.payload.as_ref()?;
+            let partial_variant = format_ident!("V{index}");
+            Some(quote! {
+                Partial::#partial_variant(selected) => {
+                    <#ty as #facade::__private::CommandArgs>::check_constraints(selected)
+                }
+            })
+        })
+        .collect::<Vec<_>>();
     let env_partial = if env_arms.is_empty() { quote!(_partial) } else { quote!(partial) };
     let env_body = if env_arms.is_empty() {
         TokenStream::new()
@@ -195,6 +211,8 @@ pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
         if occurrence_arms.is_empty() { quote!(_partial) } else { quote!(partial) };
     let required_partial =
         if required_arms.is_empty() { quote!(_partial) } else { quote!(partial) };
+    let constraint_partial =
+        if constraint_arms.is_empty() { quote!(_partial) } else { quote!(partial) };
     let occurrence_body = if occurrence_arms.is_empty() {
         quote!(::std::result::Result::Ok(()))
     } else {
@@ -211,6 +229,16 @@ pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
         quote! {
             match partial {
                 #(#required_arms,)*
+                _ => ::std::result::Result::Ok(()),
+            }
+        }
+    };
+    let constraint_body = if constraint_arms.is_empty() {
+        quote!(::std::result::Result::Ok(()))
+    } else {
+        quote! {
+            match partial {
+                #(#constraint_arms,)*
                 _ => ::std::result::Result::Ok(()),
             }
         }
@@ -300,6 +328,12 @@ pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
                     #required_partial: &mut Self::Partial,
                 ) -> ::std::result::Result<(), #facade::Error> {
                     #required_body
+                }
+
+                fn check_constraints(
+                    #constraint_partial: &Self::Partial,
+                ) -> ::std::result::Result<(), #facade::Error> {
+                    #constraint_body
                 }
 
                 fn finish(

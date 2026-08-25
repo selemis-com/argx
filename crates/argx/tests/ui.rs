@@ -77,6 +77,27 @@ error: duplicate subcommand spelling `run`
     }
 
     #[test]
+    fn invalid_constraint_declarations_are_rejected_deterministically() {
+        support::assert_ui_failure(
+            "invalid_constraints",
+            "argx",
+            snapbox::str![[r#"
+error: `requires` names no argument field `token` in this command
+error: `requires` cannot reference its own field `value`
+error: duplicate `requires` reference `token`
+error: `requires` array must contain at least one target
+error: `conflicts` targets must be string literals
+error: argument `endpoint` cannot both require and conflict with `token`
+error: `requires` target `command` is not an argument field
+error: `requires` and `conflicts` are only valid on argument fields
+error: `requires` and `conflicts` are only valid on argument fields
+error[E0080]: evaluation panicked: constraint target must name exactly one argument field in the composed command
+
+"#]],
+        );
+    }
+
+    #[test]
     fn invalid_environment_declarations_are_rejected_deterministically() {
         support::assert_ui_failure(
             "invalid_env",

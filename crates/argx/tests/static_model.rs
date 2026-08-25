@@ -101,6 +101,22 @@ mod tests {
         command: MetadataCommands,
     }
 
+    #[derive(argx::Args)]
+    struct ConstraintShared {
+        #[argx(long = "auth-token", alias = "token")]
+        token: Option<String>,
+    }
+
+    #[derive(argx::Parser)]
+    struct ConstraintCli {
+        #[argx(long, requires = "token", conflicts = "stdout")]
+        endpoint: Option<String>,
+        #[argx(flatten)]
+        shared: ConstraintShared,
+        #[argx(long)]
+        stdout: bool,
+    }
+
     mod add {
         #[derive(argx::Args)]
         pub(super) struct Options {
@@ -331,6 +347,32 @@ mod tests {
         assert_eq!(commands.len(), 2);
         assert_eq!(commands[0].actions.len(), 2);
         assert_eq!(commands[1].actions.len(), 1);
+    }
+
+    #[test]
+    fn constraints_are_normalized_to_semantic_argument_keys() {
+        use argx::__private::ConstraintKind;
+
+        let value = ConstraintCli {
+            endpoint: None,
+            shared: ConstraintShared { token: None },
+            stdout: false,
+        };
+        assert!(value.endpoint.is_none());
+        assert!(value.shared.token.is_none());
+        assert!(!value.stdout);
+
+        let command = ConstraintCli::COMMAND;
+        assert_eq!(command.constraints.len(), 2);
+        assert_eq!(command.constraints[0].kind, ConstraintKind::Requires);
+        assert_eq!(command.constraints[0].source, command.flags[0].key);
+        assert_eq!(command.constraints[0].target, command.flags[1].key);
+        assert_eq!(command.constraints[1].kind, ConstraintKind::Conflicts);
+        assert_eq!(command.constraints[1].source, command.flags[0].key);
+        assert_eq!(command.constraints[1].target, command.flags[2].key);
+        assert_eq!(command.flags[1].name, "token");
+        assert_eq!(command.flags[1].diagnostic, "--auth-token");
+        assert_eq!(command.flags[1].aliases, ["token"]);
     }
 
     #[test]

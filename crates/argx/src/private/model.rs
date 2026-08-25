@@ -3,6 +3,37 @@
 /// Stable semantic identity assigned to one command or argument declaration.
 pub type Key = u64;
 
+/// One normalized relationship between semantic argument identities.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Constraint {
+    /// Relationship behavior.
+    pub kind: ConstraintKind,
+    /// Semantic identity of the argument declaring the relationship.
+    pub source: Key,
+    /// Semantic identity of the referenced argument.
+    pub target: Key,
+}
+
+/// Supported argument relationship kinds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConstraintKind {
+    /// Supplying the source requires the target to have a value.
+    Requires,
+    /// Supplying both source and target is invalid.
+    Conflicts,
+}
+
+/// Runtime presence state for one semantic argument identity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ArgumentState {
+    /// Canonical user-facing label used by diagnostics.
+    pub diagnostic: &'static str,
+    /// Whether argv or environment fallback supplied this argument.
+    pub given: bool,
+    /// Whether the argument has a value after considering typed defaults.
+    pub satisfied: bool,
+}
+
 /// Built-in parser action available in one command scope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Action<'a> {
@@ -59,6 +90,8 @@ pub struct Command<'a> {
     pub flags: &'a [&'a Flag<'a>],
     /// Positional arguments accepted by this command.
     pub args: &'a [&'a Arg<'a>],
+    /// Normalized argument relationships in this command scope.
+    pub constraints: &'a [Constraint],
     /// Child commands accepted by this command.
     pub subcommands: &'a [&'a Self],
     /// Derive-assigned semantic command identity.
@@ -74,6 +107,7 @@ impl Command<'static> {
         actions: &[&HELP_ACTION],
         flags: &[],
         args: &[],
+        constraints: &[],
         subcommands: &[],
         key: 0,
     };

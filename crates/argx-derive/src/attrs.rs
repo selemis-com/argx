@@ -45,6 +45,10 @@ pub(crate) struct FieldAttrs {
     pub short: Option<Inferred<char>>,
     /// Additional hidden long spellings accepted for this flag.
     pub aliases: Vec<String>,
+    /// Arguments that must be satisfied when this argument is supplied.
+    pub requires: Vec<LitStr>,
+    /// Arguments that cannot be supplied together with this argument.
+    pub conflicts: Vec<LitStr>,
     /// Whether detached values may be flag-like.
     pub allow_hyphen_values: bool,
     /// Whether negative numbers may be consumed while other flag-like values are refused.
@@ -180,6 +184,12 @@ pub(crate) fn field(attributes: &[Attribute]) -> syn::Result<FieldAttrs> {
             } else if meta.path.is_ident("aliases") {
                 parsed.aliases.extend(string_array(&meta)?);
                 Ok(())
+            } else if meta.path.is_ident("requires") {
+                parsed.requires.extend(string_or_array(&meta, "requires")?);
+                Ok(())
+            } else if meta.path.is_ident("conflicts") {
+                parsed.conflicts.extend(string_or_array(&meta, "conflicts")?);
+                Ok(())
             } else if meta.path.is_ident("allow_hyphen_values") {
                 if parsed.allow_hyphen_values {
                     return Err(meta.error("duplicate `allow_hyphen_values` attribute"));
@@ -204,6 +214,45 @@ pub(crate) fn field(attributes: &[Attribute]) -> syn::Result<FieldAttrs> {
         })?;
     }
     Ok(parsed)
+}
+
+/// Parses either one string or a non-empty array of strings.
+fn string_or_array(
+    meta: &syn::meta::ParseNestedMeta<'_>,
+    attribute: &str,
+) -> syn::Result<Vec<LitStr>> {
+    if !meta.input.peek(Token![=]) {
+        return Err(meta.error(format!(
+            "`{attribute}` expects a string or non-empty string array"
+        )));
+    }
+
+    match meta.value()?.parse::<Expr>()? {
+        Expr::Lit(syn::ExprLit { lit: Lit::Str(value), .. }) => Ok(vec![value]),
+        Expr::Array(array) => {
+            if array.elems.is_empty() {
+                return Err(syn::Error::new_spanned(
+                    array,
+                    format!("`{attribute}` array must contain at least one target"),
+                ));
+            }
+            array
+                .elems
+                .into_iter()
+                .map(|expression| match expression {
+                    Expr::Lit(syn::ExprLit { lit: Lit::Str(value), .. }) => Ok(value),
+                    _ => Err(syn::Error::new_spanned(
+                        expression,
+                        format!("`{attribute}` targets must be string literals"),
+                    )),
+                })
+                .collect()
+        }
+        expression => Err(syn::Error::new_spanned(
+            expression,
+            format!("`{attribute}` expects a string or non-empty string array"),
+        )),
+    }
 }
 
 /// Parses a non-empty array of string values from a plural attribute.

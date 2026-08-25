@@ -72,6 +72,20 @@ pub enum Error {
         /// Canonical user-facing argument label.
         name: &'static str,
     },
+    /// An argument required by another supplied argument was not available.
+    MissingRequirement {
+        /// Canonical user-facing label of the missing argument.
+        name: &'static str,
+        /// Canonical user-facing label of the argument imposing the requirement.
+        required_by: &'static str,
+    },
+    /// Two arguments declared to conflict were supplied together.
+    ConflictingArguments {
+        /// Canonical user-facing label of the argument declaring the conflict.
+        name: &'static str,
+        /// Canonical user-facing label of the conflicting argument.
+        other: &'static str,
+    },
     /// A text value was not valid UTF-8.
     InvalidUtf8 {
         /// Canonical user-facing argument label.
@@ -163,6 +177,12 @@ impl fmt::Display for Error {
             }
             Self::DuplicateArgument { name } => {
                 write!(formatter, "argument `{name}` cannot be used more than once")
+            }
+            Self::MissingRequirement { name, required_by } => {
+                write!(formatter, "argument `{name}` is required when `{required_by}` is used")
+            }
+            Self::ConflictingArguments { name, other } => {
+                write!(formatter, "argument `{name}` cannot be used with `{other}`")
             }
             Self::InvalidUtf8 { name, value } => write!(
                 formatter,
