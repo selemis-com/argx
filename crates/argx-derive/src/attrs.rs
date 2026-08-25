@@ -27,6 +27,8 @@ pub(crate) struct FieldAttrs {
     pub flatten: bool,
     /// Whether this field selects one command from a derived subcommand enum.
     pub subcommand: bool,
+    /// Whether this named argument remains in scope for descendant commands.
+    pub global: bool,
     /// Long flag spelling, or an instruction to infer it.
     pub long: Option<Inferred<String>>,
     /// Short flag spelling, or an instruction to infer it.
@@ -113,6 +115,15 @@ pub(crate) fn field(attributes: &[Attribute]) -> syn::Result<FieldAttrs> {
                     return Err(meta.error("`subcommand` takes no value"));
                 }
                 parsed.subcommand = true;
+                Ok(())
+            } else if meta.path.is_ident("global") {
+                if parsed.global {
+                    return Err(meta.error("duplicate `global` attribute"));
+                }
+                if meta.input.peek(Token![=]) || meta.input.peek(syn::token::Paren) {
+                    return Err(meta.error("`global` takes no value"));
+                }
+                parsed.global = true;
                 Ok(())
             } else if meta.path.is_ident("long") {
                 if parsed.long.is_some() {

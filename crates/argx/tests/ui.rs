@@ -47,6 +47,10 @@ error: short flag must be one visible ASCII character other than `-` or `=`
 error: unsupported Argx subcommand attribute
 error: `allow_hyphen_values` is only valid on named flags
 error: value policies are not valid on bool fields
+error: `global` is only valid on named flags
+error: `flatten` cannot be combined with flag, value, or help attributes
+error: `subcommand` cannot be combined with flag, value, or help attributes
+error: `global` takes no value
 
 "#]],
         );

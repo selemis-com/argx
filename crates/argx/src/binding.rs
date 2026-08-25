@@ -18,29 +18,19 @@ pub(crate) fn parse_refs<T: CommandArgs>(argv: &[&std::ffi::OsStr]) -> Result<T,
     let mut partial = T::start();
     let mut parser: crate::argv::ArgvParser<'static, '_, '_> =
         crate::argv::ArgvParser::new(T::COMMAND, argv);
-    let mut command_path = Vec::new();
 
     while let Some(event) = parser.next_event() {
         let event = match event {
             Ok(event) => event,
             Err(RawError::DisplayHelp) => {
-                let rendered = if command_path.is_empty() {
-                    help::render(&[T::COMMAND])
-                } else {
-                    help::render(&command_path)
-                };
+                let command_path = parser.command_path().collect::<Vec<_>>();
+                let rendered = help::render(&command_path);
                 return Err(Error::DisplayHelp { help: rendered });
             }
             Err(error) => return Err(raw_error(error)),
         };
         let applied = T::apply(&mut partial, &event);
         assert!(applied, "generated command metadata and binding keys diverged");
-        if let crate::argv::Event::Command { command } = event {
-            if command_path.is_empty() {
-                command_path.push(T::COMMAND);
-            }
-            command_path.push(command);
-        }
     }
 
     T::check(&mut partial)?;

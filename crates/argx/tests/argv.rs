@@ -380,6 +380,166 @@ mod tests {
     }
 
     #[test]
+    fn globals_are_inherited_downward_and_nearer_spellings_shadow_them() {
+        static ROOT_GLOBAL: Flag<'static> = Flag {
+            key: 61,
+            name: "jobs",
+            longs: &["jobs", "workers"],
+            shorts: b"j",
+            global: true,
+            ..Flag::VALUE
+        };
+        static MID_GLOBAL: Flag<'static> = Flag {
+            key: 62,
+            name: "region",
+            longs: &["region"],
+            global: true,
+            ..Flag::VALUE
+        };
+        static LEAF_JOBS: Flag<'static> =
+            Flag { key: 63, name: "jobs", longs: &["jobs"], ..Flag::VALUE };
+        static LEAF: Command<'static> = Command {
+            name: "leaf",
+            flags: &[&LEAF_JOBS],
+            key: 66,
+            ..Command::EMPTY
+        };
+        static MID: Command<'static> = Command {
+            name: "mid",
+            flags: &[&MID_GLOBAL],
+            subcommands: &[&LEAF],
+            key: 65,
+            ..Command::EMPTY
+        };
+        static ROOT: Command<'static> = Command {
+            name: "root",
+            flags: &[&ROOT_GLOBAL],
+            subcommands: &[&MID],
+            key: 64,
+            ..Command::EMPTY
+        };
+
+        let args = argv(&[
+            "--jobs=before",
+            "mid",
+            "--region=between",
+            "leaf",
+            "--jobs=local",
+            "--workers=inherited",
+            "--region=after",
+        ]);
+        let mut parser = ArgvParser::new(&ROOT, &args);
+
+        assert_eq!(
+            parser.next_event(),
+            Some(Ok(Event::Flag { flag: &ROOT_GLOBAL, value: Some(b"before") }))
+        );
+        assert_eq!(parser.next_event(), Some(Ok(Event::Command { command: &MID })));
+        assert_eq!(
+            parser.next_event(),
+            Some(Ok(Event::Flag { flag: &MID_GLOBAL, value: Some(b"between") }))
+        );
+        assert_eq!(parser.next_event(), Some(Ok(Event::Command { command: &LEAF })));
+        assert_eq!(
+            parser.next_event(),
+            Some(Ok(Event::Flag { flag: &LEAF_JOBS, value: Some(b"local") }))
+        );
+        assert_eq!(
+            parser.next_event(),
+            Some(Ok(Event::Flag { flag: &ROOT_GLOBAL, value: Some(b"inherited") }))
+        );
+        assert_eq!(
+            parser.next_event(),
+            Some(Ok(Event::Flag { flag: &MID_GLOBAL, value: Some(b"after") }))
+        );
+        assert_eq!(parser.next_event(), None);
+
+        let args = argv(&["mid", "leaf", "-j", "short"]);
+        let mut parser = ArgvParser::new(&ROOT, &args);
+        assert_eq!(parser.next_event(), Some(Ok(Event::Command { command: &MID })));
+        assert_eq!(parser.next_event(), Some(Ok(Event::Command { command: &LEAF })));
+        assert_eq!(
+            parser.next_event(),
+            Some(Ok(Event::Flag { flag: &ROOT_GLOBAL, value: Some(b"short") }))
+        );
+    }
+
+    #[test]
+    fn descendant_globals_are_not_visible_before_their_declaring_command() {
+        static CHILD_GLOBAL: Flag<'static> = Flag {
+            key: 71,
+            name: "child-global",
+            longs: &["child-global"],
+            global: true,
+            ..Flag::BOOL
+        };
+        static CHILD: Command<'static> = Command {
+            name: "child",
+            flags: &[&CHILD_GLOBAL],
+            key: 73,
+            ..Command::EMPTY
+        };
+        static ROOT: Command<'static> =
+            Command { name: "root", subcommands: &[&CHILD], key: 72, ..Command::EMPTY };
+
+        let args = argv(&["--child-global", "child"]);
+        let mut parser = ArgvParser::new(&ROOT, &args);
+        assert_eq!(
+            parser.next_event(),
+            Some(Err(Error::UnknownFlag { token: b"--child-global" }))
+        );
+
+        let args = argv(&["child", "--child-global"]);
+        let mut parser = ArgvParser::new(&ROOT, &args);
+        assert_eq!(parser.next_event(), Some(Ok(Event::Command { command: &CHILD })));
+        assert_eq!(
+            parser.next_event(),
+            Some(Ok(Event::Flag { flag: &CHILD_GLOBAL, value: None }))
+        );
+    }
+
+    #[test]
+    fn nearest_inherited_global_wins_when_ancestors_reuse_a_spelling() {
+        static ROOT_SCOPE: Flag<'static> = Flag {
+            key: 81,
+            name: "root-scope",
+            longs: &["scope"],
+            global: true,
+            ..Flag::BOOL
+        };
+        static MID_SCOPE: Flag<'static> = Flag {
+            key: 82,
+            name: "mid-scope",
+            longs: &["scope"],
+            global: true,
+            ..Flag::BOOL
+        };
+        static LEAF: Command<'static> =
+            Command { name: "leaf", key: 85, ..Command::EMPTY };
+        static MID: Command<'static> = Command {
+            name: "mid",
+            flags: &[&MID_SCOPE],
+            subcommands: &[&LEAF],
+            key: 84,
+            ..Command::EMPTY
+        };
+        static ROOT: Command<'static> = Command {
+            name: "root",
+            flags: &[&ROOT_SCOPE],
+            subcommands: &[&MID],
+            key: 83,
+            ..Command::EMPTY
+        };
+
+        let args = argv(&["--scope", "mid", "leaf", "--scope"]);
+        let mut parser = ArgvParser::new(&ROOT, &args);
+        assert_eq!(parser.next_event(), Some(Ok(Event::Flag { flag: &ROOT_SCOPE, value: None })));
+        assert_eq!(parser.next_event(), Some(Ok(Event::Command { command: &MID })));
+        assert_eq!(parser.next_event(), Some(Ok(Event::Command { command: &LEAF })));
+        assert_eq!(parser.next_event(), Some(Ok(Event::Flag { flag: &MID_SCOPE, value: None })));
+    }
+
+    #[test]
     fn subcommand_matching_is_exact_and_separator_disables_selection() {
         static CHILD: Command<'static> = Command { name: "child", key: 41, ..Command::EMPTY };
         static ROOT: Command<'static> =

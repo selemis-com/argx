@@ -38,4 +38,33 @@ struct ValuePolicyOnSwitch {
     verbose: bool,
 }
 
+#[derive(argx::Parser)]
+struct GlobalPositional {
+    #[argx(global)]
+    value: String,
+}
+
+#[derive(argx::Args)]
+struct GlobalFlatten {
+    #[argx(flatten, global)]
+    value: InvalidFieldAttribute,
+}
+
+#[derive(argx::Parser)]
+struct GlobalSubcommand {
+    #[argx(subcommand, global)]
+    command: Commands,
+}
+
+#[derive(argx::Subcommand)]
+enum Commands {
+    Run,
+}
+
+#[derive(argx::Parser)]
+struct GlobalTakesNoValue {
+    #[argx(long, global = true)]
+    value: bool,
+}
+
 fn main() {}

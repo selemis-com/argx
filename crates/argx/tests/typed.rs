@@ -292,6 +292,47 @@ mod tests {
         command: SiblingCommand,
     }
 
+    #[derive(Debug, PartialEq, Eq, argx::Args)]
+    struct GlobalCommon {
+        #[argx(long, global)]
+        verbose: bool,
+        #[argx(long, global)]
+        profile: Option<String>,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Args)]
+    struct GlobalLeafArgs {
+        #[argx(long)]
+        verbose: bool,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Subcommand)]
+    enum GlobalNestedCommand {
+        Leaf(GlobalLeafArgs),
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Args)]
+    struct GlobalOuterArgs {
+        #[argx(long, global)]
+        region: Option<String>,
+        #[argx(subcommand)]
+        command: GlobalNestedCommand,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Subcommand)]
+    enum GlobalCommand {
+        Outer(GlobalOuterArgs),
+        Other,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    struct GlobalCli {
+        #[argx(flatten)]
+        common: GlobalCommon,
+        #[argx(subcommand)]
+        command: GlobalCommand,
+    }
+
     #[test]
     fn parses_typed_switches_values_and_positionals() {
         let parsed = Cli::try_parse_args([
@@ -732,6 +773,90 @@ Options:
         assert_eq!(
             SiblingCli::try_parse_args(["stop", "--force"]),
             Ok(SiblingCli { command: SiblingCommand::Stop(StopArgs { force: true }) }),
+        );
+    }
+
+    #[test]
+    fn globals_bind_to_their_declaring_fields_across_nested_commands() {
+        for argv in [
+            ["--profile", "dev", "outer", "--region", "eu", "leaf"],
+            ["outer", "--profile", "dev", "--region", "eu", "leaf"],
+            ["outer", "leaf", "--profile", "dev", "--region", "eu"],
+        ] {
+            assert_eq!(
+                GlobalCli::try_parse_args(argv),
+                Ok(GlobalCli {
+                    common: GlobalCommon {
+                        verbose: false,
+                        profile: Some(String::from("dev")),
+                    },
+                    command: GlobalCommand::Outer(GlobalOuterArgs {
+                        region: Some(String::from("eu")),
+                        command: GlobalNestedCommand::Leaf(GlobalLeafArgs { verbose: false }),
+                    }),
+                }),
+            );
+        }
+    }
+
+    #[test]
+    fn local_arguments_shadow_inherited_globals_without_mirroring_binding() {
+        assert_eq!(
+            GlobalCli::try_parse_args(["outer", "leaf", "--verbose"]),
+            Ok(GlobalCli {
+                common: GlobalCommon { verbose: false, profile: None },
+                command: GlobalCommand::Outer(GlobalOuterArgs {
+                    region: None,
+                    command: GlobalNestedCommand::Leaf(GlobalLeafArgs { verbose: true }),
+                }),
+            }),
+        );
+        assert_eq!(
+            GlobalCli::try_parse_args(["--verbose", "outer", "leaf"]),
+            Ok(GlobalCli {
+                common: GlobalCommon { verbose: true, profile: None },
+                command: GlobalCommand::Outer(GlobalOuterArgs {
+                    region: None,
+                    command: GlobalNestedCommand::Leaf(GlobalLeafArgs { verbose: false }),
+                }),
+            }),
+        );
+        assert_eq!(
+            GlobalCli::try_parse_args(["--verbose", "outer", "leaf", "--verbose"]),
+            Ok(GlobalCli {
+                common: GlobalCommon { verbose: true, profile: None },
+                command: GlobalCommand::Outer(GlobalOuterArgs {
+                    region: None,
+                    command: GlobalNestedCommand::Leaf(GlobalLeafArgs { verbose: true }),
+                }),
+            }),
+        );
+    }
+
+    #[test]
+    fn globals_are_downward_only_and_do_not_leak_to_siblings() {
+        assert_eq!(
+            GlobalCli::try_parse_args(["--region", "eu", "outer", "leaf"]),
+            Err(Error::UnknownFlag { token: b"--region".to_vec() }),
+        );
+        assert_eq!(
+            GlobalCli::try_parse_args(["other", "--region", "eu"]),
+            Err(Error::UnknownFlag { token: b"--region".to_vec() }),
+        );
+    }
+
+    #[test]
+    fn scalar_global_occurrences_share_one_cardinality_across_command_boundaries() {
+        assert_eq!(
+            GlobalCli::try_parse_args([
+                "--profile",
+                "first",
+                "outer",
+                "leaf",
+                "--profile",
+                "second",
+            ]),
+            Err(Error::DuplicateArgument { name: "profile" }),
         );
     }
 

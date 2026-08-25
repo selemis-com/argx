@@ -141,6 +141,8 @@ pub(crate) struct Argument {
     pub help: Option<String>,
     /// Whether the argument is named or positional on the command line.
     pub kind: ArgumentKind,
+    /// Whether a named argument remains in scope for descendant commands.
+    pub global: bool,
     /// Syntactic value shape relevant to CLI cardinality.
     pub shape: Shape,
     /// Whether detached values may be flag-like.
@@ -309,6 +311,7 @@ impl Field {
         if attributes.subcommand {
             if attributes.long.is_some()
                 || attributes.short.is_some()
+                || attributes.global
                 || attributes.allow_hyphen_values
                 || attributes.allow_negative_numbers
                 || attributes.help.is_some()
@@ -336,6 +339,7 @@ impl Field {
         if attributes.flatten {
             if attributes.long.is_some()
                 || attributes.short.is_some()
+                || attributes.global
                 || attributes.allow_hyphen_values
                 || attributes.allow_negative_numbers
                 || attributes.help.is_some()
@@ -393,6 +397,12 @@ impl Field {
                 "`allow_hyphen_values` is only valid on named flags",
             ));
         }
+        if attributes.global && matches!(&kind, ArgumentKind::Positional) {
+            return Err(syn::Error::new(
+                binding.span,
+                "`global` is only valid on named flags",
+            ));
+        }
         if (attributes.allow_hyphen_values || attributes.allow_negative_numbers)
             && shape == Shape::Bool
         {
@@ -413,6 +423,7 @@ impl Field {
             semantics: FieldSemantics::Argument(Argument {
                 help,
                 kind,
+                global: attributes.global,
                 shape,
                 allow_hyphen_values: attributes.allow_hyphen_values,
                 allow_negative_numbers: attributes.allow_negative_numbers,
@@ -769,7 +780,7 @@ mod tests {
             #[argx(name = "example")]
             struct Cli {
                 /// Enable verbose output.
-                #[argx(short, long)]
+                #[argx(short, long, global)]
                 verbose: bool,
                 output: Option<std::path::PathBuf>,
                 #[argx(flatten)]
@@ -789,6 +800,7 @@ mod tests {
             panic!("verbose should be an argument");
         };
         assert!(matches!(&argument.kind, ArgumentKind::Flag { .. }));
+        assert!(argument.global);
         assert_eq!(argument.shape, Shape::Bool);
         assert!(verbose.binding.value.is_none());
 

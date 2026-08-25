@@ -72,6 +72,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
         };
         let name = &field.binding.name;
         let help = option_str(argument.help.as_deref());
+        let global = argument.global;
         let takes_value = !field.is_switch();
         let required = argument.shape == model::Shape::Required;
         let allow_hyphen_values = argument.allow_hyphen_values;
@@ -83,6 +84,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                 help: #help,
                 longs: &[#(#longs),*],
                 shorts: &[#(#shorts),*],
+                global: #global,
                 takes_value: #takes_value,
                 required: #required,
                 allow_hyphen_values: #allow_hyphen_values,
@@ -177,11 +179,13 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
         let ty = &field.binding.ty;
         let slot = syn::Index::from(field_index);
         quote! {
-            if <#ty as #facade::__private::Subcommands>::selected(&partial.#slot) {
-                return <#ty as #facade::__private::Subcommands>::apply(
+            if <#ty as #facade::__private::Subcommands>::selected(&partial.#slot)
+                && <#ty as #facade::__private::Subcommands>::apply(
                     &mut partial.#slot,
                     event,
-                );
+                )
+            {
+                return true;
             }
         }
     });
@@ -189,7 +193,12 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
         let ty = &field.binding.ty;
         let slot = syn::Index::from(field_index);
         quote! {
-            if <#ty as #facade::__private::Subcommands>::apply(&mut partial.#slot, event) {
+            if !<#ty as #facade::__private::Subcommands>::selected(&partial.#slot)
+                && <#ty as #facade::__private::Subcommands>::apply(
+                    &mut partial.#slot,
+                    event,
+                )
+            {
                 return true;
             }
         }

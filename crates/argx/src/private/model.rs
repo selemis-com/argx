@@ -42,6 +42,8 @@ pub struct Flag<'a> {
     pub longs: &'a [&'a str],
     /// ASCII short spellings without the leading `-`.
     pub shorts: &'a [u8],
+    /// Whether this flag remains in scope for descendant commands.
+    pub global: bool,
     /// Whether one occurrence consumes a value.
     pub takes_value: bool,
     /// Whether this flag must occur at least once.
@@ -61,6 +63,7 @@ impl Flag<'static> {
         help: None,
         longs: &[],
         shorts: &[],
+        global: false,
         takes_value: false,
         required: false,
         allow_hyphen_values: false,

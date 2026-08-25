@@ -76,6 +76,8 @@ pub enum Error<'t, 'v> {
 pub struct ArgvParser<'t, 'a, 'v> {
     /// Static command definition used for token matching.
     command: &'t Command<'t>,
+    /// Selected command ancestors from root to the parent of `command`.
+    ancestors: Vec<&'t Command<'t>>,
     /// Command-line arguments after the program name.
     argv: &'a [&'v OsStr],
     /// Index of the next argument to inspect.
@@ -100,6 +102,7 @@ impl<'t, 'a, 'v> ArgvParser<'t, 'a, 'v> {
     pub const fn new(command: &'t Command<'t>, argv: &'a [&'v OsStr]) -> Self {
         Self {
             command,
+            ancestors: Vec::new(),
             argv,
             position: 0,
             arg_position: 0,
@@ -274,6 +277,7 @@ impl<'t, 'a, 'v> ArgvParser<'t, 'a, 'v> {
         if !self.flags_stopped
             && let Some(command) = self.find_subcommand(token)
         {
+            self.ancestors.push(self.command);
             self.command = command;
             self.arg_position = 0;
             return Ok(Event::Command { command });
@@ -302,18 +306,46 @@ impl<'t, 'a, 'v> ArgvParser<'t, 'a, 'v> {
         self.command.subcommands.iter().copied().find(|command| command.name.as_bytes() == name)
     }
 
-    /// Looks up a long flag spelling in declaration order.
+    /// Looks up a long flag using the current command before inherited globals.
+    ///
+    /// Ancestors are searched nearest-first. This gives descendant declarations normal lexical
+    /// shadowing behavior while globals remain owned by the command that declared them.
     fn find_long(&self, name: &[u8]) -> Option<&'t Flag<'t>> {
         self.command
             .flags
             .iter()
             .copied()
             .find(|flag| flag.longs.iter().any(|long| long.as_bytes() == name))
+            .or_else(|| {
+                self.ancestors.iter().rev().find_map(|command| {
+                    command.flags.iter().copied().find(|flag| {
+                        flag.global && flag.longs.iter().any(|long| long.as_bytes() == name)
+                    })
+                })
+            })
     }
 
-    /// Looks up one short flag spelling in declaration order.
+    /// Looks up one short spelling using the current command before inherited globals.
     fn find_short(&self, short: u8) -> Option<&'t Flag<'t>> {
-        self.command.flags.iter().copied().find(|flag| flag.shorts.contains(&short))
+        self.command
+            .flags
+            .iter()
+            .copied()
+            .find(|flag| flag.shorts.contains(&short))
+            .or_else(|| {
+                self.ancestors.iter().rev().find_map(|command| {
+                    command
+                        .flags
+                        .iter()
+                        .copied()
+                        .find(|flag| flag.global && flag.shorts.contains(&short))
+                })
+            })
+    }
+
+    /// Returns the selected command chain from the root through the current command.
+    pub(crate) fn command_path(&self) -> impl Iterator<Item = &'t Command<'t>> + '_ {
+        self.ancestors.iter().copied().chain(std::iter::once(self.command))
     }
 }
 

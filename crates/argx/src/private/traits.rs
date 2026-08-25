@@ -68,6 +68,9 @@ pub trait Subcommands: Sized {
     fn selected(partial: &Self::Partial) -> bool;
 
     /// Applies a command-selection event or an event belonging to the selected command tree.
+    ///
+    /// Returns `false` for events not owned by the selected branch so an ancestor declaration can
+    /// bind an inherited global argument.
     fn apply(partial: &mut Self::Partial, event: &Event<'_, '_>) -> bool;
 
     /// Validates scalar occurrence policy in the selected command tree.

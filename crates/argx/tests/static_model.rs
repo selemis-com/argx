@@ -10,7 +10,7 @@ mod tests {
     #[argx(name = "example", about = "Example command")]
     struct Cli {
         /// Enable verbose output.
-        #[argx(short, long)]
+        #[argx(short, long, global)]
         verbose: bool,
         /// Documentation overridden by explicit field help.
         #[argx(long = "output", help = "Optional output path")]
@@ -133,6 +133,7 @@ mod tests {
         assert_eq!(command.flags[0].longs, ["verbose"]);
         assert_eq!(command.flags[0].shorts, [b'v']);
         assert_eq!(command.flags[0].help, Some("Enable verbose output."));
+        assert!(command.flags[0].global);
         assert!(!command.flags[0].takes_value);
         assert!(!command.flags[0].required);
         assert!(!command.flags[0].allow_hyphen_values);
@@ -142,6 +143,7 @@ mod tests {
         assert_eq!(command.flags[1].longs, ["output"]);
         assert!(command.flags[1].shorts.is_empty());
         assert_eq!(command.flags[1].help, Some("Optional output path"));
+        assert!(!command.flags[1].global);
         assert!(command.flags[1].takes_value);
         assert!(!command.flags[1].required);
         assert!(!command.flags[1].allow_hyphen_values);
