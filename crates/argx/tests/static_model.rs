@@ -349,7 +349,7 @@ mod tests {
     }
 
     #[test]
-    fn binding_uses_exact_metadata_identity_instead_of_semantic_keys() {
+    fn binding_uses_key_dispatch_with_exact_metadata_identity() {
         let command = Cli::COMMAND;
         let real_flag = command.flags[0];
         let fake_flag = Flag { key: real_flag.key, ..Flag::BOOL };
