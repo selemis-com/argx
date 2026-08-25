@@ -50,6 +50,8 @@ pub(crate) struct CommandSemantics {
     pub version: Option<syn::Expr>,
     /// Long version text expression.
     pub long_version: Option<syn::Expr>,
+    /// Hidden command spellings accepted in addition to the canonical name.
+    pub aliases: Vec<String>,
 }
 
 /// One enum deriving `Subcommand`.
@@ -167,8 +169,10 @@ pub(crate) struct Argument {
 pub(crate) enum ArgumentKind {
     /// A named flag with one or more spellings.
     Flag {
-        /// Long spellings without `--`.
+        /// Canonical long spellings without `--`.
         longs: Vec<String>,
+        /// Hidden long aliases without `--`.
+        aliases: Vec<String>,
         /// Short spellings as ASCII bytes.
         shorts: Vec<u8>,
     },
@@ -205,6 +209,12 @@ impl Command {
         };
 
         let attributes = attrs::command(&input.attrs)?;
+        if !attributes.aliases.is_empty() {
+            return Err(syn::Error::new_spanned(
+                &input.ident,
+                "command aliases are only valid on Subcommand variants",
+            ));
+        }
         if !root && (attributes.version.is_some() || attributes.long_version.is_some()) {
             return Err(syn::Error::new_spanned(
                 &input.ident,
@@ -232,7 +242,7 @@ impl Command {
                 root,
                 unit,
             },
-            semantics: CommandSemantics { name, about, version, long_version },
+            semantics: CommandSemantics { name, about, version, long_version, aliases: Vec::new() },
             fields,
         })
     }
@@ -249,7 +259,7 @@ impl Subcommand {
         };
         attrs::reject(&input.attrs, "subcommand")?;
 
-        let mut names = Vec::<String>::new();
+        let mut spellings = Vec::<String>::new();
         let mut variants = Vec::with_capacity(data.variants.len());
         for variant in &data.variants {
             let attributes = attrs::variant(&variant.attrs)?;
@@ -259,13 +269,25 @@ impl Subcommand {
             let version = attributes.version;
             let long_version = attributes.long_version;
             validate_subcommand_name(&name, variant.ident.span())?;
-            if names.contains(&name) {
+            if spellings.contains(&name) {
                 return Err(syn::Error::new(
                     variant.ident.span(),
                     format!("duplicate subcommand `{name}`"),
                 ));
             }
-            names.push(name.clone());
+            spellings.push(name.clone());
+
+            let aliases = attributes.aliases;
+            for alias in &aliases {
+                validate_subcommand_name(alias, variant.ident.span())?;
+                if spellings.contains(alias) {
+                    return Err(syn::Error::new(
+                        variant.ident.span(),
+                        format!("duplicate subcommand spelling `{alias}`"),
+                    ));
+                }
+                spellings.push(alias.clone());
+            }
 
             let payload = match &variant.fields {
                 Fields::Unit => None,
@@ -296,7 +318,7 @@ impl Subcommand {
 
             variants.push(Variant {
                 binding: VariantBinding { ident: variant.ident.clone(), payload },
-                semantics: CommandSemantics { name, about, version, long_version },
+                semantics: CommandSemantics { name, about, version, long_version, aliases },
             });
         }
 
@@ -340,6 +362,7 @@ impl Field {
         if attributes.subcommand {
             if attributes.long.is_some()
                 || attributes.short.is_some()
+                || !attributes.aliases.is_empty()
                 || attributes.global
                 || attributes.env.is_some()
                 || attributes.default.is_some()
@@ -370,6 +393,7 @@ impl Field {
         if attributes.flatten {
             if attributes.long.is_some()
                 || attributes.short.is_some()
+                || !attributes.aliases.is_empty()
                 || attributes.global
                 || attributes.env.is_some()
                 || attributes.default.is_some()
@@ -401,7 +425,14 @@ impl Field {
         let shape = Shape::from_type(&binding.ty);
         validate_value_shape(&binding.ty, shape, binding.span)?;
 
-        let kind = if attributes.long.is_some() || attributes.short.is_some() {
+        let named = attributes.long.is_some() || attributes.short.is_some();
+        if !named && !attributes.aliases.is_empty() {
+            return Err(syn::Error::new(
+                binding.span,
+                "`alias` and `aliases` are only valid on named flags",
+            ));
+        }
+        let kind = if named {
             let longs = attributes
                 .long
                 .map(|long| match long {
@@ -419,7 +450,7 @@ impl Field {
                 .transpose()?
                 .into_iter()
                 .collect();
-            ArgumentKind::Flag { longs, shorts }
+            ArgumentKind::Flag { longs, aliases: attributes.aliases, shorts }
         } else {
             ArgumentKind::Positional
         };
@@ -468,7 +499,7 @@ impl Field {
         }
 
         let diagnostic = match &kind {
-            ArgumentKind::Flag { longs, shorts } => longs.first().map_or_else(
+            ArgumentKind::Flag { longs, shorts, .. } => longs.first().map_or_else(
                 || {
                     shorts.first().map_or_else(
                         || binding.name.clone(),
@@ -607,10 +638,15 @@ fn validate_fields(fields: &[Field], has_version: bool) -> syn::Result<()> {
     for field in fields {
         match &field.semantics {
             FieldSemantics::Argument(Argument {
-                kind: ArgumentKind::Flag { longs: field_longs, shorts: field_shorts },
+                kind:
+                    ArgumentKind::Flag {
+                        longs: field_longs,
+                        aliases: field_aliases,
+                        shorts: field_shorts,
+                    },
                 ..
             }) => {
-                for long in field_longs {
+                for long in field_longs.iter().chain(field_aliases) {
                     validate_long(long, field.binding.span)?;
                     if long == "help" {
                         return Err(syn::Error::new(

@@ -22,6 +22,8 @@ pub(crate) struct CommandAttrs {
     pub version: Option<Expr>,
     /// Long version text expression.
     pub long_version: Option<Expr>,
+    /// Additional hidden spellings accepted for a selectable subcommand.
+    pub aliases: Vec<String>,
 }
 
 /// Attributes accepted on a command field.
@@ -41,6 +43,8 @@ pub(crate) struct FieldAttrs {
     pub long: Option<Inferred<String>>,
     /// Short flag spelling, or an instruction to infer it.
     pub short: Option<Inferred<char>>,
+    /// Additional hidden long spellings accepted for this flag.
+    pub aliases: Vec<String>,
     /// Whether detached values may be flag-like.
     pub allow_hyphen_values: bool,
     /// Whether negative numbers may be consumed while other flag-like values are refused.
@@ -88,6 +92,12 @@ fn command_like(attributes: &[Attribute], context: &str) -> syn::Result<CommandA
                     return Err(meta.error("duplicate `long_version` attribute"));
                 }
                 parsed.long_version = Some(meta.value()?.parse::<Expr>()?);
+                Ok(())
+            } else if meta.path.is_ident("alias") {
+                parsed.aliases.push(meta.value()?.parse::<LitStr>()?.value());
+                Ok(())
+            } else if meta.path.is_ident("aliases") {
+                parsed.aliases.extend(string_array(&meta)?);
                 Ok(())
             } else {
                 Err(meta.error(format!("unsupported Argx {context} attribute")))
@@ -164,6 +174,12 @@ pub(crate) fn field(attributes: &[Attribute]) -> syn::Result<FieldAttrs> {
                     Inferred::Infer
                 });
                 Ok(())
+            } else if meta.path.is_ident("alias") {
+                parsed.aliases.push(meta.value()?.parse::<LitStr>()?.value());
+                Ok(())
+            } else if meta.path.is_ident("aliases") {
+                parsed.aliases.extend(string_array(&meta)?);
+                Ok(())
             } else if meta.path.is_ident("allow_hyphen_values") {
                 if parsed.allow_hyphen_values {
                     return Err(meta.error("duplicate `allow_hyphen_values` attribute"));
@@ -188,6 +204,25 @@ pub(crate) fn field(attributes: &[Attribute]) -> syn::Result<FieldAttrs> {
         })?;
     }
     Ok(parsed)
+}
+
+/// Parses a non-empty array of string values from a plural attribute.
+fn string_array(meta: &syn::meta::ParseNestedMeta<'_>) -> syn::Result<Vec<String>> {
+    if !meta.input.peek(Token![=]) {
+        return Err(meta.error("plural alias attributes require a string array"));
+    }
+    let array = meta.value()?.parse::<syn::ExprArray>()?;
+    if array.elems.is_empty() {
+        return Err(meta.error("plural alias attributes require at least one value"));
+    }
+    array
+        .elems
+        .iter()
+        .map(|expression| match expression {
+            Expr::Lit(syn::ExprLit { lit: Lit::Str(value), .. }) => Ok(value.value()),
+            _ => Err(syn::Error::new_spanned(expression, "alias values must be string literals")),
+        })
+        .collect()
 }
 
 /// Rejects Argx attributes on a declaration whose attribute vocabulary is not implemented yet.

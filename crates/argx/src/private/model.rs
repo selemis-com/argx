@@ -51,6 +51,8 @@ pub struct Command<'a> {
     pub name: &'a str,
     /// One-line description shown in generated help.
     pub about: Option<&'a str>,
+    /// Hidden spellings accepted in addition to the canonical command name.
+    pub aliases: &'a [&'a str],
     /// Built-in parser actions available in this command scope.
     pub actions: &'a [&'a Action<'a>],
     /// Flags accepted by this command.
@@ -68,6 +70,7 @@ impl Command<'static> {
     pub const EMPTY: Self = Self {
         name: "",
         about: None,
+        aliases: &[],
         actions: &[&HELP_ACTION],
         flags: &[],
         args: &[],
@@ -87,8 +90,10 @@ pub struct Flag<'a> {
     pub diagnostic: &'a str,
     /// One-line description shown in generated help.
     pub help: Option<&'a str>,
-    /// Long spellings without the leading `--`.
+    /// Canonical long spellings without the leading `--`.
     pub longs: &'a [&'a str],
+    /// Hidden long aliases without the leading `--`.
+    pub aliases: &'a [&'a str],
     /// ASCII short spellings without the leading `-`.
     pub shorts: &'a [u8],
     /// Whether this flag remains in scope for descendant commands.
@@ -116,6 +121,7 @@ impl Flag<'static> {
         diagnostic: "",
         help: None,
         longs: &[],
+        aliases: &[],
         shorts: &[],
         global: false,
         env: None,

@@ -28,7 +28,9 @@ pub(crate) fn long<'a>(
                 .flags
                 .iter()
                 .copied()
-                .find(|flag| flag.longs.iter().any(|long| long.as_bytes() == name))
+                .find(|flag| {
+                    flag.longs.iter().chain(flag.aliases).any(|long| long.as_bytes() == name)
+                })
                 .map(Named::Flag)
         })
         .or_else(|| {
@@ -38,7 +40,12 @@ pub(crate) fn long<'a>(
                     .iter()
                     .copied()
                     .find(|flag| {
-                        flag.global && flag.longs.iter().any(|long| long.as_bytes() == name)
+                        flag.global
+                            && flag
+                                .longs
+                                .iter()
+                                .chain(flag.aliases)
+                                .any(|long| long.as_bytes() == name)
                     })
                     .map(Named::Flag)
             })

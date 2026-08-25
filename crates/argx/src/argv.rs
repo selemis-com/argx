@@ -308,7 +308,10 @@ impl<'t, 'a, 'v> ArgvParser<'t, 'a, 'v> {
 
     /// Looks up one child command by exact command-line spelling.
     fn find_subcommand(&self, name: &[u8]) -> Option<&'t Command<'t>> {
-        self.command.subcommands.iter().copied().find(|command| command.name.as_bytes() == name)
+        self.command.subcommands.iter().copied().find(|command| {
+            command.name.as_bytes() == name
+                || command.aliases.iter().any(|alias| alias.as_bytes() == name)
+        })
     }
 
     /// Returns the selected command chain from the root through the current command.

@@ -88,3 +88,17 @@ struct FlattenWithValue {
 }
 
 fn main() {}
+
+#[derive(argx::Args)]
+struct SharedAlias {
+    #[argx(long, alias = "same-alias")]
+    child: bool,
+}
+
+#[derive(argx::Parser)]
+struct DuplicateAliasAcrossFlatten {
+    #[argx(long = "same-alias")]
+    parent: bool,
+    #[argx(flatten)]
+    shared: SharedAlias,
+}

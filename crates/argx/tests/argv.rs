@@ -500,6 +500,44 @@ mod tests {
     }
 
     #[test]
+    fn long_aliases_follow_global_scope_and_shadowing_rules() {
+        static ROOT_GLOBAL: Flag<'static> = Flag {
+            key: 70,
+            name: "profile",
+            longs: &["profile"],
+            aliases: &["context"],
+            global: true,
+            ..Flag::VALUE
+        };
+        static CHILD_LOCAL: Flag<'static> =
+            Flag { key: 71, name: "context", longs: &["context"], ..Flag::BOOL };
+        static CHILD: Command<'static> = Command {
+            name: "child",
+            aliases: &["c"],
+            flags: &[&CHILD_LOCAL],
+            key: 72,
+            ..Command::EMPTY
+        };
+        static ROOT: Command<'static> = Command {
+            name: "root",
+            flags: &[&ROOT_GLOBAL],
+            subcommands: &[&CHILD],
+            key: 73,
+            ..Command::EMPTY
+        };
+
+        let args = argv(&["--context", "root", "c", "--context"]);
+        let mut parser = ArgvParser::new(&ROOT, &args);
+        assert_eq!(
+            parser.next_event(),
+            Some(Ok(Event::Flag { flag: &ROOT_GLOBAL, value: Some(b"root") })),
+        );
+        assert_eq!(parser.next_event(), Some(Ok(Event::Command { command: &CHILD })));
+        assert_eq!(parser.next_event(), Some(Ok(Event::Flag { flag: &CHILD_LOCAL, value: None })),);
+        assert_eq!(parser.next_event(), None);
+    }
+
+    #[test]
     fn descendant_globals_are_not_visible_before_their_declaring_command() {
         static CHILD_GLOBAL: Flag<'static> = Flag {
             key: 71,

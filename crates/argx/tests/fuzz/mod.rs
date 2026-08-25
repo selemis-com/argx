@@ -769,6 +769,7 @@ fn production_parse(command: &CommandSpec, argv: &[OsString]) -> ParseRun {
             diagnostic: &flag.name,
             help: None,
             longs,
+            aliases: &[],
             shorts: &flag.shorts,
             global: false,
             env: None,

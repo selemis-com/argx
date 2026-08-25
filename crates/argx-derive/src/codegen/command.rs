@@ -67,7 +67,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
         let Some(argument) = field.argument() else {
             unreachable!("flag list only contains argument fields");
         };
-        let model::ArgumentKind::Flag { longs, shorts } = &argument.kind else {
+        let model::ArgumentKind::Flag { longs, aliases, shorts } = &argument.kind else {
             unreachable!("flag list only contains named arguments");
         };
         let name = &field.binding.name;
@@ -91,6 +91,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                 diagnostic: #diagnostic,
                 help: #help,
                 longs: &[#(#longs),*],
+                aliases: &[#(#aliases),*],
                 shorts: &[#(#shorts),*],
                 global: #global,
                 env: #env,
@@ -384,6 +385,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
 
     let name = &command.semantics.name;
     let about = option_str(command.semantics.about.as_deref());
+    let aliases = &command.semantics.aliases;
     let short_version =
         command.semantics.version.as_ref().or(command.semantics.long_version.as_ref());
     let long_version =
@@ -442,6 +444,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                 #facade::__private::Command {
                     name: #name,
                     about: #about,
+                    aliases: &[#(#aliases),*],
                     actions: #command_actions,
                     flags: #command_flags,
                     args: #command_args,

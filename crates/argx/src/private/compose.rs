@@ -107,10 +107,10 @@ pub const fn flag_spellings_unique(flags: &[&Flag<'_>]) -> bool {
         let mut right = left + 1;
         while right < flags.len() {
             let mut long = 0;
-            while long < flags[left].longs.len() {
+            while long < flag_long_len(flags[left]) {
                 let mut other = 0;
-                while other < flags[right].longs.len() {
-                    if str_eq(flags[left].longs[long], flags[right].longs[other]) {
+                while other < flag_long_len(flags[right]) {
+                    if str_eq(flag_long(flags[left], long), flag_long(flags[right], other)) {
                         return false;
                     }
                     other += 1;
@@ -145,8 +145,8 @@ pub const fn action_flag_spellings_disjoint(actions: &[&Action<'_>], flags: &[&F
             let mut long = 0;
             while long < actions[action].longs.len() {
                 let mut other = 0;
-                while other < flags[flag].longs.len() {
-                    if str_eq(actions[action].longs[long], flags[flag].longs[other]) {
+                while other < flag_long_len(flags[flag]) {
+                    if str_eq(actions[action].longs[long], flag_long(flags[flag], other)) {
                         return false;
                     }
                     other += 1;
@@ -191,6 +191,20 @@ pub const fn positional_layout_valid(args: &[&Arg<'_>]) -> bool {
         index += 1;
     }
     true
+}
+
+/// Returns the number of canonical and alias long spellings on one flag.
+const fn flag_long_len(flag: &Flag<'_>) -> usize {
+    flag.longs.len() + flag.aliases.len()
+}
+
+/// Returns one canonical or alias long spelling by combined index.
+const fn flag_long<'a>(flag: &'a Flag<'a>, index: usize) -> &'a str {
+    if index < flag.longs.len() {
+        flag.longs[index]
+    } else {
+        flag.aliases[index - flag.longs.len()]
+    }
 }
 
 /// Const-compatible string equality used by composed table validation.

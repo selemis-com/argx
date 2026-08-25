@@ -208,6 +208,22 @@ mod tests {
     }
 
     #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    #[argx(name = "aliases")]
+    struct AliasCli {
+        #[argx(long, alias = "colour", aliases = ["hue", "tone"])]
+        color: Option<String>,
+        #[argx(subcommand)]
+        command: AliasCommand,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Subcommand)]
+    enum AliasCommand {
+        #[argx(alias = "rm", aliases = ["delete", "del"])]
+        Remove,
+        Status,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
     struct SubcommandCli {
         #[argx(long)]
         verbose: bool,
@@ -1108,6 +1124,34 @@ Options:
                 verbose: false,
                 workspace: String::from("acme"),
                 command: RootCommand::Status,
+            }),
+        );
+    }
+
+    #[test]
+    fn hidden_aliases_parse_without_changing_canonical_help() {
+        for flag in ["--color", "--colour", "--hue", "--tone"] {
+            assert_eq!(
+                AliasCli::try_parse_args([flag, "blue", "rm"]),
+                Ok(AliasCli { color: Some(String::from("blue")), command: AliasCommand::Remove }),
+            );
+        }
+
+        for command in ["remove", "rm", "delete", "del"] {
+            assert_eq!(
+                AliasCli::try_parse_args([command]),
+                Ok(AliasCli { color: None, command: AliasCommand::Remove }),
+            );
+        }
+
+        assert_eq!(
+            AliasCli::try_parse_args(["--help"]),
+            Err(Error::DisplayHelp {
+                help: String::from(
+                    "Usage: aliases [OPTIONS] <COMMAND>\n\n\
+Commands:\n  remove\n  status\n\n\
+Options:\n  --color <COLOR>\n  -h, --help       Print help\n",
+                ),
             }),
         );
     }

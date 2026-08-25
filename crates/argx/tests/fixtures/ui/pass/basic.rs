@@ -3,7 +3,7 @@ use argx::Parser as _;
 #[derive(argx::Parser)]
 #[argx(about = "Basic parser")]
 struct Cli {
-    #[argx(short, long, help = "Verbose output")]
+    #[argx(short, long, alias = "chatty", aliases = ["debug", "trace"], help = "Verbose output")]
     verbose: bool,
     input: String,
 }
@@ -16,7 +16,7 @@ struct Common {
 
 #[derive(argx::Subcommand)]
 enum Command {
-    #[argx(about = "Run the command")]
+    #[argx(about = "Run the command", alias = "execute", aliases = ["start", "go"])]
     Run,
 }
 
@@ -29,6 +29,7 @@ fn main() {
     assert_eq!(command.args.len(), 1);
     assert_eq!(command.about, Some("Basic parser"));
     assert_eq!(command.flags[0].help, Some("Verbose output"));
+    assert_eq!(command.flags[0].aliases, ["chatty", "debug", "trace"]);
     assert!(Cli::render_help().contains("Usage: cli [OPTIONS] <INPUT>"));
 
     let cli = Cli { verbose: false, input: String::new() };

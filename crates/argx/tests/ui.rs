@@ -59,6 +59,24 @@ error: `global` takes no value
     }
 
     #[test]
+    fn invalid_alias_declarations_are_rejected_deterministically() {
+        support::assert_ui_failure(
+            "invalid_aliases",
+            "argx",
+            snapbox::str![[r#"
+error: command aliases are only valid on Subcommand variants
+error: `alias` and `aliases` are only valid on named flags
+error: plural alias attributes require at least one value
+error: long flag must be non-empty, must not start with `-`, and cannot contain `=`, whitespace, or controls
+error: `--help` is reserved by Argx
+error: duplicate subcommand `second`
+error: duplicate subcommand spelling `run`
+
+"#]],
+        );
+    }
+
+    #[test]
     fn invalid_environment_declarations_are_rejected_deterministically() {
         support::assert_ui_failure(
             "invalid_env",
@@ -155,6 +173,7 @@ error[..]: [..]flattened command contains duplicate long or short flag spellings
 error[..]: [..]flattened command contains duplicate long or short flag spellings
 error[..]: [..]flattened command contains duplicate argument keys
 error[..]: [..]flattened command has an invalid positional layout
+error[..]: [..]flattened command contains duplicate long or short flag spellings
 
 "#]],
         );

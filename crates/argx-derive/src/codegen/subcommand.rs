@@ -25,6 +25,7 @@ pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
         let key = key::ident("SUBCOMMAND", Some(index));
         let name = &variant.semantics.name;
         let about = option_str(variant.semantics.about.as_deref());
+        let aliases = &variant.semantics.aliases;
         let short_version =
             variant.semantics.version.as_ref().or(variant.semantics.long_version.as_ref());
         let long_version =
@@ -55,6 +56,7 @@ pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
                     #facade::__private::Command {
                         name: #name,
                         about: #about,
+                        aliases: &[#(#aliases),*],
                         actions: #actions,
                         flags: &[],
                         args: &[],
@@ -66,6 +68,7 @@ pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
                     #facade::__private::Command {
                         name: #name,
                         about: #about,
+                        aliases: &[#(#aliases),*],
                         actions: #actions,
                         flags: <#ty as #facade::__private::CommandArgs>::COMMAND.flags,
                         args: <#ty as #facade::__private::CommandArgs>::COMMAND.args,
