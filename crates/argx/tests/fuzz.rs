@@ -1167,6 +1167,95 @@ mod tests {
         rest: Vec<String>,
     }
 
+    /// Deepest reusable group used to fuzz recursive flatten binding.
+    #[cfg(feature = "derive")]
+    #[derive(Debug, Clone, PartialEq, Eq, argx::Args)]
+    struct FlattenLeaf {
+        /// Switch owned by the deepest flattened group.
+        #[argx(long)]
+        leaf_switch: bool,
+        /// Optional scalar owned by the deepest flattened group.
+        #[argx(long)]
+        leaf_number: Option<i64>,
+        /// Repeatable values owned by the deepest flattened group.
+        #[argx(long)]
+        leaf_value: Vec<String>,
+        /// Positional contributed between the root's own positionals.
+        middle: String,
+    }
+
+    /// Intermediate group used to prove recursive flatten delegation.
+    #[cfg(feature = "derive")]
+    #[derive(Debug, Clone, PartialEq, Eq, argx::Args)]
+    struct FlattenNested {
+        /// Child declaration composed recursively.
+        #[argx(flatten)]
+        leaf: FlattenLeaf,
+        /// Optional collection owned by the intermediate group.
+        #[argx(long)]
+        nested_value: Option<Vec<String>>,
+    }
+
+    /// Sibling flattened group used to exercise independent partial state.
+    #[cfg(feature = "derive")]
+    #[derive(Debug, Clone, PartialEq, Eq, argx::Args)]
+    struct FlattenSibling {
+        /// Optional value owned by a separate flattened declaration.
+        #[argx(long)]
+        sibling: Option<String>,
+    }
+
+    /// Root command used for recursive and sibling flatten round trips.
+    #[cfg(feature = "derive")]
+    #[derive(Debug, Clone, PartialEq, Eq, argx::Parser)]
+    struct FlattenRoundTrip {
+        /// Root-owned switch.
+        #[argx(long)]
+        root_switch: bool,
+        /// Root positional before flattened positional tables.
+        head: String,
+        /// Recursively flattened declaration.
+        #[argx(flatten)]
+        nested: FlattenNested,
+        /// Independent sibling flattened declaration.
+        #[argx(flatten)]
+        sibling: FlattenSibling,
+        /// Root positional after flattened positional tables.
+        tail: String,
+        /// Root-owned trailing values.
+        rest: Vec<String>,
+    }
+
+    /// Required group used by cross-flatten error-precedence properties.
+    #[cfg(feature = "derive")]
+    #[derive(Debug, PartialEq, Eq, argx::Args)]
+    struct FlattenRequired {
+        /// Required named value deliberately left absent in precedence cases.
+        #[argx(long)]
+        required: String,
+    }
+
+    /// Scalar group used by cross-flatten error-precedence properties.
+    #[cfg(feature = "derive")]
+    #[derive(Debug, PartialEq, Eq, argx::Args)]
+    struct FlattenScalar {
+        /// Optional scalar whose repeated occurrences are checked before requiredness.
+        #[argx(long)]
+        port: Option<u16>,
+    }
+
+    /// Root combining independent required and scalar groups for precedence checks.
+    #[cfg(feature = "derive")]
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    struct FlattenErrors {
+        /// Group containing a missing required field.
+        #[argx(flatten)]
+        required: FlattenRequired,
+        /// Group containing repeated or invalid scalar values.
+        #[argx(flatten)]
+        scalar: FlattenScalar,
+    }
+
     /// Typed command used to fuzz deferred scalar cardinality.
     #[cfg(feature = "derive")]
     #[derive(Debug, PartialEq, Eq, argx::Parser)]
@@ -1286,6 +1375,95 @@ mod tests {
             }
             self.strings[3] += value.chars().count();
         }
+    }
+
+    /// Aggregate measurements for recursive flatten round-trip fuzzing.
+    #[cfg(feature = "derive")]
+    #[derive(Debug, Default)]
+    struct FlattenCoverage {
+        /// Root and leaf switch false/true counts.
+        switches: [usize; 4],
+        /// Leaf scalar absent/present and sibling scalar absent/present counts.
+        optionals: [usize; 4],
+        /// Leaf, nested optional, and trailing collection counts.
+        collections: [usize; 7],
+        /// Total, empty, non-ASCII, and Unicode-scalar counts across flattened values.
+        strings: [usize; 4],
+        /// Arguments-only and complete-argv parses verified.
+        entry_points: [usize; 2],
+    }
+
+    #[cfg(feature = "derive")]
+    impl FlattenCoverage {
+        /// Records one successfully verified flattened round trip.
+        fn record(&mut self, value: &FlattenRoundTrip) {
+            self.entry_points[0] += 1;
+            self.entry_points[1] += 1;
+            let root_switch = if value.root_switch { 1 } else { 0 };
+            let leaf_switch = if value.nested.leaf.leaf_switch { 1 } else { 0 };
+            let leaf_number = if value.nested.leaf.leaf_number.is_some() { 1 } else { 0 };
+            let sibling = if value.sibling.sibling.is_some() { 1 } else { 0 };
+            self.switches[root_switch] += 1;
+            self.switches[2 + leaf_switch] += 1;
+            self.optionals[leaf_number] += 1;
+            self.optionals[2 + sibling] += 1;
+
+            if value.nested.leaf.leaf_value.is_empty() {
+                self.collections[0] += 1;
+            }
+            self.collections[1] += value.nested.leaf.leaf_value.len();
+            match &value.nested.nested_value {
+                None => self.collections[2] += 1,
+                Some(items) => {
+                    self.collections[3] += 1;
+                    self.collections[4] += items.len();
+                }
+            }
+            if value.rest.is_empty() {
+                self.collections[5] += 1;
+            }
+            self.collections[6] += value.rest.len();
+
+            self.record_string(&value.head);
+            self.record_string(&value.nested.leaf.middle);
+            self.record_string(&value.tail);
+            if let Some(value) = &value.sibling.sibling {
+                self.record_string(value);
+            }
+            for value in &value.nested.leaf.leaf_value {
+                self.record_string(value);
+            }
+            if let Some(values) = &value.nested.nested_value {
+                for value in values {
+                    self.record_string(value);
+                }
+            }
+            for value in &value.rest {
+                self.record_string(value);
+            }
+        }
+
+        /// Records one generated UTF-8 value from a flattened field.
+        fn record_string(&mut self, value: &str) {
+            self.strings[0] += 1;
+            if value.is_empty() {
+                self.strings[1] += 1;
+            }
+            if !value.is_ascii() {
+                self.strings[2] += 1;
+            }
+            self.strings[3] += value.chars().count();
+        }
+    }
+
+    /// Aggregate measurements for cross-flatten error-precedence fuzzing.
+    #[cfg(feature = "derive")]
+    #[derive(Debug, Default)]
+    struct FlattenErrorCoverage {
+        /// Scalar semantic classes used as the first occurrence.
+        classes: [usize; ScalarTextKind::COUNT],
+        /// Duplicate, syntax, requiredness, and child-conversion checks completed.
+        checks: [usize; 4],
     }
 
     /// Semantic class deliberately generated for scalar conversion fuzzing.
@@ -1446,6 +1624,85 @@ mod tests {
         argv
     }
 
+    /// Generates values spanning root, recursive, and sibling flattened declarations.
+    #[cfg(feature = "derive")]
+    fn flatten_round_trip_strategy() -> impl Strategy<Value = FlattenRoundTrip> {
+        (
+            any::<bool>(),
+            typed_string_strategy(),
+            any::<bool>(),
+            proptest::option::of(any::<i64>()),
+            collection::vec(typed_string_strategy(), 0..=8),
+            typed_string_strategy(),
+            prop_oneof![
+                Just(None),
+                collection::vec(typed_string_strategy(), 1..=8).prop_map(Some),
+            ],
+            proptest::option::of(typed_string_strategy()),
+            typed_string_strategy(),
+            collection::vec(typed_string_strategy(), 0..=8),
+        )
+            .prop_map(
+                |(
+                    root_switch,
+                    head,
+                    leaf_switch,
+                    leaf_number,
+                    leaf_value,
+                    middle,
+                    nested_value,
+                    sibling,
+                    tail,
+                    rest,
+                )| FlattenRoundTrip {
+                    root_switch,
+                    head,
+                    nested: FlattenNested {
+                        leaf: FlattenLeaf { leaf_switch, leaf_number, leaf_value, middle },
+                        nested_value,
+                    },
+                    sibling: FlattenSibling { sibling },
+                    tail,
+                    rest,
+                },
+            )
+    }
+
+    /// Renders flattened typed values into an unambiguous argv sequence.
+    #[cfg(feature = "derive")]
+    fn flatten_round_trip_argv(value: &FlattenRoundTrip) -> Vec<OsString> {
+        let mut argv = Vec::new();
+        if value.root_switch {
+            argv.push(OsString::from("--root-switch"));
+        }
+        if value.nested.leaf.leaf_switch {
+            argv.push(OsString::from("--leaf-switch"));
+        }
+        if let Some(number) = value.nested.leaf.leaf_number {
+            argv.push(OsString::from(format!("--leaf-number={number}")));
+        }
+        argv.extend(
+            value
+                .nested
+                .leaf
+                .leaf_value
+                .iter()
+                .map(|item| OsString::from(format!("--leaf-value={item}"))),
+        );
+        if let Some(values) = &value.nested.nested_value {
+            argv.extend(values.iter().map(|item| OsString::from(format!("--nested-value={item}"))));
+        }
+        if let Some(sibling) = &value.sibling.sibling {
+            argv.push(OsString::from(format!("--sibling={sibling}")));
+        }
+        argv.push(OsString::from("--"));
+        argv.push(OsString::from(value.head.as_str()));
+        argv.push(OsString::from(value.nested.leaf.middle.as_str()));
+        argv.push(OsString::from(value.tail.as_str()));
+        argv.extend(value.rest.iter().map(|item| OsString::from(item.as_str())));
+        argv
+    }
+
     /// Generates scalar text across meaningful `u16` conversion classes.
     #[cfg(feature = "derive")]
     fn scalar_text_strategy() -> impl Strategy<Value = ScalarText> {
@@ -1538,10 +1795,144 @@ mod tests {
         );
         eprintln!(
             "[typed fuzz] strings: values={} | empty={} | non_ascii={} | unicode_scalars={}",
-            coverage.strings[0],
-            coverage.strings[1],
-            coverage.strings[2],
-            coverage.strings[3],
+            coverage.strings[0], coverage.strings[1], coverage.strings[2], coverage.strings[3],
+        );
+    }
+
+    /// Fuzzes recursive and sibling flattened binding through both parser entry points.
+    #[cfg(feature = "derive")]
+    #[test]
+    fn flattened_binding_round_trips_generated_values() {
+        let strategy = flatten_round_trip_strategy();
+        let config = proptest_config("flattened_binding_round_trips_generated_values");
+        let cases = config.cases;
+        let coverage = RefCell::new(FlattenCoverage::default());
+        let mut runner = TestRunner::new(config);
+
+        let result = runner.run(&strategy, |expected| {
+            let argv = flatten_round_trip_argv(&expected);
+            prop_assert_eq!(FlattenRoundTrip::try_parse_args(argv.clone()), Ok(expected.clone()));
+
+            let mut complete = Vec::with_capacity(argv.len() + 1);
+            complete.push(OsString::from("argx-flatten"));
+            complete.extend(argv);
+            prop_assert_eq!(FlattenRoundTrip::try_parse_from(complete), Ok(expected.clone()));
+            coverage.borrow_mut().record(&expected);
+            Ok(())
+        });
+        if let Err(error) = result {
+            panic!("Argx flattened typed round-trip property failed: {error}");
+        }
+
+        let coverage = coverage.into_inner();
+        eprintln!("[flatten fuzz] PASS: {cases} recursive/sibling flatten round-trip cases");
+        eprintln!(
+            "[flatten fuzz] entry points: args={} | argv0={}",
+            coverage.entry_points[0], coverage.entry_points[1],
+        );
+        eprintln!(
+            "[flatten fuzz] switches: root_false={} | root_true={} | leaf_false={} | leaf_true={}",
+            coverage.switches[0], coverage.switches[1], coverage.switches[2], coverage.switches[3],
+        );
+        eprintln!(
+            "[flatten fuzz] optionals: leaf_number_none={} | leaf_number_some={} | sibling_none={} | sibling_some={}",
+            coverage.optionals[0],
+            coverage.optionals[1],
+            coverage.optionals[2],
+            coverage.optionals[3],
+        );
+        eprintln!(
+            "[flatten fuzz] collections: leaf_empty={} | leaf_items={} | nested_none={} | nested_some={} | nested_items={} | rest_empty={} | rest_items={}",
+            coverage.collections[0],
+            coverage.collections[1],
+            coverage.collections[2],
+            coverage.collections[3],
+            coverage.collections[4],
+            coverage.collections[5],
+            coverage.collections[6],
+        );
+        eprintln!(
+            "[flatten fuzz] strings: values={} | empty={} | non_ascii={} | unicode_scalars={}",
+            coverage.strings[0], coverage.strings[1], coverage.strings[2], coverage.strings[3],
+        );
+    }
+
+    /// Fuzzes semantic error precedence across independent flattened groups.
+    #[cfg(feature = "derive")]
+    #[test]
+    fn flattened_binding_preserves_error_precedence() {
+        let strategy = (scalar_text_strategy(), scalar_text_strategy());
+        let config = proptest_config("flattened_binding_preserves_error_precedence");
+        let cases = config.cases;
+        let coverage = RefCell::new(FlattenErrorCoverage::default());
+        let mut runner = TestRunner::new(config);
+
+        let result = runner.run(&strategy, |(first, second)| {
+            let first_arg = OsString::from(format!("--port={}", first.value));
+            let second_arg = OsString::from(format!("--port={}", second.value));
+
+            prop_assert_eq!(
+                FlattenErrors::try_parse_args([first_arg.clone(), second_arg.clone()]),
+                Err(TypedError::DuplicateArgument { name: "port" }),
+            );
+            prop_assert_eq!(
+                FlattenErrors::try_parse_args([
+                    first_arg.clone(),
+                    second_arg,
+                    OsString::from("--unknown"),
+                ]),
+                Err(TypedError::UnknownFlag { token: b"--unknown".to_vec() }),
+            );
+            prop_assert_eq!(
+                FlattenErrors::try_parse_args([first_arg.clone()]),
+                Err(TypedError::MissingRequired { name: "required" }),
+            );
+
+            let with_required =
+                FlattenErrors::try_parse_args([OsString::from("--required=given"), first_arg]);
+            match first.value.parse::<u16>() {
+                Ok(port) => prop_assert_eq!(
+                    with_required,
+                    Ok(FlattenErrors {
+                        required: FlattenRequired { required: String::from("given") },
+                        scalar: FlattenScalar { port: Some(port) },
+                    }),
+                ),
+                Err(_) => match with_required {
+                    Err(TypedError::InvalidValue(error)) => {
+                        prop_assert_eq!(error.name, "port");
+                        prop_assert_eq!(error.value.as_str(), first.value.as_str());
+                    }
+                    other => {
+                        prop_assert!(false, "unexpected flattened conversion result: {other:?}")
+                    }
+                },
+            }
+
+            let mut coverage = coverage.borrow_mut();
+            coverage.classes[first.kind.index()] += 1;
+            for check in &mut coverage.checks {
+                *check += 1;
+            }
+            Ok(())
+        });
+        if let Err(error) = result {
+            panic!("Argx flattened error-precedence property failed: {error}");
+        }
+
+        let coverage = coverage.into_inner();
+        eprintln!("[flatten fuzz] PASS: {cases} flattened error-precedence cases");
+        eprintln!(
+            "[flatten fuzz] first-value classes: valid_u16={} | overflow={} | negative={} | empty={} | non_numeric={}",
+            coverage.classes[0],
+            coverage.classes[1],
+            coverage.classes[2],
+            coverage.classes[3],
+            coverage.classes[4],
+        );
+        eprintln!(
+            "[flatten fuzz] precedence checks: duplicate_over_required_and_conversion={} | raw_syntax_over_duplicate={} | required_over_conversion={} | child_conversion={}",
+            coverage.checks[0], coverage.checks[1], coverage.checks[2], coverage.checks[3],
         );
     }
 

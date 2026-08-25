@@ -67,6 +67,93 @@ mod tests {
         raw: Option<String>,
     }
 
+    #[derive(Debug, PartialEq, Eq, argx::Args)]
+    struct SharedArgs {
+        #[argx(long)]
+        shared: bool,
+        #[argx(long)]
+        tag: Vec<String>,
+        middle: String,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Args)]
+    struct NestedArgs {
+        #[argx(long)]
+        nested: Option<i64>,
+        #[argx(flatten)]
+        shared: SharedArgs,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Args)]
+    struct ExtraArgs {
+        #[argx(long)]
+        extra: Option<String>,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    struct FlattenedCli {
+        #[argx(long)]
+        root: bool,
+        before: String,
+        #[argx(flatten)]
+        nested: NestedArgs,
+        #[argx(flatten)]
+        extra: ExtraArgs,
+        after: String,
+    }
+
+    mod identical_a {
+        #[derive(Debug, PartialEq, Eq, argx::Args)]
+        pub(super) struct Values {
+            pub(super) value: String,
+        }
+    }
+
+    mod identical_b {
+        #[derive(Debug, PartialEq, Eq, argx::Args)]
+        pub(super) struct Values {
+            pub(super) value: String,
+        }
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    struct IdenticalFlattened {
+        #[argx(flatten)]
+        first: identical_a::Values,
+        #[argx(flatten)]
+        second: identical_b::Values,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Args)]
+    struct RequiredFlattened {
+        #[argx(long)]
+        required: String,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Args)]
+    struct DuplicateFlattened {
+        #[argx(long)]
+        duplicate: Option<u16>,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    struct FlattenPrecedence {
+        #[argx(flatten)]
+        required: RequiredFlattened,
+        #[argx(flatten)]
+        duplicate: DuplicateFlattened,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Args)]
+    struct EmptyArgs;
+
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    struct EmptyFlatten {
+        #[argx(flatten)]
+        empty: EmptyArgs,
+        value: String,
+    }
+
     #[derive(Debug, PartialEq, Eq, argx::Parser)]
     struct Empty;
 
@@ -216,6 +303,80 @@ mod tests {
         assert_eq!(
             OptionalMany::try_parse_args(["--tags="]),
             Ok(OptionalMany { tags: Some(vec![String::new()]) })
+        );
+    }
+
+    #[test]
+    fn flattened_args_compose_recursively_and_preserve_positional_order() {
+        let parsed = FlattenedCli::try_parse_args([
+            "--root",
+            "--nested=42",
+            "--shared",
+            "--tag=one",
+            "--tag",
+            "two",
+            "--extra=value",
+            "before",
+            "middle",
+            "after",
+        ])
+        .expect("valid recursively flattened command line");
+
+        assert_eq!(
+            parsed,
+            FlattenedCli {
+                root: true,
+                before: String::from("before"),
+                nested: NestedArgs {
+                    nested: Some(42),
+                    shared: SharedArgs {
+                        shared: true,
+                        tag: vec![String::from("one"), String::from("two")],
+                        middle: String::from("middle"),
+                    },
+                },
+                extra: ExtraArgs { extra: Some(String::from("value")) },
+                after: String::from("after"),
+            }
+        );
+    }
+
+    #[test]
+    fn empty_args_groups_flatten_without_changing_binding() {
+        assert_eq!(
+            EmptyFlatten::try_parse_args(["value"]),
+            Ok(EmptyFlatten { empty: EmptyArgs, value: String::from("value") })
+        );
+    }
+
+    #[test]
+    fn identical_flattened_declarations_route_by_their_own_keys() {
+        assert_eq!(
+            IdenticalFlattened::try_parse_args(["first", "second"]),
+            Ok(IdenticalFlattened {
+                first: identical_a::Values { value: String::from("first") },
+                second: identical_b::Values { value: String::from("second") },
+            })
+        );
+    }
+
+    #[test]
+    fn flattened_checks_preserve_global_error_precedence() {
+        assert_eq!(
+            FlattenPrecedence::try_parse_args(["--duplicate=not-a-number", "--duplicate=2",]),
+            Err(Error::DuplicateArgument { name: "duplicate" })
+        );
+        assert_eq!(
+            FlattenPrecedence::try_parse_args([
+                "--duplicate=not-a-number",
+                "--duplicate=2",
+                "--unknown",
+            ]),
+            Err(Error::UnknownFlag { token: b"--unknown".to_vec() })
+        );
+        assert_eq!(
+            FlattenPrecedence::try_parse_args(std::iter::empty::<&str>()),
+            Err(Error::MissingRequired { name: "required" })
         );
     }
 

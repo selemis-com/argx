@@ -6,11 +6,22 @@ use syn::{Data, DeriveInput, Generics, parse_quote};
 
 use crate::{attrs, crate_name, key, model};
 
+/// Generated static table expressions for one command declaration.
+#[derive(Debug)]
+struct Tables {
+    /// Declarations required to compose flattened child tables.
+    decls: TokenStream,
+    /// Final flag slice expression stored on the command.
+    flags: TokenStream,
+    /// Final positional slice expression stored on the command.
+    args: TokenStream,
+}
+
 /// Generates static parse metadata and typed binding for one command struct.
 pub(crate) fn command(command: &model::Command) -> TokenStream {
     let facade = crate_name::facade_path();
     let ident = &command.ident;
-    let binding_generics = binding_generics(command);
+    let binding_generics = binding_generics(command, &facade);
     let (impl_generics, ty_generics, where_clause) = binding_generics.split_for_impl();
 
     let flags = command
@@ -50,10 +61,6 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
             };
         }
     });
-    let flag_refs = (0..flags.len()).map(|index| {
-        let table = format_ident!("ARGX_FLAG_{index}");
-        quote!(&#table)
-    });
 
     let arg_tables = args.iter().enumerate().map(|(index, (_, field))| {
         let table = format_ident!("ARGX_ARG_{index}");
@@ -73,28 +80,28 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                 };
         }
     });
-    let arg_refs = (0..args.len()).map(|index| {
-        let table = format_ident!("ARGX_ARG_{index}");
-        quote!(&#table)
-    });
+    let tables = command_tables(command, &facade, flags.len(), args.len());
+    let table_decls = &tables.decls;
+    let command_flags = &tables.flags;
+    let command_args = &tables.args;
 
-    let partial_types = command.fields.iter().map(|field| {
-        if field.shape == model::Shape::Many {
+    let partial_types = command.fields.iter().map(|field| match &field.kind {
+        model::FieldKind::Flatten { ty } => {
+            quote!(<#ty as #facade::__private::CommandArgs>::Partial)
+        }
+        _ if field.shape == model::Shape::Many => {
             quote!(::std::vec::Vec<::std::vec::Vec<u8>>)
-        } else if field.is_switch() {
-            quote!((bool, bool))
-        } else {
-            quote!((::std::option::Option<::std::vec::Vec<u8>>, bool))
         }
+        _ if field.is_switch() => quote!((bool, bool)),
+        _ => quote!((::std::option::Option<::std::vec::Vec<u8>>, bool)),
     });
-    let partial_start = command.fields.iter().map(|field| {
-        if field.shape == model::Shape::Many {
-            quote!(::std::vec::Vec::new())
-        } else if field.is_switch() {
-            quote!((false, false))
-        } else {
-            quote!((::std::option::Option::None, false))
+    let partial_start = command.fields.iter().map(|field| match &field.kind {
+        model::FieldKind::Flatten { ty } => {
+            quote!(<#ty as #facade::__private::CommandArgs>::start())
         }
+        _ if field.shape == model::Shape::Many => quote!(::std::vec::Vec::new()),
+        _ if field.is_switch() => quote!((false, false)),
+        _ => quote!((::std::option::Option::None, false)),
     });
     let partial_type = quote!((#(#partial_types,)*));
     let partial_value =
@@ -108,51 +115,82 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
         let key = key::ident("ARG", Some(index));
         apply_arm(field, *field_index, &key, false)
     });
-    let duplicate_checks = flags
-        .iter()
-        .filter_map(|(field_index, field)| {
-            if field.shape == model::Shape::Many {
-                return None;
+    let flattened_apply = command.fields.iter().enumerate().filter_map(|(field_index, field)| {
+        let model::FieldKind::Flatten { ty } = &field.kind else {
+            return None;
+        };
+        let slot = syn::Index::from(field_index);
+        Some(quote! {
+            if <#ty as #facade::__private::CommandArgs>::apply(&mut partial.#slot, event) {
+                return true;
             }
-            let slot = syn::Index::from(*field_index);
-            let name = &field.name;
-            Some(quote! {
-                if partial.#slot.1 {
-                    return ::std::result::Result::Err(
-                        #facade::Error::DuplicateArgument { name: #name },
-                    );
-                }
-            })
+        })
+    });
+
+    let occurrence_checks = command
+        .fields
+        .iter()
+        .enumerate()
+        .filter_map(|(field_index, field)| match &field.kind {
+            model::FieldKind::Flag { .. } if field.shape != model::Shape::Many => {
+                let slot = syn::Index::from(field_index);
+                let name = &field.name;
+                Some(quote! {
+                    if partial.#slot.1 {
+                        return ::std::result::Result::Err(
+                            #facade::Error::DuplicateArgument { name: #name },
+                        );
+                    }
+                })
+            }
+            model::FieldKind::Flatten { ty } => {
+                let slot = syn::Index::from(field_index);
+                Some(quote! {
+                    <#ty as #facade::__private::CommandArgs>::check_occurrences(
+                        &mut partial.#slot,
+                    )?;
+                })
+            }
+            _ => None,
         })
         .collect::<Vec<_>>();
     let required_checks = command
         .fields
         .iter()
         .enumerate()
-        .filter_map(|(field_index, field)| {
-            if field.is_switch()
-                || !matches!(field.shape, model::Shape::Bool | model::Shape::Required)
-            {
-                return None;
+        .filter_map(|(field_index, field)| match &field.kind {
+            model::FieldKind::Flatten { ty } => {
+                let slot = syn::Index::from(field_index);
+                Some(quote! {
+                    <#ty as #facade::__private::CommandArgs>::check_required(
+                        &mut partial.#slot,
+                    )?;
+                })
             }
-            let slot = syn::Index::from(field_index);
-            let name = &field.name;
-            Some(quote! {
-                if partial.#slot.0.is_none() {
-                    return ::std::result::Result::Err(
-                        #facade::Error::MissingRequired { name: #name },
-                    );
-                }
-            })
+            _ if field.is_switch()
+                || !matches!(field.shape, model::Shape::Bool | model::Shape::Required) =>
+            {
+                None
+            }
+            _ => {
+                let slot = syn::Index::from(field_index);
+                let name = &field.name;
+                Some(quote! {
+                    if partial.#slot.0.is_none() {
+                        return ::std::result::Result::Err(
+                            #facade::Error::MissingRequired { name: #name },
+                        );
+                    }
+                })
+            }
         })
         .collect::<Vec<_>>();
 
     let apply_partial = if command.fields.is_empty() { quote!(_partial) } else { quote!(partial) };
-    let check_partial = if duplicate_checks.is_empty() && required_checks.is_empty() {
-        quote!(_partial)
-    } else {
-        quote!(partial)
-    };
+    let occurrence_partial =
+        if occurrence_checks.is_empty() { quote!(_partial) } else { quote!(partial) };
+    let required_partial =
+        if required_checks.is_empty() { quote!(_partial) } else { quote!(partial) };
     let finish_partial = if command.fields.is_empty() { quote!(_partial) } else { quote!(partial) };
 
     let built_fields = command.fields.iter().enumerate().map(|(field_index, field)| {
@@ -162,10 +200,34 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
     });
     let built = if command.unit { quote!(Self) } else { quote!(Self { #(#built_fields),* }) };
 
+    let composed_checks = command.fields.iter().any(model::Field::is_flatten).then(|| {
+        quote! {
+            const _: () = ::core::assert!(
+                #facade::__private::command_keys_unique(ARGX_COMMAND.flags, ARGX_COMMAND.args),
+                "flattened command contains duplicate argument keys",
+            );
+            const _: () = ::core::assert!(
+                #facade::__private::flag_spellings_unique(ARGX_COMMAND.flags),
+                "flattened command contains duplicate long or short flag spellings",
+            );
+            const _: () = ::core::assert!(
+                #facade::__private::positional_layout_valid(ARGX_COMMAND.args),
+                "flattened command has an invalid positional layout",
+            );
+        }
+    });
+
     let name = &command.name;
     let parser_impl = command.root.then(|| {
         quote! {
             impl #impl_generics #facade::Parser for #ident #ty_generics #where_clause {}
+        }
+    });
+    let args_impl = (!command.root).then(|| {
+        quote! {
+            impl #impl_generics #facade::__private::FlattenArgs
+                for #ident #ty_generics #where_clause
+            {}
         }
     });
 
@@ -175,15 +237,18 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
             #keys
             #(#flag_tables)*
             #(#arg_tables)*
+            #table_decls
 
             static ARGX_COMMAND: #facade::__private::Command<'static> =
                 #facade::__private::Command {
                     name: #name,
-                    flags: &[#(#flag_refs),*],
-                    args: &[#(#arg_refs),*],
+                    flags: #command_flags,
+                    args: #command_args,
                     subcommands: &[],
                     key: #command_key,
                 };
+
+            #composed_checks
 
             impl #impl_generics #facade::__private::CommandArgs
                 for #ident #ty_generics #where_clause
@@ -200,7 +265,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                     #apply_partial: &mut Self::Partial,
                     event: &#facade::__private::Event<'_, '_>,
                 ) -> bool {
-                    match *event {
+                    let matched = match *event {
                         #facade::__private::Event::Flag { flag, value } => {
                             let _ = value;
                             match flag.key {
@@ -215,13 +280,24 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                                 _ => false,
                             }
                         },
+                    };
+                    if matched {
+                        return true;
                     }
+                    #(#flattened_apply)*
+                    false
                 }
 
-                fn check(
-                    #check_partial: &mut Self::Partial,
+                fn check_occurrences(
+                    #occurrence_partial: &mut Self::Partial,
                 ) -> ::std::result::Result<(), #facade::Error> {
-                    #(#duplicate_checks)*
+                    #(#occurrence_checks)*
+                    ::std::result::Result::Ok(())
+                }
+
+                fn check_required(
+                    #required_partial: &mut Self::Partial,
+                ) -> ::std::result::Result<(), #facade::Error> {
                     #(#required_checks)*
                     ::std::result::Result::Ok(())
                 }
@@ -234,15 +310,127 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
             }
 
             #parser_impl
+            #args_impl
         };
     }
 }
 
+/// Builds one flat parse table from this declaration's own fields and flattened children.
+fn command_tables(
+    command: &model::Command,
+    facade: &TokenStream,
+    flag_count: usize,
+    arg_count: usize,
+) -> Tables {
+    if !command.fields.iter().any(model::Field::is_flatten) {
+        let flags = (0..flag_count).map(|index| {
+            let table = format_ident!("ARGX_FLAG_{index}");
+            quote!(&#table)
+        });
+        let args = (0..arg_count).map(|index| {
+            let table = format_ident!("ARGX_ARG_{index}");
+            quote!(&#table)
+        });
+        return Tables {
+            decls: TokenStream::new(),
+            flags: quote!(&[#(#flags),*]),
+            args: quote!(&[#(#args),*]),
+        };
+    }
+
+    let mut flag_groups = Vec::new();
+    let mut arg_groups = Vec::new();
+    let mut own_flags = Vec::new();
+    let mut own_args = Vec::new();
+    let mut flag_at = 0_usize;
+    let mut arg_at = 0_usize;
+    let mut flatten_checks = Vec::new();
+
+    fn flush_flags(own: &mut Vec<usize>, groups: &mut Vec<TokenStream>) {
+        if own.is_empty() {
+            return;
+        }
+        let refs = own.iter().map(|index| {
+            let table = format_ident!("ARGX_FLAG_{index}");
+            quote!(&#table)
+        });
+        groups.push(quote!(&[#(#refs),*]));
+        own.clear();
+    }
+
+    fn flush_args(own: &mut Vec<usize>, groups: &mut Vec<TokenStream>) {
+        if own.is_empty() {
+            return;
+        }
+        let refs = own.iter().map(|index| {
+            let table = format_ident!("ARGX_ARG_{index}");
+            quote!(&#table)
+        });
+        groups.push(quote!(&[#(#refs),*]));
+        own.clear();
+    }
+
+    for field in &command.fields {
+        match &field.kind {
+            model::FieldKind::Flag { .. } => {
+                own_flags.push(flag_at);
+                flag_at += 1;
+            }
+            model::FieldKind::Positional => {
+                own_args.push(arg_at);
+                arg_at += 1;
+            }
+            model::FieldKind::Flatten { ty } => {
+                flush_flags(&mut own_flags, &mut flag_groups);
+                flush_args(&mut own_args, &mut arg_groups);
+                flag_groups.push(quote!(<#ty as #facade::__private::CommandArgs>::COMMAND.flags));
+                arg_groups.push(quote!(<#ty as #facade::__private::CommandArgs>::COMMAND.args));
+                flatten_checks.push(quote! {
+                    const _: () = ::core::assert!(
+                        <#ty as #facade::__private::CommandArgs>::COMMAND.subcommands.is_empty(),
+                        "flattened Args cannot declare subcommands",
+                    );
+                });
+            }
+        }
+    }
+    flush_flags(&mut own_flags, &mut flag_groups);
+    flush_args(&mut own_args, &mut arg_groups);
+
+    debug_assert_eq!(flag_at, flag_count);
+    debug_assert_eq!(arg_at, arg_count);
+
+    Tables {
+        decls: quote! {
+            #(#flatten_checks)*
+            const ARGX_FLAG_GROUPS: &[&[&#facade::__private::Flag<'static>]] =
+                &[#(#flag_groups),*];
+            const ARGX_ARG_GROUPS: &[&[&#facade::__private::Arg<'static>]] =
+                &[#(#arg_groups),*];
+            static ARGX_FLAGS: [&#facade::__private::Flag<'static>;
+                #facade::__private::table_len(ARGX_FLAG_GROUPS)] =
+                #facade::__private::concat_flags(ARGX_FLAG_GROUPS);
+            static ARGX_ARGS: [&#facade::__private::Arg<'static>;
+                #facade::__private::table_len(ARGX_ARG_GROUPS)] =
+                #facade::__private::concat_args(ARGX_ARG_GROUPS);
+        },
+        flags: quote!(&ARGX_FLAGS),
+        args: quote!(&ARGX_ARGS),
+    }
+}
+
 /// Adds the conversion bounds required by generated typed binding.
-fn binding_generics(command: &model::Command) -> Generics {
+fn binding_generics(command: &model::Command, facade: &TokenStream) -> Generics {
     let mut generics = command.generics.clone();
     let mut bounded = Vec::new();
     for field in &command.fields {
+        if let model::FieldKind::Flatten { ty } = &field.kind {
+            generics
+                .make_where_clause()
+                .predicates
+                .push(parse_quote!(#ty: #facade::__private::FlattenArgs));
+            continue;
+        }
         if field.is_switch() {
             continue;
         }
@@ -330,6 +518,10 @@ fn apply_arm(
 /// Generates final conversion for one destination field.
 fn finish_field(field: &model::Field, field_index: usize, facade: &TokenStream) -> TokenStream {
     let slot = syn::Index::from(field_index);
+
+    if let model::FieldKind::Flatten { ty } = &field.kind {
+        return quote!(<#ty as #facade::__private::CommandArgs>::finish(partial.#slot)?);
+    }
 
     if field.is_switch() {
         return quote!(partial.#slot.0);

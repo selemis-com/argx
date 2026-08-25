@@ -9,9 +9,12 @@ mod tests {
 
     #[test]
     fn supported_derive_shapes_compile_downstream() {
-        for (fixture, dependency) in
-            [("basic", "argx"), ("renamed_dependency", "cli_args"), ("typed", "argx")]
-        {
+        for (fixture, dependency) in [
+            ("basic", "argx"),
+            ("renamed_dependency", "cli_args"),
+            ("typed", "argx"),
+            ("flatten", "argx"),
+        ] {
             let output = support::ui_output("pass", fixture, dependency);
             assert!(
                 output.status.success(),
@@ -71,6 +74,39 @@ mod tests {
         ] {
             assert!(stderr.contains(expected), "missing diagnostic: {expected}\n{stderr}");
         }
+    }
+
+    #[test]
+    fn invalid_flatten_models_are_rejected_before_codegen() {
+        let output = support::ui_output("fail", "invalid_flatten", "argx");
+        assert!(!output.status.success());
+        let stderr = String::from_utf8(output.stderr).expect("UTF-8 compiler diagnostics");
+        assert!(
+            stderr
+                .matches("flattened command contains duplicate long or short flag spellings")
+                .count()
+                >= 2,
+            "missing long/short flattened collision diagnostics:\n{stderr}"
+        );
+        for expected in [
+            "flattened command contains duplicate argument keys",
+            "flattened command has an invalid positional layout",
+            "`flatten` cannot depend on the containing struct's generic parameters",
+            "`flatten` does not support `Option<T>`",
+            "`flatten` does not support collection wrappers",
+            "`flatten` cannot be combined with flag or value attributes",
+            "`flatten` takes no value",
+        ] {
+            assert!(stderr.contains(expected), "missing diagnostic: {expected}\n{stderr}");
+        }
+    }
+
+    #[test]
+    fn parser_roots_cannot_be_flattened_as_args_groups() {
+        let output = support::ui_output("fail", "parser_as_flatten", "argx");
+        assert!(!output.status.success());
+        let stderr = String::from_utf8(output.stderr).expect("UTF-8 compiler diagnostics");
+        assert!(stderr.contains("FlattenArgs"), "missing Args-only flatten diagnostic:\n{stderr}");
     }
 
     #[test]

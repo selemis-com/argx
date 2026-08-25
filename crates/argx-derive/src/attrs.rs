@@ -21,6 +21,8 @@ pub(crate) struct CommandAttrs {
 /// Attributes accepted on a command field.
 #[derive(Debug, Default)]
 pub(crate) struct FieldAttrs {
+    /// Whether this field contributes another `Args` declaration inline.
+    pub flatten: bool,
     /// Long flag spelling, or an instruction to infer it.
     pub long: Option<Inferred<String>>,
     /// Short flag spelling, or an instruction to infer it.
@@ -56,7 +58,16 @@ pub(crate) fn field(attributes: &[Attribute]) -> syn::Result<FieldAttrs> {
     let mut parsed = FieldAttrs::default();
     for attribute in attributes.iter().filter(|attribute| attribute.path().is_ident("argx")) {
         attribute.parse_nested_meta(|meta| {
-            if meta.path.is_ident("long") {
+            if meta.path.is_ident("flatten") {
+                if parsed.flatten {
+                    return Err(meta.error("duplicate `flatten` attribute"));
+                }
+                if meta.input.peek(Token![=]) || meta.input.peek(syn::token::Paren) {
+                    return Err(meta.error("`flatten` takes no value"));
+                }
+                parsed.flatten = true;
+                Ok(())
+            } else if meta.path.is_ident("long") {
                 if parsed.long.is_some() {
                     return Err(meta.error("duplicate `long` attribute"));
                 }

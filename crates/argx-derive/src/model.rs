@@ -2,7 +2,10 @@
 
 use proc_macro2::Span;
 use quote::ToTokens as _;
-use syn::{Data, DeriveInput, Fields, GenericArgument, PathArguments, Type};
+use syn::{
+    Data, DeriveInput, Fields, GenericArgument, GenericParam, PathArguments, Type,
+    visit::Visit as _,
+};
 
 use crate::{attrs, case};
 
@@ -45,7 +48,6 @@ pub(crate) struct Field {
 }
 
 /// Parse-table category of a field.
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum FieldKind {
     /// A named flag with one or more spellings.
     Flag {
@@ -56,6 +58,11 @@ pub(crate) enum FieldKind {
     },
     /// A positional argument.
     Positional,
+    /// Another independently derived `Args` declaration composed inline.
+    Flatten {
+        /// Child declaration type.
+        ty: Type,
+    },
 }
 
 /// What a field's Rust type says about how many values it can hold.
@@ -100,6 +107,7 @@ impl Command {
         };
 
         validate_fields(&fields)?;
+        validate_flatten_generics(&fields, &input.generics)?;
 
         let attributes = attrs::command(&input.attrs)?;
         let rust_name = ident_name(&input.ident);
@@ -128,6 +136,45 @@ impl Field {
         })?;
         let attributes = attrs::field(&field.attrs)?;
         let name = ident_name(&ident);
+
+        if attributes.flatten {
+            if attributes.long.is_some()
+                || attributes.short.is_some()
+                || attributes.allow_hyphen_values
+                || attributes.allow_negative_numbers
+            {
+                return Err(syn::Error::new(
+                    ident.span(),
+                    "`flatten` cannot be combined with flag or value attributes",
+                ));
+            }
+            if peel_option(&field.ty).is_some() {
+                return Err(syn::Error::new_spanned(
+                    &field.ty,
+                    "`flatten` does not support `Option<T>`; hold the Args struct directly",
+                ));
+            }
+            if peel_vec(&field.ty).is_some() {
+                return Err(syn::Error::new_spanned(
+                    &field.ty,
+                    "`flatten` does not support collection wrappers; hold one Args struct directly",
+                ));
+            }
+
+            return Ok(Self {
+                span: ident.span(),
+                ident,
+                ty: field.ty.clone(),
+                name,
+                kind: FieldKind::Flatten { ty: field.ty.clone() },
+                // Flattened fields do not bind a value themselves. The shape is never inspected
+                // by typed conversion and stays required only as an internal placeholder.
+                shape: Shape::Required,
+                allow_hyphen_values: false,
+                allow_negative_numbers: false,
+            });
+        }
+
         let shape = Shape::from_type(&field.ty);
         validate_value_shape(&field.ty, shape, ident.span())?;
 
@@ -181,6 +228,11 @@ impl Field {
         })
     }
 
+    /// Reports whether this field composes another `Args` declaration.
+    pub(crate) const fn is_flatten(&self) -> bool {
+        matches!(self.kind, FieldKind::Flatten { .. })
+    }
+
     /// Reports whether this field is a value-less boolean flag.
     pub(crate) fn is_switch(&self) -> bool {
         matches!(&self.kind, FieldKind::Flag { .. }) && self.shape == Shape::Bool
@@ -188,6 +240,7 @@ impl Field {
 
     /// Returns the Rust type receiving one parsed value.
     pub(crate) fn value_type(&self) -> &Type {
+        assert!(!self.is_flatten(), "flattened fields do not have a scalar value type");
         match self.shape {
             Shape::Bool | Shape::Required => &self.ty,
             Shape::Optional => {
@@ -403,10 +456,102 @@ fn validate_fields(fields: &[Field]) -> syn::Result<()> {
                     variadic_positional_span = Some(field.span);
                 }
             }
+            FieldKind::Flatten { .. } => {}
         }
     }
 
     Ok(())
+}
+
+/// Rejects flattened types that depend on the containing declaration's generic parameters.
+///
+/// Flattened tables are materialized as one static command table. A concrete generic child such
+/// as `Shared<String>` is fine, but a child whose type still depends on `T`, `'a`, or a const
+/// parameter cannot be named from that static initializer on stable Rust.
+fn validate_flatten_generics(fields: &[Field], generics: &syn::Generics) -> syn::Result<()> {
+    let params = generics
+        .params
+        .iter()
+        .map(|param| match param {
+            GenericParam::Type(param) => GenericName::Ident(param.ident.clone()),
+            GenericParam::Const(param) => GenericName::Ident(param.ident.clone()),
+            GenericParam::Lifetime(param) => GenericName::Lifetime(param.lifetime.ident.clone()),
+        })
+        .collect::<Vec<_>>();
+    if params.is_empty() {
+        return Ok(());
+    }
+
+    for field in fields {
+        let FieldKind::Flatten { ty } = &field.kind else {
+            continue;
+        };
+        let mut visitor = GenericUse { params: &params, found: false };
+        visitor.visit_type(ty);
+        if visitor.found {
+            return Err(syn::Error::new_spanned(
+                ty,
+                "`flatten` cannot depend on the containing struct's generic parameters; use a concrete Args type",
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// One generic parameter name relevant while inspecting a flattened field type.
+#[derive(Debug)]
+enum GenericName {
+    /// Type or const parameter identifier.
+    Ident(syn::Ident),
+    /// Lifetime parameter identifier without the apostrophe.
+    Lifetime(syn::Ident),
+}
+
+/// Visitor that detects use of one containing generic parameter inside a flattened type.
+#[derive(Debug)]
+struct GenericUse<'a> {
+    /// Generic names declared by the containing struct.
+    params: &'a [GenericName],
+    /// Whether a matching parameter was encountered.
+    found: bool,
+}
+
+impl<'ast> syn::visit::Visit<'ast> for GenericUse<'_> {
+    fn visit_type_path(&mut self, path: &'ast syn::TypePath) {
+        if let Some(first) = path.path.segments.first()
+            && self
+                .params
+                .iter()
+                .any(|param| matches!(param, GenericName::Ident(name) if name == &first.ident))
+        {
+            self.found = true;
+            return;
+        }
+        syn::visit::visit_type_path(self, path);
+    }
+
+    fn visit_expr_path(&mut self, path: &'ast syn::ExprPath) {
+        if let Some(first) = path.path.segments.first()
+            && self
+                .params
+                .iter()
+                .any(|param| matches!(param, GenericName::Ident(name) if name == &first.ident))
+        {
+            self.found = true;
+            return;
+        }
+        syn::visit::visit_expr_path(self, path);
+    }
+
+    fn visit_lifetime(&mut self, lifetime: &'ast syn::Lifetime) {
+        if self
+            .params
+            .iter()
+            .any(|param| matches!(param, GenericName::Lifetime(name) if name == &lifetime.ident))
+        {
+            self.found = true;
+        }
+    }
 }
 
 /// Validates one explicit or inferred long spelling.

@@ -167,7 +167,7 @@ proc-macro2 = "1.0.107"
 proptest = "1.11.0"
 quote = "1.0.47"
 snapbox = { version = "1.2.2", features = ["cmd", "examples"] }
-syn = { version = "3.0.3", features = ["full"] }
+syn = { version = "3.0.3", features = ["full", "visit"] }
 
 # Crates
 argx-derive = { version = "0.1.0", path = "crates/argx-derive" }
