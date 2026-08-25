@@ -38,7 +38,7 @@ test-unit: ## Run deterministic unit and integration tests.
 	cargo nextest run \
 		--workspace \
 		--all-features \
-		-E 'not binary(fuzz)' \
+		-E 'not binary(fuzz) & not binary(examples)' \
 		--no-fail-fast \
 		--locked
 
@@ -66,24 +66,13 @@ test-doc: ## Run doc tests.
 		--locked
 
 .PHONY: test-examples
-test-examples: ## Build and run all runnable examples.
-	cargo build \
+test-examples: ## Build and smoke-test all public examples.
+	cargo nextest run \
 		--package argx \
-		--examples \
 		--all-features \
+		-E 'binary(examples)' \
+		--no-capture \
 		--locked
-	@set -eu; \
-	examples='$(sort $(patsubst crates/argx/examples/%.rs,%,$(wildcard crates/argx/examples/*.rs)))'; \
-	for example in $$examples; do \
-		printf "\n==> Running example: %s\n" "$$example"; \
-		cargo run \
-			--quiet \
-			--package argx \
-			--example "$$example" \
-			--all-features \
-			--locked \
-			-- --help >/dev/null; \
-	done
 
 .PHONY: test
 test: ## Run deterministic, fuzz, example, and documentation tests.
@@ -97,7 +86,7 @@ test-coverage: ## Run tests with coverage and generate an LCOV report.
 	cargo +nightly llvm-cov nextest \
 		--workspace \
 		--all-features \
-		-E 'not binary(fuzz)' \
+		-E 'not binary(fuzz) & not binary(examples)' \
 		--lcov \
 		--output-path lcov.info \
 		--locked
@@ -107,7 +96,7 @@ test-coverage-html: ## Run tests with coverage and generate and open an HTML rep
 	cargo +nightly llvm-cov nextest \
 		--workspace \
 		--all-features \
-		-E 'not binary(fuzz)' \
+		-E 'not binary(fuzz) & not binary(examples)' \
 		--html \
 		--open \
 		--locked

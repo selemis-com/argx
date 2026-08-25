@@ -2,7 +2,7 @@
 
 use std::{ffi::OsString, fmt, str::FromStr};
 
-use crate::{__private::CommandArgs, Error, InvalidValue, help, parser::Error as RawError};
+use crate::{__private::CommandArgs, Error, InvalidValue, argv::Error as RawError, help};
 
 /// Parses already-separated argument references into one derived command value.
 ///
@@ -16,8 +16,8 @@ use crate::{__private::CommandArgs, Error, InvalidValue, help, parser::Error as 
 /// whose keys it then refuses to bind. Derived implementations cannot violate this invariant.
 pub(crate) fn parse_refs<T: CommandArgs>(argv: &[&std::ffi::OsStr]) -> Result<T, Error> {
     let mut partial = T::start();
-    let mut parser: crate::parser::ArgvParser<'static, '_, '_> =
-        crate::parser::ArgvParser::new(T::COMMAND, argv);
+    let mut parser: crate::argv::ArgvParser<'static, '_, '_> =
+        crate::argv::ArgvParser::new(T::COMMAND, argv);
     let mut command_path = Vec::new();
 
     while let Some(event) = parser.next_event() {
@@ -35,7 +35,7 @@ pub(crate) fn parse_refs<T: CommandArgs>(argv: &[&std::ffi::OsStr]) -> Result<T,
         };
         let applied = T::apply(&mut partial, &event);
         assert!(applied, "generated command metadata and binding keys diverged");
-        if let crate::parser::Event::Command { command } = event {
+        if let crate::argv::Event::Command { command } = event {
             if command_path.is_empty() {
                 command_path.push(T::COMMAND);
             }
