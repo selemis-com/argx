@@ -33,4 +33,5 @@ argx-derive = { workspace = true, optional = true }
 
 [dev-dependencies]
 # Vendor
+proptest.workspace = true
 snapbox.workspace = true

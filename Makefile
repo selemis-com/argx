@@ -1,6 +1,21 @@
 # Makefile for building and testing argx.
 .DEFAULT_GOAL := help
 
+# Number of generated parser cases in one fuzzing campaign.
+FUZZ_CASES ?= 512
+
+# Minimum number of argv tokens generated per parser case.
+FUZZ_MIN_TOKENS ?= 0
+
+# Maximum number of argv tokens generated per parser case.
+FUZZ_TOKENS ?= 64
+
+# Optional deterministic seed for reproducing a fuzzing campaign.
+FUZZ_SEED ?=
+
+# Set to 1 to print every generated command, argv, and normalized outcome.
+FUZZ_TRACE ?=
+
 ##@ Help
 
 .PHONY: help
@@ -19,10 +34,26 @@ build: ## Build the workspace into the `target` directory.
 ##@ Test
 
 .PHONY: test-unit
-test-unit: ## Run unit and integration tests.
+test-unit: ## Run deterministic unit and integration tests.
 	cargo nextest run \
 		--workspace \
 		--all-features \
+		-E 'not binary(fuzz)' \
+		--no-fail-fast \
+		--locked
+
+.PHONY: test-fuzz
+test-fuzz: ## Fuzz generated command schemas and argv against the parser model.
+	set -eu; \
+	if [ -n "$(FUZZ_SEED)" ]; then export PROPTEST_RNG_SEED="$(FUZZ_SEED)"; fi; \
+	if [ -n "$(FUZZ_TRACE)" ]; then export ARGX_FUZZ_TRACE="$(FUZZ_TRACE)"; fi; \
+	ARGX_FUZZ_CASES="$(FUZZ_CASES)" \
+	ARGX_FUZZ_MIN_TOKENS="$(FUZZ_MIN_TOKENS)" \
+	ARGX_FUZZ_TOKENS="$(FUZZ_TOKENS)" cargo nextest run \
+		--workspace \
+		--all-features \
+		-E 'binary(fuzz)' \
+		--no-capture \
 		--no-fail-fast \
 		--locked
 
@@ -54,8 +85,9 @@ test-examples: ## Build and run all runnable examples.
 	done
 
 .PHONY: test
-test: ## Run unit, integration, example, and documentation tests.
+test: ## Run deterministic, fuzz, example, and documentation tests.
 	$(MAKE) test-unit && \
+	$(MAKE) test-fuzz && \
 	$(MAKE) test-examples && \
 	$(MAKE) test-doc
 
@@ -64,6 +96,7 @@ test-coverage: ## Run tests with coverage and generate an LCOV report.
 	cargo +nightly llvm-cov nextest \
 		--workspace \
 		--all-features \
+		-E 'not binary(fuzz)' \
 		--lcov \
 		--output-path lcov.info \
 		--locked
@@ -73,6 +106,7 @@ test-coverage-html: ## Run tests with coverage and generate and open an HTML rep
 	cargo +nightly llvm-cov nextest \
 		--workspace \
 		--all-features \
+		-E 'not binary(fuzz)' \
 		--html \
 		--open \
 		--locked

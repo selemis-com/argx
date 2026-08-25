@@ -83,7 +83,41 @@ jobs:
           tool: cargo-nextest
 
       - name: Run tests
-        run: make test
+        run: make test-unit && make test-examples
+
+  test-fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      RUSTC_WRAPPER: "sccache"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install stable Rust toolchain
+        uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master
+        with:
+          toolchain: stable
+
+      - name: Install sccache
+        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+
+      - name: Restore Rust cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          cache-on-failure: true
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@5b4d68e2e660441203ab128a23676f1e4faf1532 # v2.86.3
+        with:
+          tool: cargo-nextest
+
+      - name: Run fuzz tests
+        run: make test-fuzz
 
   test-doc:
     runs-on: ubuntu-latest
@@ -234,6 +268,7 @@ jobs:
     needs:
       - msrv
       - test
+      - test-fuzz
       - test-doc
       - lint-clippy
       - lint-fmt
