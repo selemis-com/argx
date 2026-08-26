@@ -16,9 +16,9 @@ mod help;
 use std::ffi::{OsStr, OsString};
 
 pub use contract::{
-    ArgumentContract, CommandContextContract, CommandContract, ConstraintContract,
-    ConstraintContractKind, Contract, ContractDepth, ContractError, ContractRequest,
-    InvocationContract, OptionContract, ValueContract, CONTRACT_VERSION,
+    ArgumentContract, CONTRACT_VERSION, CommandContextContract, CommandContract,
+    ConstraintContract, ConstraintContractKind, Contract, ContractDepth, ContractError,
+    ContractRequest, InvocationContract, OptionContract, ValueContract,
 };
 pub use error::{Error, InvalidValue};
 
