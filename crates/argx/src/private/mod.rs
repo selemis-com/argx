@@ -1,8 +1,8 @@
 //! Implementation details shared with generated code.
 //!
 //! This module is public so proc-macro expansions can name these items from downstream crates. It
-//! is not part of Argx's stable user-facing API. The re-exports below are intentionally narrow: they
-//! form the generated-code surface shared between the derive crate and the runtime crate.
+//! is not part of Argx's stable user-facing API. The re-exports below are intentionally narrow:
+//! they form the generated-code surface shared between the derive crate and the runtime crate.
 
 mod compose;
 mod contract;

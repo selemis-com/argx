@@ -1,8 +1,8 @@
 //! Naming helpers used when command-line spellings are inferred from Rust identifiers.
 //!
 //! Inference is intentionally mechanical rather than acronym-aware: every uppercase character
-//! starts a segment, so `HTTPServer` becomes `h-t-t-p-server`. Explicit `name` or `long` metadata is
-//! the escape hatch when a product-specific spelling should differ from this stable rule.
+//! starts a segment, so `HTTPServer` becomes `h-t-t-p-server`. Explicit `name` or `long` metadata
+//! is the escape hatch when a product-specific spelling should differ from this stable rule.
 
 /// Converts the default Rust spelling to Argx's kebab-case command-line spelling.
 ///

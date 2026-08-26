@@ -65,8 +65,8 @@
 //! spelling. Subcommand variants may additionally declare hidden `alias` or `aliases` spellings.
 //! Root-command aliases are deliberately unsupported so the root has one canonical identity.
 //!
-//! A field with `#[argx(subcommand)]` selects one child from a derived subcommand enum. Selection is
-//! exact; Argx does not perform prefix matching. Once a child is selected, parsing enters that
+//! A field with `#[argx(subcommand)]` selects one child from a derived subcommand enum. Selection
+//! is exact; Argx does not perform prefix matching. Once a child is selected, parsing enters that
 //! child's lexical scope.
 //!
 //! A field with `#[argx(flatten)]` composes one direct `Args` declaration into the current command.
@@ -81,9 +81,9 @@
 //! # Arguments and cardinality
 //!
 //! A field is positional unless `long` or `short` is present. A bare `#[argx(long)]` infers the
-//! kebab-case field name; a bare `#[argx(short)]` infers its first character. Explicit spellings are
-//! accepted with `long = "..."` and `short = 'x'`. Named fields may add hidden long spellings with
-//! `alias` or `aliases`.
+//! kebab-case field name; a bare `#[argx(short)]` infers its first character. Explicit spellings
+//! are accepted with `long = "..."` and `short = 'x'`. Named fields may add hidden long spellings
+//! with `alias` or `aliases`.
 //!
 //! The derive recognizes these field shapes syntactically:
 //!

@@ -57,9 +57,9 @@ pub fn derive_args(input: TokenStream) -> TokenStream {
 /// Derives a subcommand set for an enum.
 ///
 /// Every variant becomes one exact child-command spelling. Variants may be unit variants or contain
-/// exactly one unnamed direct `Args` payload; named fields, multiple tuple fields, and collection or
-/// optional wrappers around a payload are rejected. Canonical names and aliases share one sibling
-/// namespace so command lookup is never order-dependent.
+/// exactly one unnamed direct `Args` payload; named fields, multiple tuple fields, and collection
+/// or optional wrappers around a payload are rejected. Canonical names and aliases share one
+/// sibling namespace so command lookup is never order-dependent.
 #[proc_macro_derive(Subcommand, attributes(argx))]
 pub fn derive_subcommand(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
