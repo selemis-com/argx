@@ -1,6 +1,9 @@
 {
   "version": 1,
   "root": "tool",
+  "types": {
+    "version": 1
+  },
   "command": {
     "path": [
       "objects",
@@ -27,7 +30,10 @@
               "required": false,
               "value": {
                 "minValues": 1,
-                "maxValues": 1
+                "maxValues": 1,
+                "type": {
+                  "kind": "string"
+                }
               },
               "repeatable": false,
               "hasDefault": false,
@@ -41,7 +47,10 @@
               "required": false,
               "value": {
                 "minValues": 1,
-                "maxValues": 1
+                "maxValues": 1,
+                "type": {
+                  "kind": "string"
+                }
               },
               "repeatable": false,
               "environment": "TOOL_PROFILE",
@@ -82,7 +91,10 @@
               "required": true,
               "value": {
                 "minValues": 1,
-                "maxValues": 1
+                "maxValues": 1,
+                "type": {
+                  "kind": "string"
+                }
               },
               "allowNegativeNumbers": false
             },
@@ -92,7 +104,10 @@
               "position": 2,
               "required": false,
               "value": {
-                "minValues": 0
+                "minValues": 0,
+                "type": {
+                  "kind": "string"
+                }
               },
               "allowNegativeNumbers": false
             }
@@ -105,7 +120,10 @@
               "required": false,
               "value": {
                 "minValues": 1,
-                "maxValues": 1
+                "maxValues": 1,
+                "type": {
+                  "kind": "string"
+                }
               },
               "repeatable": false,
               "hasDefault": false,
@@ -122,7 +140,10 @@
               "required": true,
               "value": {
                 "minValues": 1,
-                "maxValues": 1
+                "maxValues": 1,
+                "type": {
+                  "kind": "string"
+                }
               },
               "repeatable": false,
               "environment": "TOOL_TOKEN",

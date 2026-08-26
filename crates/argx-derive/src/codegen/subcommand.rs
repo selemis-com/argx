@@ -12,12 +12,23 @@ use syn::{Generics, parse_quote};
 use super::option_str;
 use crate::{crate_name, key, model};
 
+/// Generated semantic type projection for one subcommand declaration.
+#[derive(Debug)]
+struct SemanticProjection {
+    /// Helper declarations emitted alongside the derived enum.
+    declarations: TokenStream,
+    /// Type-level resolver for sibling command branches.
+    commands: TokenStream,
+}
+
 /// Generates static child-command tables and typed enum binding.
 pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
     let facade = crate_name::facade_path();
     let ident = &subcommand.binding.ident;
     let generics = subcommand_generics(subcommand, &facade);
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let (semantic_impl_generics, semantic_ty_generics, semantic_where_clause) =
+        subcommand.binding.generics.split_for_impl();
     let keys = key::subcommand_constants(
         &facade,
         &subcommand.binding.fingerprint,
@@ -172,6 +183,9 @@ pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
         let table = format_ident!("ARGX_SUBCOMMAND_CONTRACT_{index}");
         quote!(&#table)
     });
+    let semantic_projection = semantic_projection(subcommand, &facade);
+    let semantic_declarations = &semantic_projection.declarations;
+    let semantic_commands = &semantic_projection.commands;
 
     // Only one sibling command can be active. An enum keeps the accumulator proportional to the
     // largest selected branch instead of reserving space for every sibling's partial state.
@@ -356,6 +370,8 @@ pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
     });
 
     quote! {
+        #semantic_declarations
+
         #[doc(hidden)]
         const _: () = {
             #keys
@@ -371,6 +387,12 @@ pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
                 /// No command has been selected yet.
                 Unselected,
                 #(#partial_variants)*
+            }
+
+            impl #semantic_impl_generics #facade::__private::SubcommandTypeContract
+                for #ident #semantic_ty_generics #semantic_where_clause
+            {
+                type Commands = #semantic_commands;
             }
 
             impl #impl_generics #facade::__private::Subcommands
@@ -442,6 +464,114 @@ pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
                 }
             }
         };
+    }
+}
+
+/// Builds privacy-safe semantic branch resolvers for this subcommand declaration.
+fn semantic_projection(subcommand: &model::Subcommand, facade: &TokenStream) -> SemanticProjection {
+    let ident = &subcommand.binding.ident;
+    let visibility = &subcommand.binding.visibility;
+    let suffix = ident.to_string().trim_start_matches("r#").to_owned();
+    let declaration = key::declaration_hash(&subcommand.binding.fingerprint);
+    let commands_ident = format_ident!("__ArgxContractCommandsFor{}H{}", suffix, declaration);
+    let shape_ident = format_ident!("__ArgxContractShapeFor{}H{}", suffix, declaration);
+    let (impl_generics, ty_generics, where_clause) = subcommand.binding.generics.split_for_impl();
+
+    let mut shape_declarations = Vec::new();
+    let mut shape_definitions = Vec::new();
+    let mut bounds = Vec::new();
+    let mut arms = Vec::new();
+    let mut needs_shape = false;
+
+    for (index, variant) in subcommand.variants.iter().enumerate() {
+        if let Some(ty) = &variant.binding.payload {
+            needs_shape = true;
+            let associated = format_ident!("Variant{index}");
+            shape_declarations.push(quote!(type #associated;));
+            shape_definitions.push(quote!(type #associated = #ty;));
+            bounds.push(quote!(
+                <T as #shape_ident>::#associated:
+                    #facade::__private::ResolveCommandTypeContract
+            ));
+            arms.push(quote! {
+                #index => <<T as #shape_ident>::#associated as
+                    #facade::__private::ResolveCommandTypeContract>::contract_value_types(
+                        rest,
+                        resolver,
+                    ),
+            });
+        } else {
+            arms.push(quote! {
+                #index if rest.is_empty() => ::std::option::Option::Some(
+                    #facade::__private::CommandValueTypes {
+                        flags: ::std::vec::Vec::new(),
+                        args: ::std::vec::Vec::new(),
+                    },
+                ),
+                #index => ::std::option::Option::None,
+            });
+        }
+    }
+
+    let shape = needs_shape.then(|| {
+        quote! {
+            trait #shape_ident {
+                #(#shape_declarations)*
+            }
+
+            impl #impl_generics #shape_ident for #ident #ty_generics #where_clause {
+                #(#shape_definitions)*
+            }
+        }
+    });
+    let resolver_where = if needs_shape {
+        quote! {
+            where
+                T: #shape_ident,
+                #(#bounds,)*
+        }
+    } else {
+        TokenStream::new()
+    };
+    let privacy_allow = needs_shape.then(|| {
+        quote! {
+            #[allow(
+                private_bounds,
+                reason = "generated contract witnesses intentionally hide concrete payload types"
+            )]
+        }
+    });
+    SemanticProjection {
+        declarations: quote! {
+            #shape
+
+            #[doc = "Argx-generated semantic contract witness."]
+            #[doc(hidden)]
+            #[derive(Debug, Clone, Copy)]
+            #[allow(
+                unreachable_pub,
+                unnameable_types,
+                reason = "generated witness is exposed only through Argx's hidden projection trait"
+            )]
+            #visibility struct #commands_ident<T>(::core::marker::PhantomData<fn() -> T>);
+
+            #privacy_allow
+            impl<T> #facade::__private::ResolveSubcommandTree for #commands_ident<T>
+            #resolver_where
+            {
+                fn resolve(
+                    index: usize,
+                    rest: &[usize],
+                    resolver: &mut #facade::__private::TypeResolver,
+                ) -> ::std::option::Option<#facade::__private::CommandValueTypes> {
+                    match index {
+                        #(#arms)*
+                        _ => ::std::option::Option::None,
+                    }
+                }
+            }
+        },
+        commands: quote!(#commands_ident<Self>),
     }
 }
 

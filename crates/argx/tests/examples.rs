@@ -119,9 +119,8 @@ mod tests {
             other => panic!("missing behavior assertion for public example `{other}`"),
         };
 
-        let output = command
-            .output()
-            .unwrap_or_else(|error| panic!("failed to execute {name}: {error}"));
+        let output =
+            command.output().unwrap_or_else(|error| panic!("failed to execute {name}: {error}"));
         assert!(
             output.status.success(),
             "{name} representative invocation exited with {}\nstderr:\n{}",
@@ -137,5 +136,4 @@ mod tests {
         assert_eq!(stdout, expected_stdout, "unexpected stdout from {name}");
         assert_eq!(stderr, expected_stderr, "unexpected stderr from {name}");
     }
-
 }

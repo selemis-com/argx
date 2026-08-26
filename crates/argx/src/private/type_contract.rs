@@ -102,7 +102,11 @@ impl TypeResolver {
     }
 
     /// Completes a discovery run after all reserved definitions have been populated.
-    fn finish(self) -> Vec<TypeDefinition> {
+    ///
+    /// # Panics
+    ///
+    /// Panics if an internal reservation was not populated before discovery completed.
+    pub(crate) fn finish(self) -> Vec<TypeDefinition> {
         self.definitions
             .into_iter()
             .map(|definition| {

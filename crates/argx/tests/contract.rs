@@ -8,7 +8,10 @@
 #[cfg(test)]
 #[cfg(feature = "derive")]
 mod tests {
-    use argx::{ConstraintContractKind, ContractDepth, ContractRequest, Parser as _};
+    use argx::{
+        ConstraintContractKind, ContractDepth, ContractRequest, Parser as _, PrimitiveType,
+        TypeContractValue, TypeDefinitionKind,
+    };
 
     /// Reusable authentication arguments.
     #[derive(argx::Args)]
@@ -111,6 +114,73 @@ mod tests {
         input: Option<String>,
     }
 
+    /// Domain value shared by multiple invocation bindings.
+    #[derive(Debug, PartialEq, Eq, argx::Contract)]
+    enum OutputFormat {
+        Json,
+        Text,
+    }
+
+    impl std::str::FromStr for OutputFormat {
+        type Err = &'static str;
+
+        fn from_str(value: &str) -> Result<Self, Self::Err> {
+            match value {
+                "json" => Ok(Self::Json),
+                "text" => Ok(Self::Text),
+                _ => Err("expected `json` or `text`"),
+            }
+        }
+    }
+
+    /// Reusable typed values used to verify semantic projection through flattening.
+    #[derive(argx::Args)]
+    struct FormatArgs {
+        #[argx(long)]
+        format: Option<OutputFormat>,
+    }
+
+    /// CLI used to verify named semantic type references and definition deduplication.
+    #[derive(argx::Parser)]
+    #[argx(name = "typed-contract")]
+    struct TypedContractCli {
+        #[argx(flatten)]
+        format: FormatArgs,
+        fallback: OutputFormat,
+    }
+
+    /// Generic CLI used to verify semantic type projection does not regress generic parsers.
+    #[expect(dead_code, reason = "shape is exercised through generated contract metadata")]
+    #[derive(argx::Parser)]
+    #[argx(name = "generic-contract")]
+    struct GenericContractCli<T> {
+        value: T,
+    }
+
+    /// Nested command used to verify type definitions follow discovery detail.
+    #[expect(dead_code, reason = "shape is exercised through generated contract metadata")]
+    #[derive(argx::Args)]
+    struct TypedLeafArgs {
+        format: OutputFormat,
+    }
+
+    /// Nested typed command branches.
+    #[expect(dead_code, reason = "shape is exercised through generated contract metadata")]
+    #[derive(argx::Subcommand)]
+    enum TypedNestedCommands {
+        Leaf(TypedLeafArgs),
+        Empty,
+    }
+
+    /// Root with no values of its own and a typed descendant.
+    #[expect(dead_code, reason = "shape is exercised through generated contract metadata")]
+    #[derive(argx::Parser)]
+    #[argx(name = "typed-nested")]
+    struct TypedNestedCli {
+        #[argx(subcommand)]
+        command: TypedNestedCommands,
+    }
+
     #[test]
     fn representative_contract_fixture_remains_parseable() {
         let cli = Cli::try_parse_from([
@@ -176,8 +246,10 @@ mod tests {
 
         assert_eq!(option.name, "--tag");
         assert!(option.repeatable);
-        assert_eq!(option.value.expect("tag takes a value").min_values, 1);
-        assert_eq!(option.value.expect("tag takes a value").max_values, Some(1));
+        let value = option.value.as_ref().expect("tag takes a value");
+        assert_eq!(value.min_values, 1);
+        assert_eq!(value.max_values, Some(1));
+        assert_eq!(value.value_type, TypeContractValue::String);
     }
 
     #[test]
@@ -208,6 +280,68 @@ mod tests {
         let json = contract.to_json().expect("compact contract JSON should serialize");
         assert!(!json.contains('\n'));
         assert!(json.contains(r#""name":"-t""#));
+    }
+
+    #[test]
+    fn invocation_values_reference_one_shared_named_type_definition() {
+        let cli = TypedContractCli::try_parse_from(["typed-contract", "--format", "json", "text"])
+            .expect("typed contract fixture should parse");
+        assert_eq!(cli.format.format, Some(OutputFormat::Json));
+        assert_eq!(cli.fallback, OutputFormat::Text);
+
+        let contract = TypedContractCli::contract(ContractRequest::root())
+            .expect("typed invocation contract should exist");
+        assert_eq!(contract.types.version, argx::TYPE_CONTRACT_VERSION);
+        assert_eq!(contract.types.definitions.len(), 1);
+        let definition = &contract.types.definitions[0];
+        assert_eq!(definition.id, "type-0");
+        assert_eq!(definition.name, "OutputFormat");
+        assert!(matches!(
+            &definition.kind,
+            TypeDefinitionKind::Enum { variants }
+                if variants.iter().map(|variant| variant.name.as_str()).eq(["Json", "Text"])
+        ));
+
+        let invocation = contract.command.invocation.expect("root command should be detailed");
+        let context = &invocation.contexts[0];
+        let option_type =
+            &context.options[0].value.as_ref().expect("format takes a value").value_type;
+        let positional_type = &context.arguments[0].value.value_type;
+        let expected = TypeContractValue::Reference { definition: "type-0".to_owned() };
+        assert_eq!(option_type, &expected);
+        assert_eq!(positional_type, &expected);
+    }
+
+    #[test]
+    fn generic_parser_contracts_resolve_the_monomorphized_value_type() {
+        let contract = GenericContractCli::<u16>::contract(ContractRequest::root())
+            .expect("generic parser contract should exist");
+        let invocation = contract.command.invocation.expect("root command should be detailed");
+        let value_type = &invocation.contexts[0].arguments[0].value.value_type;
+
+        assert_eq!(value_type, &TypeContractValue::Primitive { primitive: PrimitiveType::U16 },);
+        assert!(contract.types.definitions.is_empty());
+    }
+
+    #[test]
+    fn type_definitions_follow_the_discovery_detail_that_is_returned() {
+        let shallow = TypedNestedCli::contract(ContractRequest::root())
+            .expect("shallow nested contract should exist");
+        assert!(shallow.types.definitions.is_empty());
+        assert!(shallow.command.subcommands[0].invocation.is_none());
+
+        let selected = TypedNestedCli::contract(ContractRequest::new(["leaf"]))
+            .expect("selected typed descendant should exist");
+        assert_eq!(selected.types.definitions.len(), 1);
+        let invocation = selected.command.invocation.expect("selected command should be detailed");
+        let value_type = &invocation.contexts[1].arguments[0].value.value_type;
+        assert_eq!(value_type, &TypeContractValue::Reference { definition: "type-0".to_owned() },);
+
+        let recursive = TypedNestedCli::contract(ContractRequest::root().recursive())
+            .expect("recursive nested contract should exist");
+        assert_eq!(recursive.types.definitions.len(), 1);
+        assert!(recursive.command.subcommands[0].invocation.is_some());
+        assert!(recursive.command.subcommands[1].invocation.is_some());
     }
 
     #[test]
@@ -259,8 +393,11 @@ mod tests {
         assert!(root.options[0].aliases.iter().map(String::as_str).eq(["--cfg"]));
         assert!(root.options[0].global);
         assert!(!root.options[0].required);
-        assert_eq!(root.options[0].value.expect("config takes a value").min_values, 1);
-        assert_eq!(root.options[0].value.expect("config takes a value").max_values, Some(1));
+        assert_eq!(root.options[0].value.as_ref().expect("config takes a value").min_values, 1);
+        assert_eq!(
+            root.options[0].value.as_ref().expect("config takes a value").max_values,
+            Some(1),
+        );
         assert!(!root.options[0].repeatable);
 
         assert_eq!(root.options[1].name, "--profile");

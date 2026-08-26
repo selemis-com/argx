@@ -1,6 +1,9 @@
 {
   "version": 1,
   "root": "echo",
+  "types": {
+    "version": 1
+  },
   "command": {
     "path": [],
     "name": "echo",
@@ -17,7 +20,10 @@
               "required": true,
               "value": {
                 "minValues": 1,
-                "maxValues": 1
+                "maxValues": 1,
+                "type": {
+                  "kind": "string"
+                }
               },
               "allowNegativeNumbers": false
             }
@@ -32,7 +38,10 @@
               "required": false,
               "value": {
                 "minValues": 1,
-                "maxValues": 1
+                "maxValues": 1,
+                "type": {
+                  "kind": "string"
+                }
               },
               "repeatable": false,
               "environment": "ECHO_OUTPUT",

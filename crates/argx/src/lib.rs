@@ -206,18 +206,19 @@
 //!
 //! A [`struct@Contract`] contains the canonical root and selected command, command aliases, direct
 //! invocability, the root-to-selected invocation contexts, positional and named arguments, value
-//! cardinality, global scope, environment/default sources, and normalized `requires` / `conflicts`
-//! relationships. Command paths supplied in a [`ContractRequest`] may use aliases; returned paths
-//! always use canonical command names.
+//! cardinality, semantic Rust value types, global scope, environment/default sources, and
+//! normalized `requires` / `conflicts` relationships. Named semantic types share one definition
+//! table across the returned document. Command paths supplied in a [`ContractRequest`] may use
+//! aliases; returned paths always use canonical command names.
 //!
 //! [`ContractDepth::Shallow`] includes the selected command in full and direct children as
 //! summaries. [`ContractDepth::Recursive`] expands the selected command's complete descendant
 //! subtree. [`Contract::to_json`] and [`Contract::to_json_pretty`] serialize the public protocol,
 //! whose current version is [`CONTRACT_VERSION`].
 //!
-//! The contract is deliberately an **invocation contract**. It describes command structure,
-//! accepted inputs, cardinality, sources, and relationships; it is not a serialization schema for
-//! the concrete Rust value types stored in fields.
+//! The contract remains deliberately an **invocation contract**. Attached semantic types describe
+//! the Rust value produced from each consumed argument; they do not define that value's runtime
+//! serialization format or the lexical encoding accepted by an arbitrary [`std::str::FromStr`].
 //!
 //! # Failure model
 //!
@@ -281,8 +282,9 @@ pub use contract::{
 };
 pub use error::{Error, InvalidValue};
 pub use type_contract::{
-    ContractType, PrimitiveType, TYPE_CONTRACT_VERSION, TypeContract, TypeContractValue,
-    TypeDefinition, TypeDefinitionKind, TypeFieldContract, TypeVariantContract, TypeVariantKind,
+    ContractType, PrimitiveType, TYPE_CONTRACT_VERSION, TypeContract, TypeContractDefinitions,
+    TypeContractValue, TypeDefinition, TypeDefinitionKind, TypeFieldContract, TypeVariantContract,
+    TypeVariantKind,
 };
 
 // Generated absolute paths must also work when a derive is used inside this crate. Integration
@@ -448,8 +450,11 @@ pub trait Parser: Sized + __private::CommandArgs + __private::CommandContract {
     /// Discovers the machine-readable invocation contract for this CLI.
     ///
     /// Command paths are relative to the root command and may use canonical names or aliases.
-    /// Returned paths always use canonical command names. Contract discovery does not parse
-    /// process arguments or evaluate environment fallbacks.
+    /// Returned paths always use canonical command names. Custom consumed value types anywhere in
+    /// the command tree must implement [`ContractType`], normally through
+    /// `#[derive(argx::Contract)]`. This requirement applies only when contract discovery is used
+    /// and does not affect parsing support. Contract discovery does not parse process arguments or
+    /// evaluate environment fallbacks.
     ///
     /// # Examples
     ///
@@ -482,8 +487,11 @@ pub trait Parser: Sized + __private::CommandArgs + __private::CommandContract {
     /// # Errors
     ///
     /// Returns [`ContractError::UnknownCommand`] when one requested path segment does not resolve.
-    fn contract(request: ContractRequest) -> Result<Contract, ContractError> {
-        contract::discover(Self::CONTRACT, request)
+    fn contract(request: ContractRequest) -> Result<Contract, ContractError>
+    where
+        Self: __private::ResolveCommandTypeContract,
+    {
+        contract::discover::<Self>(request)
     }
 
     /// Renders generated help for this root command.

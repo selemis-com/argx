@@ -13,8 +13,13 @@ use std::{error, fmt};
 
 use serde::Serialize;
 
-use crate::__private::{
-    ArgSpec, Cardinality as StaticCardinality, CommandSpec, ConstraintKind, FlagSpec, Key,
+use crate::{
+    __private::{
+        ArgSpec, Cardinality as StaticCardinality, CommandContract as StaticCommandContract,
+        CommandSpec, CommandValueTypes, ConstraintKind, FlagSpec, Key,
+        ResolveCommandTypeContract as SemanticCommandContract, TypeResolver,
+    },
+    type_contract::{TYPE_CONTRACT_VERSION, TypeContractDefinitions, TypeContractValue},
 };
 
 /// Current serialized Argx contract protocol version.
@@ -99,6 +104,8 @@ pub struct Contract {
     pub version: u32,
     /// Canonical root command name.
     pub root: String,
+    /// Shared semantic Rust type definitions referenced by invocation values.
+    pub types: TypeContractDefinitions,
     /// Selected command and requested descendant discovery.
     pub command: CommandContract,
 }
@@ -119,7 +126,7 @@ impl Contract {
     ///
     /// let contract = Cli::contract(ContractRequest::root()).unwrap();
     /// let json = contract.to_json().unwrap();
-    /// assert!(json.contains(r#""version":1"#));
+    /// assert_eq!(contract.version, argx::CONTRACT_VERSION);
     /// assert!(json.contains(r#""options""#));
     /// ```
     ///
@@ -241,7 +248,7 @@ pub struct OptionContract {
 }
 
 /// Number of values represented by one positional or one option occurrence.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ValueContract {
     /// Minimum number of values.
@@ -249,6 +256,11 @@ pub struct ValueContract {
     /// Maximum number of values, or no upper bound when omitted.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_values: Option<usize>,
+    /// Semantic Rust type produced from each consumed value.
+    ///
+    /// This describes the bound Rust value, not a custom `FromStr` or OS-string lexical encoding.
+    #[serde(rename = "type")]
+    pub value_type: TypeContractValue,
 }
 
 /// One normalized relationship between arguments in the same command context.
@@ -311,10 +323,11 @@ impl error::Error for ContractError {}
 /// Alias resolution happens only while walking the requested path. Once selected, every path in
 /// the returned value is rebuilt from canonical command names so aliases cannot leak into the wire
 /// representation.
-pub(crate) fn discover(
-    root: &'static CommandSpec<'static>,
-    request: ContractRequest,
-) -> Result<Contract, ContractError> {
+pub(crate) fn discover<T>(request: ContractRequest) -> Result<Contract, ContractError>
+where
+    T: StaticCommandContract + SemanticCommandContract,
+{
+    let root = T::CONTRACT;
     let mut selected = root;
     let mut path = Vec::with_capacity(request.path.len());
     let mut contexts = vec![root];
@@ -330,28 +343,28 @@ pub(crate) fn discover(
         selected = child;
     }
 
-    Ok(Contract {
-        version: CONTRACT_VERSION,
-        root: root.name.to_owned(),
-        command: command_contract(selected, path, &contexts, request.depth, true),
-    })
+    let mut resolver = TypeResolver::default();
+    let command =
+        command_contract::<T>(selected, path, &contexts, request.depth, true, &mut resolver);
+    let types =
+        TypeContractDefinitions { version: TYPE_CONTRACT_VERSION, definitions: resolver.finish() };
+
+    Ok(Contract { version: CONTRACT_VERSION, root: root.name.to_owned(), types, command })
 }
 
 /// Builds one command node at the requested discovery depth.
-fn command_contract(
+fn command_contract<T>(
     command: &'static CommandSpec<'static>,
     path: Vec<String>,
     contexts: &[&'static CommandSpec<'static>],
     depth: ContractDepth,
     detailed: bool,
-) -> CommandContract {
-    let invocation = detailed.then(|| InvocationContract {
-        contexts: contexts
-            .iter()
-            .enumerate()
-            .map(|(index, context)| command_context(context, &contexts[..=index]))
-            .collect(),
-    });
+    resolver: &mut TypeResolver,
+) -> CommandContract
+where
+    T: StaticCommandContract + SemanticCommandContract,
+{
+    let invocation = detailed.then(|| invocation_contract::<T>(contexts, resolver));
 
     let child_detailed = depth == ContractDepth::Recursive;
     let subcommands = if depth == ContractDepth::Shallow && !detailed {
@@ -366,7 +379,14 @@ fn command_contract(
                 child_path.push(child.name.to_owned());
                 let mut child_contexts = contexts.to_vec();
                 child_contexts.push(child);
-                command_contract(child, child_path, &child_contexts, depth, child_detailed)
+                command_contract::<T>(
+                    child,
+                    child_path,
+                    &child_contexts,
+                    depth,
+                    child_detailed,
+                    resolver,
+                )
             })
             .collect()
     };
@@ -382,15 +402,71 @@ fn command_contract(
     }
 }
 
+/// Builds complete invocation contexts and resolves their semantic Rust value types.
+fn invocation_contract<T>(
+    contexts: &[&'static CommandSpec<'static>],
+    resolver: &mut TypeResolver,
+) -> InvocationContract
+where
+    T: StaticCommandContract + SemanticCommandContract,
+{
+    let branch_indices = contexts
+        .windows(2)
+        .map(|pair| {
+            let parent = pair[0];
+            let child = pair[1];
+            parent
+                .subcommands
+                .iter()
+                .position(|candidate| std::ptr::eq(*candidate, child))
+                .expect("generated contract contexts must follow the static command topology")
+        })
+        .collect::<Vec<_>>();
+    let contexts = contexts
+        .iter()
+        .enumerate()
+        .map(|(index, context)| {
+            let value_types = T::contract_value_types(&branch_indices[..index], resolver)
+                .expect("generated contract command path must resolve semantic value types");
+            command_context(context, &contexts[..=index], value_types)
+        })
+        .collect();
+
+    InvocationContract { contexts }
+}
+
 /// Builds one command-context contract and resolves semantic constraint keys to public names.
 fn command_context(
     command: &'static CommandSpec<'static>,
     contexts: &[&'static CommandSpec<'static>],
+    value_types: CommandValueTypes,
 ) -> CommandContextContract {
+    assert_eq!(
+        command.flags.len(),
+        value_types.flags.len(),
+        "generated flag contract and semantic type projections must remain aligned",
+    );
+    assert_eq!(
+        command.args.len(),
+        value_types.args.len(),
+        "generated positional contract and semantic type projections must remain aligned",
+    );
+
     let path = contexts.iter().skip(1).map(|context| context.name.to_owned()).collect();
-    let arguments =
-        command.args.iter().enumerate().map(|(index, arg)| arg_contract(arg, index)).collect();
-    let options = command.flags.iter().copied().map(option_contract).collect();
+    let arguments = command
+        .args
+        .iter()
+        .zip(value_types.args)
+        .enumerate()
+        .map(|(index, (arg, value_type))| arg_contract(arg, index, value_type))
+        .collect();
+    let options = command
+        .flags
+        .iter()
+        .copied()
+        .zip(value_types.flags)
+        .map(|(flag, value_type)| option_contract(flag, value_type))
+        .collect();
     let constraints = command
         .constraints
         .iter()
@@ -408,7 +484,7 @@ fn command_context(
 }
 
 /// Builds one named public option contract.
-fn option_contract(flag: &FlagSpec<'_>) -> OptionContract {
+fn option_contract(flag: &FlagSpec<'_>, value_type: Option<TypeContractValue>) -> OptionContract {
     let name = preferred_option_name(flag);
     let mut aliases = Vec::with_capacity(flag.longs.len() + flag.aliases.len() + flag.shorts.len());
     aliases.extend(
@@ -430,7 +506,7 @@ fn option_contract(flag: &FlagSpec<'_>) -> OptionContract {
         help: flag.help.map(str::to_owned),
         global: flag.global,
         required: flag.required,
-        value: option_value(flag.cardinality),
+        value: option_value(flag.cardinality, value_type),
         repeatable: flag.cardinality == StaticCardinality::Many,
         environment: flag.env.map(str::to_owned),
         has_default: flag.has_default,
@@ -440,34 +516,58 @@ fn option_contract(flag: &FlagSpec<'_>) -> OptionContract {
 }
 
 /// Builds one positional public argument contract.
-fn arg_contract(arg: &ArgSpec<'_>, index: usize) -> ArgumentContract {
+fn arg_contract(
+    arg: &ArgSpec<'_>,
+    index: usize,
+    value_type: TypeContractValue,
+) -> ArgumentContract {
     ArgumentContract {
         name: arg.name.to_owned(),
         help: arg.help.map(str::to_owned),
         position: index + 1,
         required: arg.required,
-        value: positional_value(arg.cardinality, arg.required),
+        value: positional_value(arg.cardinality, arg.required, value_type),
         allow_negative_numbers: arg.allow_negative_numbers,
     }
 }
 
 /// Returns value consumption for one named option occurrence.
-const fn option_value(value: StaticCardinality) -> Option<ValueContract> {
+fn option_value(
+    value: StaticCardinality,
+    value_type: Option<TypeContractValue>,
+) -> Option<ValueContract> {
     match value {
-        StaticCardinality::Switch => None,
+        StaticCardinality::Switch => {
+            assert!(
+                value_type.is_none(),
+                "generated switches must not expose a consumed value type",
+            );
+            None
+        }
         StaticCardinality::One | StaticCardinality::Optional | StaticCardinality::Many => {
-            Some(ValueContract { min_values: 1, max_values: Some(1) })
+            Some(ValueContract {
+                min_values: 1,
+                max_values: Some(1),
+                value_type: value_type
+                    .expect("generated value-taking options must expose a semantic value type"),
+            })
         }
     }
 }
 
 /// Returns total positional value multiplicity for one positional binding.
-fn positional_value(value: StaticCardinality, required: bool) -> ValueContract {
+fn positional_value(
+    value: StaticCardinality,
+    required: bool,
+    value_type: TypeContractValue,
+) -> ValueContract {
     match value {
-        StaticCardinality::One => ValueContract { min_values: 1, max_values: Some(1) },
-        StaticCardinality::Optional => ValueContract { min_values: 0, max_values: Some(1) },
+        StaticCardinality::One => ValueContract { min_values: 1, max_values: Some(1), value_type },
+        StaticCardinality::Optional => {
+            ValueContract { min_values: 0, max_values: Some(1), value_type }
+        }
         StaticCardinality::Many => {
-            ValueContract { min_values: if required { 1 } else { 0 }, max_values: None }
+            ValueContract { min_values: if required { 1 } else { 0 }, max_values: None, value_type }
         }
         StaticCardinality::Switch => {
             unreachable!("generated positional arguments cannot be value-less switches")

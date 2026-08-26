@@ -8,13 +8,110 @@
 use super::{
     contract::CommandSpec,
     model::{ArgumentState, Command, Key},
+    type_contract::TypeResolver,
 };
-use crate::argv::Event;
+use crate::{argv::Event, type_contract::TypeContractValue};
+
+/// Resolved semantic value types for one command context.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommandValueTypes {
+    /// Value types for named arguments in static contract order; switches have no value.
+    pub flags: Vec<Option<TypeContractValue>>,
+    /// Value types for positional arguments in static contract order.
+    pub args: Vec<TypeContractValue>,
+}
+
+/// Empty generated semantic contract projection.
+#[derive(Debug, Clone, Copy)]
+pub struct NoTypeProjection;
 
 /// Generated machine-contract projection for one derived command declaration.
 pub trait CommandContract {
     /// Private static command semantics used to build public machine contracts.
     const CONTRACT: &'static CommandSpec<'static>;
+}
+
+/// Generated type-level semantic projection for one derived command declaration.
+pub trait CommandTypeContract {
+    /// Value-bearing fields in declaration/composition order.
+    type Fields;
+    /// Nested subcommand projection, or [`NoTypeProjection`] when absent.
+    type Subcommands;
+}
+
+/// Generated type-level semantic projection for a derived subcommand enum.
+pub trait SubcommandTypeContract {
+    /// Sibling command branches in static contract order.
+    type Commands;
+}
+
+/// Resolves a generated command semantic projection when all consumed values are contractable.
+pub trait ResolveCommandTypeContract {
+    /// Resolves semantic value types for one path expressed as static subcommand indices.
+    fn contract_value_types(
+        path: &[usize],
+        resolver: &mut TypeResolver,
+    ) -> Option<CommandValueTypes>;
+}
+
+impl<T> ResolveCommandTypeContract for T
+where
+    T: CommandTypeContract,
+    T::Fields: ResolveValueFields,
+    T::Subcommands: ResolveSubcommands,
+{
+    fn contract_value_types(
+        path: &[usize],
+        resolver: &mut TypeResolver,
+    ) -> Option<CommandValueTypes> {
+        let Some((index, rest)) = path.split_first() else {
+            let mut values = CommandValueTypes { flags: Vec::new(), args: Vec::new() };
+            T::Fields::append(resolver, &mut values);
+            return Some(values);
+        };
+
+        T::Subcommands::resolve(*index, rest, resolver)
+    }
+}
+
+/// Appends one generated field projection to a command context.
+pub trait ResolveValueFields {
+    /// Resolves this projection into `values` in static contract order.
+    fn append(resolver: &mut TypeResolver, values: &mut CommandValueTypes);
+}
+
+impl ResolveValueFields for NoTypeProjection {
+    fn append(_resolver: &mut TypeResolver, _values: &mut CommandValueTypes) {}
+}
+
+/// Resolves a generated nested subcommand projection.
+pub trait ResolveSubcommands {
+    /// Resolves one branch selected by its static subcommand index.
+    fn resolve(
+        index: usize,
+        rest: &[usize],
+        resolver: &mut TypeResolver,
+    ) -> Option<CommandValueTypes>;
+}
+
+impl ResolveSubcommands for NoTypeProjection {
+    fn resolve(
+        _index: usize,
+        _rest: &[usize],
+        _resolver: &mut TypeResolver,
+    ) -> Option<CommandValueTypes> {
+        None
+    }
+}
+
+/// Resolves generated sibling subcommand branches.
+pub trait ResolveSubcommandTree {
+    /// Resolves one sibling by zero-based static contract index.
+    fn resolve(
+        index: usize,
+        rest: &[usize],
+        resolver: &mut TypeResolver,
+    ) -> Option<CommandValueTypes>;
 }
 
 /// Generated runtime projections of one normalized command declaration.

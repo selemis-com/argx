@@ -34,6 +34,8 @@ pub(crate) struct Command {
 pub(crate) struct CommandBinding {
     /// Rust type name receiving the generated implementations.
     pub ident: syn::Ident,
+    /// Visibility of the derived declaration.
+    pub visibility: syn::Visibility,
     /// Generic parameters copied to generated implementations.
     pub generics: syn::Generics,
     /// Whole declaration token stream used to seed stable semantic identities.
@@ -82,6 +84,8 @@ pub(crate) struct Subcommand {
 pub(crate) struct SubcommandBinding {
     /// Rust enum receiving the generated implementation.
     pub ident: syn::Ident,
+    /// Visibility of the derived declaration.
+    pub visibility: syn::Visibility,
     /// Generic parameters copied to generated implementations.
     pub generics: syn::Generics,
     /// Whole declaration token stream used to seed stable variant identities.
@@ -275,6 +279,7 @@ impl Command {
         Ok(Self {
             binding: CommandBinding {
                 ident: input.ident.clone(),
+                visibility: input.vis.clone(),
                 generics: input.generics.clone(),
                 fingerprint: input.to_token_stream().to_string(),
                 root,
@@ -396,6 +401,7 @@ impl Subcommand {
         Ok(Self {
             binding: SubcommandBinding {
                 ident: input.ident.clone(),
+                visibility: input.vis.clone(),
                 generics: input.generics.clone(),
                 fingerprint: input.to_token_stream().to_string(),
             },

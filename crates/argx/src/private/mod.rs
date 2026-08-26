@@ -23,7 +23,11 @@ pub use model::{
     HelpGroup, HelpSection, Key, key_base,
 };
 pub(crate) use scope::{Named, long as resolve_long, short as resolve_short};
-pub use traits::{CommandArgs, CommandContract, Subcommands};
+pub use traits::{
+    CommandArgs, CommandContract, CommandTypeContract, CommandValueTypes, NoTypeProjection,
+    ResolveCommandTypeContract, ResolveSubcommandTree, ResolveSubcommands, ResolveValueFields,
+    SubcommandTypeContract, Subcommands,
+};
 pub use type_contract::{
     TypeContractSource, TypeKey, TypeResolver, const_key, discover_type_contract,
 };

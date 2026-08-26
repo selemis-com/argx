@@ -235,15 +235,17 @@ println!(
 ```
 
 A contract describes canonical command paths, accepted aliases, whether a command is directly
-invocable, positional and named arguments, value cardinality, global scope, environment/default
-sources, and `requires` / `conflicts` relationships. Shallow discovery returns the selected command
-in full plus direct child summaries; recursive discovery expands the complete descendant subtree.
-Lookup accepts command aliases, while returned paths remain canonical.
+invocable, positional and named arguments, value cardinality, semantic Rust value types, global
+scope, environment/default sources, and `requires` / `conflicts` relationships. Named semantic
+types share one definition table across the returned document. Shallow discovery returns the
+selected command in full plus direct child summaries; recursive discovery expands the complete
+descendant subtree. Lookup accepts command aliases, while returned paths remain canonical.
 
 The wire format is explicitly versioned by
-[`CONTRACT_VERSION`](https://docs.rs/argx/latest/argx/constant.CONTRACT_VERSION.html). The contract is
-an **invocation contract**: it describes how to call the CLI, not a serialization schema for the
-concrete Rust value types stored in its fields.
+[`CONTRACT_VERSION`](https://docs.rs/argx/latest/argx/constant.CONTRACT_VERSION.html). It remains an
+**invocation contract**: attached semantic types describe the Rust values produced from consumed
+arguments, not their runtime serialization format or the lexical encoding accepted by arbitrary
+custom parsers.
 
 ## Examples
 
