@@ -5,11 +5,12 @@
 //! Keep ordering semantics here explicit because changing the default [`CommandArgs::check`] flow
 //! changes public error precedence for every derived parser.
 
-use super::{
-    model::{ArgumentState, Command, Key},
-    type_contract::TypeResolver,
+use crate::{
+    argv::Event,
+    command::model::{ArgumentState, Command, Key},
+    contract::ExecutionContract,
+    type_contract::{TypeContractValue, resolve::TypeResolver},
 };
-use crate::{argv::Event, contract::ExecutionContract, type_contract::TypeContractValue};
 
 /// Resolved semantic value types for one command context.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -63,8 +64,8 @@ pub trait ExecutionResult {
 
 impl<T, E> ExecutionResult for Result<T, E>
 where
-    T: super::type_contract::TypeContractSource,
-    E: super::type_contract::TypeContractSource,
+    T: crate::type_contract::resolve::TypeContractSource,
+    E: crate::type_contract::resolve::TypeContractSource,
 {
     fn resolve_execution(resolver: &mut TypeResolver) -> ExecutionContract {
         ExecutionContract { success: T::resolve_type(resolver), error: E::resolve_type(resolver) }

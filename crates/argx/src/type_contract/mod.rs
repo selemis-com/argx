@@ -11,6 +11,8 @@
 //! shapes. `#[derive(argx::Contract)]` preserves Rust declaration, field, and variant names and
 //! does not interpret serialization-framework attributes.
 
+pub(crate) mod resolve;
+
 use serde::Serialize;
 
 /// Current serialized Argx Rust type-contract protocol version.

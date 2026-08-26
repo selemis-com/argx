@@ -381,7 +381,9 @@
 
 mod argv;
 mod binding;
+mod command;
 pub mod contract;
+mod derive_support;
 mod error;
 mod help;
 pub mod type_contract;
@@ -666,5 +668,5 @@ pub trait Parser: Sized + __private::CommandArgs {
 /// This module is public so proc-macro expansions can name these items from downstream crates. It
 /// is not part of Argx's stable user-facing API.
 #[doc(hidden)]
-#[path = "private/mod.rs"]
+#[path = "private.rs"]
 pub mod __private;
