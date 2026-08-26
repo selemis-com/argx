@@ -163,6 +163,13 @@ mod tests {
     #[derive(Debug, PartialEq, Eq, argx::Parser)]
     struct Empty;
 
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    struct ProcessEntryCli {
+        #[argx(long)]
+        exact: bool,
+        test: String,
+    }
+
     #[derive(Debug, PartialEq, Eq, argx::Args)]
     struct CommandShared {
         #[argx(long)]
@@ -734,6 +741,40 @@ mod tests {
     #[test]
     fn empty_complete_argv_is_an_empty_argument_list() {
         assert_eq!(Empty::try_parse_from(std::iter::empty::<&str>()), Ok(Empty));
+        assert_eq!(Empty::parse_from(["argx-test"]), Empty);
+        assert_eq!(Empty::parse_args(std::iter::empty::<&str>()), Empty);
+    }
+
+    #[test]
+    fn process_parser_entry_points_use_the_current_process_arguments() {
+        let executable = std::env::current_exe().expect("test executable should be available");
+        let output = Command::new(executable)
+            .arg("--exact")
+            .arg("tests::process_parser_entry_points_child")
+            .env("ARGX_TEST_PROCESS_ENTRY", "1")
+            .output()
+            .expect("process entry-point child should run");
+        assert!(
+            output.status.success(),
+            "process entry-point child failed:\nstdout: {}\nstderr: {}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr),
+        );
+    }
+
+    #[test]
+    fn process_parser_entry_points_child() {
+        if std::env::var_os("ARGX_TEST_PROCESS_ENTRY").is_none() {
+            return;
+        }
+
+        let tried = ProcessEntryCli::try_parse().expect("current process arguments should parse");
+        assert!(tried.exact);
+        assert_eq!(tried.test, "tests::process_parser_entry_points_child");
+
+        let parsed = ProcessEntryCli::parse();
+        assert!(parsed.exact);
+        assert_eq!(parsed.test, "tests::process_parser_entry_points_child");
     }
 
     #[test]

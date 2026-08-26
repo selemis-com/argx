@@ -1044,6 +1044,28 @@ mod tests {
 
     use super::{ArgumentKind, Command, FieldSemantics, Shape, Subcommand, ValueConversion};
 
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "callers construct owned syntax trees solely for one validation"
+    )]
+    fn command_error(input: DeriveInput, root: bool) -> String {
+        Command::from_input(&input, root)
+            .err()
+            .expect("command model should be rejected")
+            .to_string()
+    }
+
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "callers construct owned syntax trees solely for one validation"
+    )]
+    fn subcommand_error(input: DeriveInput) -> String {
+        Subcommand::from_input(&input)
+            .err()
+            .expect("subcommand model should be rejected")
+            .to_string()
+    }
+
     #[test]
     fn command_model_separates_cli_semantics_from_rust_binding() {
         let input: DeriveInput = parse_quote! {
@@ -1175,5 +1197,475 @@ mod tests {
             .err()
             .expect("equals signs in subcommand aliases must fail");
         assert!(error.to_string().contains("subcommand name must be non-empty"));
+    }
+
+    #[test]
+    fn command_declarations_reject_unsupported_shapes_and_metadata() {
+        let error = command_error(
+            parse_quote!(
+                enum Cli {
+                    Run,
+                }
+            ),
+            true,
+        );
+        assert_eq!(error, "Parser can only be derived for structs");
+
+        let error = command_error(
+            parse_quote!(
+                struct Cli(String);
+            ),
+            true,
+        );
+        assert_eq!(error, "Parser and Args do not support tuple structs; use named fields");
+
+        let error = command_error(
+            parse_quote! {
+                #[argx(alias = "tool")]
+                struct Cli;
+            },
+            true,
+        );
+        assert_eq!(error, "command aliases are only valid on Subcommand variants");
+
+        let error = command_error(
+            parse_quote! {
+                #[argx(version = "1.0")]
+                struct Shared;
+            },
+            false,
+        );
+        assert_eq!(
+            error,
+            "version metadata is only valid on Parser declarations and Subcommand variants",
+        );
+    }
+
+    #[test]
+    fn subcommand_declarations_reject_invalid_variants_and_payloads() {
+        let error = subcommand_error(parse_quote!(
+            struct Commands;
+        ));
+        assert_eq!(error, "Subcommand can only be derived for enums");
+
+        let error = subcommand_error(parse_quote!(
+            enum Commands {}
+        ));
+        assert_eq!(error, "Subcommand requires at least one variant");
+
+        let error = subcommand_error(parse_quote! {
+            enum Commands {
+                #[argx(name = "same")]
+                First,
+                #[argx(name = "same")]
+                Second,
+            }
+        });
+        assert_eq!(error, "duplicate subcommand `same`");
+
+        let error = subcommand_error(parse_quote! {
+            enum Commands {
+                #[argx(alias = "run")]
+                Run,
+            }
+        });
+        assert_eq!(error, "duplicate subcommand spelling `run`");
+
+        let error = subcommand_error(parse_quote! {
+            enum Commands {
+                Run(Option<Shared>),
+            }
+        });
+        assert_eq!(error, "subcommand payload must be one direct Args type");
+
+        let error = subcommand_error(parse_quote! {
+            enum Commands {
+                Run(Shared, Other),
+            }
+        });
+        assert_eq!(error, "subcommand tuple variants must contain exactly one Args payload");
+
+        let error = subcommand_error(parse_quote! {
+            enum Commands {
+                Run { shared: Shared },
+            }
+        });
+        assert_eq!(
+            error,
+            "subcommand variants support only unit variants or one unnamed Args payload",
+        );
+    }
+
+    #[test]
+    fn composed_fields_reject_incompatible_roles_attributes_and_wrappers() {
+        let error = command_error(
+            parse_quote! {
+                struct Cli {
+                    #[argx(flatten, subcommand)]
+                    command: Commands,
+                }
+            },
+            true,
+        );
+        assert_eq!(error, "`flatten` and `subcommand` cannot be combined");
+
+        let error = command_error(
+            parse_quote! {
+                struct Cli {
+                    #[argx(flatten, requires = "value")]
+                    shared: Shared,
+                }
+            },
+            true,
+        );
+        assert_eq!(error, "`requires` and `conflicts` are only valid on argument fields");
+
+        let error = command_error(
+            parse_quote! {
+                struct Cli {
+                    #[argx(subcommand, long)]
+                    command: Commands,
+                }
+            },
+            true,
+        );
+        assert_eq!(error, "`subcommand` cannot be combined with flag, value, or help attributes");
+
+        let error = command_error(
+            parse_quote! {
+                struct Cli {
+                    #[argx(subcommand)]
+                    command: Option<Commands>,
+                }
+            },
+            true,
+        );
+        assert_eq!(
+            error,
+            "`subcommand` does not support `Option<T>`; hold the Subcommand enum directly",
+        );
+
+        let error = command_error(
+            parse_quote! {
+                struct Cli {
+                    #[argx(subcommand)]
+                    command: Vec<Commands>,
+                }
+            },
+            true,
+        );
+        assert_eq!(error, "`subcommand` does not support collection wrappers");
+
+        let error = command_error(
+            parse_quote! {
+                struct Cli {
+                    #[argx(flatten, long)]
+                    shared: Shared,
+                }
+            },
+            true,
+        );
+        assert_eq!(error, "`flatten` cannot be combined with flag, value, or help attributes");
+
+        let error = command_error(
+            parse_quote! {
+                struct Cli {
+                    #[argx(flatten)]
+                    shared: Option<Shared>,
+                }
+            },
+            true,
+        );
+        assert_eq!(error, "`flatten` does not support `Option<T>`; hold the Args struct directly");
+
+        let error = command_error(
+            parse_quote! {
+                struct Cli {
+                    #[argx(flatten)]
+                    shared: Vec<Shared>,
+                }
+            },
+            true,
+        );
+        assert_eq!(
+            error,
+            "`flatten` does not support collection wrappers; hold one Args struct directly",
+        );
+    }
+
+    #[test]
+    fn argument_fields_reject_incompatible_flag_and_value_policies() {
+        let error = command_error(
+            parse_quote! {
+                struct Cli {
+                    #[argx(alias = "other")]
+                    value: String,
+                }
+            },
+            true,
+        );
+        assert_eq!(error, "`alias` and `aliases` are only valid on named flags");
+
+        let error = command_error(
+            parse_quote! {
+                struct Cli {
+                    #[argx(allow_hyphen_values)]
+                    value: String,
+                }
+            },
+            true,
+        );
+        assert_eq!(error, "`allow_hyphen_values` is only valid on named flags");
+
+        let error = command_error(
+            parse_quote! {
+                struct Cli {
+                    #[argx(global)]
+                    value: String,
+                }
+            },
+            true,
+        );
+        assert_eq!(error, "`global` is only valid on named flags");
+
+        let error = command_error(
+            parse_quote! {
+                struct Cli {
+                    #[argx(long, allow_negative_numbers)]
+                    verbose: bool,
+                }
+            },
+            true,
+        );
+        assert_eq!(error, "value policies are not valid on bool fields");
+
+        let error = command_error(
+            parse_quote! {
+                struct Cli {
+                    #[argx(long, env = "TOOL_VALUE")]
+                    value: Vec<String>,
+                }
+            },
+            true,
+        );
+        assert_eq!(error, "`env` is only supported on scalar value-taking flags");
+
+        let error = command_error(
+            parse_quote! {
+                struct Cli {
+                    #[argx(long, default = true)]
+                    value: bool,
+                }
+            },
+            true,
+        );
+        assert_eq!(error, "`default` is only supported on scalar value-taking flags");
+    }
+
+    #[test]
+    fn command_wide_validation_rejects_reserved_duplicate_and_ambiguous_layouts() {
+        let error = command_error(
+            parse_quote! {
+                struct Cli {
+                    #[argx(long = "help")]
+                    value: bool,
+                }
+            },
+            true,
+        );
+        assert_eq!(error, "`--help` is reserved by Argx");
+
+        let error = command_error(
+            parse_quote! {
+                #[argx(version = "1.0")]
+                struct Cli {
+                    #[argx(short = 'V')]
+                    value: bool,
+                }
+            },
+            true,
+        );
+        assert_eq!(error, "`-V` is reserved when command version metadata is present");
+
+        let error = command_error(
+            parse_quote! {
+                struct Cli {
+                    #[argx(long = "same")]
+                    first: bool,
+                    #[argx(long = "same")]
+                    second: bool,
+                }
+            },
+            true,
+        );
+        assert_eq!(error, "duplicate long flag `--same`");
+
+        let error = command_error(
+            parse_quote! {
+                struct Cli {
+                    #[argx(short = 'x')]
+                    first: bool,
+                    #[argx(short = 'x')]
+                    second: bool,
+                }
+            },
+            true,
+        );
+        assert_eq!(error, "duplicate short flag `-x`");
+
+        let error = command_error(
+            parse_quote! {
+                struct Cli {
+                    optional: Option<String>,
+                    required: String,
+                }
+            },
+            true,
+        );
+        assert_eq!(
+            error,
+            "required positional arguments cannot follow optional positional arguments"
+        );
+
+        let error = command_error(
+            parse_quote! {
+                struct Cli {
+                    values: Vec<String>,
+                    later: Option<String>,
+                }
+            },
+            true,
+        );
+        assert_eq!(error, "variadic positional argument must be the last positional argument");
+
+        let error = command_error(
+            parse_quote! {
+                struct Cli {
+                    #[argx(subcommand)]
+                    first: Commands,
+                    #[argx(subcommand)]
+                    second: Commands,
+                }
+            },
+            true,
+        );
+        assert_eq!(error, "a command can contain only one `subcommand` field");
+    }
+
+    #[test]
+    fn constraint_validation_rejects_invalid_local_relationships() {
+        let error = command_error(
+            parse_quote! {
+                struct Cli {
+                    #[argx(long, requires = "")]
+                    value: bool,
+                }
+            },
+            true,
+        );
+        assert_eq!(error, "`requires` must name a Rust argument field");
+
+        let error = command_error(
+            parse_quote! {
+                struct Cli {
+                    #[argx(long, requires = "value")]
+                    value: bool,
+                }
+            },
+            true,
+        );
+        assert_eq!(error, "`requires` cannot reference its own field `value`");
+
+        let error = command_error(
+            parse_quote! {
+                struct Cli {
+                    #[argx(long, requires = "token", requires = "token")]
+                    value: bool,
+                    #[argx(long)]
+                    token: bool,
+                }
+            },
+            true,
+        );
+        assert_eq!(error, "duplicate `requires` reference `token`");
+
+        let error = command_error(
+            parse_quote! {
+                struct Cli {
+                    #[argx(long, requires = "token", conflicts = "token")]
+                    value: bool,
+                    #[argx(long)]
+                    token: bool,
+                }
+            },
+            true,
+        );
+        assert_eq!(error, "argument `value` cannot both require and conflict with `token`");
+
+        let error = command_error(
+            parse_quote! {
+                struct Cli {
+                    #[argx(long, requires = "command")]
+                    value: bool,
+                    #[argx(subcommand)]
+                    command: Commands,
+                }
+            },
+            true,
+        );
+        assert_eq!(error, "`requires` target `command` is not an argument field");
+
+        let error = command_error(
+            parse_quote! {
+                struct Cli {
+                    #[argx(long, conflicts = "missing")]
+                    value: bool,
+                }
+            },
+            true,
+        );
+        assert_eq!(error, "`conflicts` names no argument field `missing` in this command");
+    }
+
+    #[test]
+    fn spelling_and_environment_validation_rejects_invalid_values() {
+        let error = command_error(
+            parse_quote! {
+                struct Cli {
+                    #[argx(short = '=')]
+                    value: bool,
+                }
+            },
+            true,
+        );
+        assert_eq!(error, "short flag must be one visible ASCII character other than `-` or `=`");
+
+        let error = command_error(
+            parse_quote! {
+                struct Cli {
+                    #[argx(long = "bad name")]
+                    value: bool,
+                }
+            },
+            true,
+        );
+        assert_eq!(
+            error,
+            "long flag must be non-empty, must not start with `-`, and cannot contain `=`, whitespace, or controls",
+        );
+
+        let error = command_error(
+            parse_quote! {
+                struct Cli {
+                    #[argx(long, env = "BAD=NAME")]
+                    value: String,
+                }
+            },
+            true,
+        );
+        assert_eq!(
+            error,
+            "environment variable name must be non-empty and cannot contain `=` or NUL"
+        );
     }
 }

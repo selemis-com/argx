@@ -675,4 +675,132 @@ mod tests {
         assert_eq!(parser.next_event(), Some(Ok(Event::Command { command: &CHILD })));
         assert_eq!(parser.next_event(), None);
     }
+
+    #[test]
+    fn action_bundles_are_fully_preflighted_before_becoming_terminal() {
+        let values = argv(&["-hx"]);
+        let mut parser = ArgvParser::new(&COMMAND, &values);
+        assert_eq!(parser.next_event(), Some(Err(Error::UnknownFlag { token: b"-hx" })));
+        assert_eq!(parser.next_event(), None);
+
+        let values = argv(&["-vhx"]);
+        let mut parser = ArgvParser::new(&COMMAND, &values);
+        assert_eq!(parser.next_event(), Some(Err(Error::UnknownFlag { token: b"-vhx" })));
+        assert_eq!(parser.next_event(), None);
+
+        let values = argv(&["-hv"]);
+        let mut parser = ArgvParser::new(&COMMAND, &values);
+        assert_eq!(
+            parser.next_event(),
+            Some(Ok(Event::Action { action: &HELP_ACTION, long: false })),
+        );
+        assert_eq!(parser.next_event(), None);
+    }
+
+    #[test]
+    fn value_taking_short_flags_absorb_every_remaining_bundle_byte() {
+        let values = argv(&["-ovf"]);
+        let mut parser = ArgvParser::new(&COMMAND, &values);
+        assert_eq!(
+            parser.next_event(),
+            Some(Ok(Event::Flag { flag: &OUTPUT, value: Some(b"vf") })),
+        );
+        assert_eq!(parser.next_event(), None);
+
+        let values = argv(&["-ox"]);
+        let mut parser = ArgvParser::new(&COMMAND, &values);
+        assert_eq!(parser.next_event(), Some(Ok(Event::Flag { flag: &OUTPUT, value: Some(b"x") })),);
+        assert_eq!(parser.next_event(), None);
+
+        let values = argv(&["-vo="]);
+        let mut parser = ArgvParser::new(&COMMAND, &values);
+        assert_eq!(parser.next_event(), Some(Ok(Event::Flag { flag: &VERBOSE, value: None })));
+        assert_eq!(parser.next_event(), Some(Ok(Event::Flag { flag: &OUTPUT, value: Some(b"") })),);
+        assert_eq!(parser.next_event(), None);
+    }
+
+    #[test]
+    fn pathological_dash_and_equals_tokens_are_not_normalized() {
+        let values = argv(&["---"]);
+        let mut parser = ArgvParser::new(&COMMAND, &values);
+        assert_eq!(parser.next_event(), Some(Err(Error::UnknownFlag { token: b"---" })));
+        assert_eq!(parser.next_event(), None);
+
+        let values = argv(&["--=value"]);
+        let mut parser = ArgvParser::new(&COMMAND, &values);
+        assert_eq!(parser.next_event(), Some(Err(Error::UnknownFlag { token: b"--=value" })));
+        assert_eq!(parser.next_event(), None);
+
+        let values = argv(&["-="]);
+        let mut parser = ArgvParser::new(&COMMAND, &values);
+        assert_eq!(parser.next_event(), Some(Err(Error::UnknownFlag { token: b"-=" })));
+        assert_eq!(parser.next_event(), None);
+
+        let values = argv(&["", "--output", ""]);
+        let mut parser = ArgvParser::new(&COMMAND, &values);
+        assert_eq!(parser.next_event(), Some(Ok(Event::Arg { arg: &INPUT, value: b"" })));
+        assert_eq!(parser.next_event(), Some(Ok(Event::Flag { flag: &OUTPUT, value: Some(b"") })),);
+        assert_eq!(parser.next_event(), None);
+    }
+
+    #[test]
+    fn negative_number_policy_accepts_only_complete_decimal_spellings() {
+        static VALUES: Arg<'static> = Arg {
+            key: 90,
+            name: "values",
+            required: false,
+            variadic: true,
+            allow_negative_numbers: true,
+            ..Arg::REQUIRED
+        };
+        static NUMBERS: Command<'static> =
+            Command { name: "numbers", args: &[&VALUES], ..Command::EMPTY };
+
+        let values = argv(&["-.5", "-1.", "-1e+2", "-0"]);
+        let mut parser = ArgvParser::new(&NUMBERS, &values);
+        assert_eq!(parser.next_event(), Some(Ok(Event::Arg { arg: &VALUES, value: b"-.5" })));
+        assert_eq!(parser.next_event(), Some(Ok(Event::Arg { arg: &VALUES, value: b"-1." })));
+        assert_eq!(parser.next_event(), Some(Ok(Event::Arg { arg: &VALUES, value: b"-1e+2" })));
+        assert_eq!(parser.next_event(), Some(Ok(Event::Arg { arg: &VALUES, value: b"-0" })));
+        assert_eq!(parser.next_event(), None);
+
+        let values = argv(&["-1e+"]);
+        let mut parser = ArgvParser::new(&NUMBERS, &values);
+        assert_eq!(parser.next_event(), Some(Err(Error::UnknownFlag { token: b"-1e+" })));
+
+        let values = argv(&["-+1"]);
+        let mut parser = ArgvParser::new(&NUMBERS, &values);
+        assert_eq!(parser.next_event(), Some(Err(Error::UnknownFlag { token: b"-+1" })));
+
+        let values = argv(&["--1"]);
+        let mut parser = ArgvParser::new(&NUMBERS, &values);
+        assert_eq!(parser.next_event(), Some(Err(Error::UnknownFlag { token: b"--1" })));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn non_utf8_and_nul_tokens_are_matched_and_reported_byte_exactly() {
+        use std::os::unix::ffi::OsStrExt as _;
+
+        let invalid_long = OsStr::from_bytes(b"--verbose-\xff");
+        let values = [invalid_long];
+        let mut parser = ArgvParser::new(&COMMAND, &values);
+        assert_eq!(parser.next_event(), Some(Err(Error::UnknownFlag { token: b"--verbose-\xff" })),);
+        assert_eq!(parser.next_event(), None);
+
+        let invalid_short = OsStr::from_bytes(b"-\xff");
+        let values = [invalid_short];
+        let mut parser = ArgvParser::new(&COMMAND, &values);
+        assert_eq!(parser.next_event(), Some(Err(Error::UnknownFlag { token: b"-\xff" })));
+        assert_eq!(parser.next_event(), None);
+
+        let nul_word = OsStr::from_bytes(b"word\0suffix");
+        let values = [nul_word];
+        let mut parser = ArgvParser::new(&COMMAND, &values);
+        assert_eq!(
+            parser.next_event(),
+            Some(Ok(Event::Arg { arg: &INPUT, value: b"word\0suffix" })),
+        );
+        assert_eq!(parser.next_event(), None);
+    }
 }
