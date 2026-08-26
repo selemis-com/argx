@@ -14,8 +14,9 @@
 //! definition table contains only definitions referenced by detailed nodes returned in that result.
 //!
 //! The serialized representation carries [`CONTRACT_VERSION`] so consumers can identify the wire
-//! format they received. It is intentionally sparse: empty paths/collections and false capability
-//! flags are omitted. Positional multiplicity is expressed directly through `required` and
+//! format they received. It is intentionally sparse: optional empty collections and default-false
+//! argument properties are omitted where absence is unambiguous, while command `invocable` remains
+//! explicit. Positional multiplicity is expressed directly through `required` and
 //! `variadic`; a named option's `type` is present exactly when each occurrence consumes one value,
 //! while `repeatable` controls occurrence multiplicity. Compatibility guarantees are release-policy
 //! concerns rather than inferred from Rust API compatibility.

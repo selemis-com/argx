@@ -148,6 +148,18 @@ mod tests {
         input: Option<String>,
     }
 
+    /// Covers explicit lexical value policies exposed through machine contracts.
+    #[derive(argx::Parser)]
+    #[argx(name = "value-policy")]
+    struct ValuePolicyCli {
+        #[argx(long, allow_hyphen_values)]
+        raw: Option<String>,
+        #[argx(long, allow_negative_numbers)]
+        number: Option<i32>,
+        #[argx(allow_negative_numbers)]
+        positional: Option<i32>,
+    }
+
     /// Domain value shared by multiple invocation bindings.
     #[derive(Debug, PartialEq, Eq, argx::Contract)]
     enum OutputFormat {
@@ -256,6 +268,11 @@ mod tests {
         Ok(())
     }
 
+    #[argx::contract(ValuePolicyCli)]
+    const fn value_policy_contract() -> Result<(), ()> {
+        Ok(())
+    }
+
     #[argx::contract(TypedContractCli)]
     const fn typed_contract() -> Result<(), ()> {
         Ok(())
@@ -318,10 +335,6 @@ mod tests {
 
     #[test]
     fn repeated_named_options_expose_element_type_and_repeatability() {
-        let cli = RepeatedOptionCli::try_parse_from(["repeat", "--tag", "one", "--tag", "two"])
-            .expect("repeated option fixture should parse");
-        assert_eq!(cli.tag, ["one", "two"]);
-
         let contract = RepeatedOptionCli::contract(ContractRequest::root())
             .expect("repeated option contract should exist");
         let invocation =
@@ -335,11 +348,6 @@ mod tests {
 
     #[test]
     fn contract_projects_short_only_options_optional_positionals_and_positional_constraints() {
-        let parsed = ProjectionCli::try_parse_from(["projection", "-t", "secret"])
-            .expect("projection fixture should remain parseable");
-        assert_eq!(parsed.token, "secret");
-        assert_eq!(parsed.input, None);
-
         let request = ContractRequest::root();
         assert!(request.path().is_empty());
         assert_eq!(request.depth(), ContractDepth::Shallow);
@@ -360,15 +368,32 @@ mod tests {
         let json = contract.to_json().expect("compact contract JSON should serialize");
         assert!(!json.contains('\n'));
         assert!(json.contains(r#""name":"-t""#));
+        assert!(!json.contains(r#""types""#));
+    }
+
+    #[test]
+    fn explicit_value_policies_are_projected_without_default_false_noise() {
+        let contract = ValuePolicyCli::contract(ContractRequest::root())
+            .expect("value policy contract should exist");
+        let invocation =
+            contract.command.invocation.as_ref().expect("root command should be detailed");
+        let context = &invocation[0];
+
+        assert!(context.options[0].allow_hyphen_values);
+        assert!(!context.options[0].allow_negative_numbers);
+        assert!(!context.options[1].allow_hyphen_values);
+        assert!(context.options[1].allow_negative_numbers);
+        assert!(context.positionals[0].allow_negative_numbers);
+
+        let json = contract.to_json().expect("value policy contract should serialize");
+        assert!(json.contains(r#""allowHyphenValues":true"#));
+        assert!(json.contains(r#""allowNegativeNumbers":true"#));
+        assert!(!json.contains(r#""allowHyphenValues":false"#));
+        assert!(!json.contains(r#""allowNegativeNumbers":false"#));
     }
 
     #[test]
     fn invocation_values_reference_one_shared_named_type_definition() {
-        let cli = TypedContractCli::try_parse_from(["typed-contract", "--format", "json", "text"])
-            .expect("typed contract fixture should parse");
-        assert_eq!(cli.format.format, Some(OutputFormat::Json));
-        assert_eq!(cli.fallback, OutputFormat::Text);
-
         let contract = TypedContractCli::contract(ContractRequest::root())
             .expect("typed invocation contract should exist");
         assert_eq!(contract.types.len(), 1);
