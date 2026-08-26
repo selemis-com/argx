@@ -35,7 +35,9 @@ pub struct NoTypeProjection;
 
 /// Generated type-level semantic projection for one derived command declaration.
 pub trait CommandTypeContract {
-    /// Value-bearing fields in declaration/composition order.
+    /// Argument fields in declaration/composition order.
+    ///
+    /// Value-less switches still occupy their static flag slot and resolve to no semantic value.
     type Fields;
     /// Execution projection for this command, or [`NoTypeProjection`] when it has subcommands.
     type Execution;
@@ -90,11 +92,7 @@ impl ResolveExecutionContract for NoTypeProjection {
     }
 }
 
-/// Generic semantic execution projection for one directly invocable command.
-#[derive(Debug, Clone, Copy)]
-pub struct ExecutionProjection<T>(std::marker::PhantomData<fn() -> T>);
-
-impl<T> ResolveExecutionContract for ExecutionProjection<T>
+impl<T> ResolveExecutionContract for T
 where
     T: ExecutionContractSource,
 {

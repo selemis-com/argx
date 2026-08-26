@@ -1271,7 +1271,7 @@ fn semantic_projection(command: &model::Command, facade: &TokenStream) -> Semant
     );
 
     let execution = if directly_invocable {
-        quote!(#facade::__private::ExecutionProjection<Self>)
+        quote!(Self)
     } else {
         quote!(#facade::__private::NoTypeProjection)
     };

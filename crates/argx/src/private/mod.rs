@@ -23,8 +23,8 @@ pub use model::{
 pub(crate) use scope::{Named, long as resolve_long, short as resolve_short};
 pub use traits::{
     CommandArgs, CommandTypeContract, CommandTypes, CommandValueTypes, ExecutionContractSource,
-    ExecutionProjection, ExecutionResult, InvocableCommandContract, NoTypeProjection,
-    ResolveCommandTypeContract, ResolveExecutionContract, ResolveSubcommandTree,
+    ExecutionResult, InvocableCommandContract, NoTypeProjection, ResolveCommandTypeContract,
+    ResolveExecutionContract, ResolveSubcommandTree,
     ResolveSubcommands, ResolveValueFields, SubcommandTypeContract, Subcommands,
 };
 pub use type_contract::{
