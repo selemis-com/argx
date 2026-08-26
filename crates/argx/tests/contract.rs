@@ -2,8 +2,8 @@
 //!
 //! This layer owns the public projection produced by `Parser::contract`: canonical paths, aliases,
 //! invocation contexts, multiplicity, value sources, relationships, discovery depth, and serialized
-//! protocol spelling. Parsing the representative fixture is useful only as a cross-check that the
-//! declaration backing the contract remains invocable; detailed parser semantics live elsewhere.
+//! protocol spelling. Detailed parser semantics live in the parser and binding suites instead of
+//! being repeated here.
 
 #[cfg(test)]
 #[cfg(feature = "derive")]
@@ -317,57 +317,6 @@ mod tests {
     }
 
     #[test]
-    fn representative_contract_fixture_remains_parseable() {
-        let cli = Cli::try_parse_from([
-            "tool",
-            "--config",
-            "tool.toml",
-            "--profile",
-            "fixture",
-            "--verbose",
-            "objects",
-            "get",
-            "--endpoint",
-            "https://example.test",
-            "--auth-token",
-            "secret",
-            "object-1",
-            "primary",
-            "secondary",
-        ])
-        .expect("representative argv should parse");
-
-        let Cli { config, profile, verbose, command } = cli;
-        assert_eq!(config.as_deref(), Some("tool.toml"));
-        assert_eq!(profile, "fixture");
-        assert!(verbose);
-
-        let Commands::Objects(ObjectsArgs { command }) = command else {
-            panic!("expected objects command");
-        };
-        let ObjectCommands::Get(GetArgs { endpoint, auth, stdout, id, selectors }) = command else {
-            panic!("expected get command");
-        };
-        let AuthArgs { token } = auth;
-
-        assert_eq!(endpoint.as_deref(), Some("https://example.test"));
-        assert_eq!(token, "secret");
-        assert!(!stdout);
-        assert_eq!(id, "object-1");
-        assert_eq!(selectors, ["primary", "secondary"]);
-    }
-
-    #[test]
-    fn json_contract_fixture_remains_parseable() {
-        let cli = JsonCli::try_parse_from(["echo", "--output", "file", "value"])
-            .expect("JSON contract fixture argv should parse");
-        let JsonCli { output, value } = cli;
-
-        assert_eq!(output, "file");
-        assert_eq!(value, "value");
-    }
-
-    #[test]
     fn repeated_named_options_expose_element_type_and_repeatability() {
         let cli = RepeatedOptionCli::try_parse_from(["repeat", "--tag", "one", "--tag", "two"])
             .expect("repeated option fixture should parse");
@@ -434,8 +383,7 @@ mod tests {
 
         let invocation = contract.command.invocation.expect("root command should be detailed");
         let context = &invocation[0];
-        let option_type =
-            context.options[0].value_type.as_ref().expect("format takes a value");
+        let option_type = context.options[0].value_type.as_ref().expect("format takes a value");
         let positional_type = &context.positionals[0].value_type;
         let expected = TypeContractValue::Reference { definition: "type-0".to_owned() };
         assert_eq!(option_type, &expected);

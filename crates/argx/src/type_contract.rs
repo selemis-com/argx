@@ -113,7 +113,7 @@ pub enum TypeContractValue {
 }
 
 /// Exact built-in Rust primitive represented by a type contract.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 pub enum PrimitiveType {
     /// `bool`.
     #[serde(rename = "bool")]

@@ -27,7 +27,7 @@ use serde::Serialize;
 use crate::{
     __private::{
         Arg as StaticArg, Command as StaticCommand, CommandArgs as StaticCommandArgs,
-        CommandExecutionTypes, CommandValueTypes, ConstraintKind, Flag as StaticFlag, Key,
+        CommandValueTypes, ConstraintKind, Flag as StaticFlag, Key,
         ResolveCommandTypeContract as SemanticCommandContract, TypeResolver,
     },
     error::display_bytes,
@@ -330,6 +330,7 @@ pub enum ConstraintContractKind {
     Conflicts,
 }
 
+/// Returns whether a boolean value is false.
 const fn is_false(value: &bool) -> bool {
     !*value
 }
@@ -422,10 +423,6 @@ where
 {
     let (invocation, execution) = if detailed {
         let (invocation, execution) = invocation_contract::<T>(contexts, resolver);
-        let execution = execution.map(|execution| ExecutionContract {
-            success: execution.success,
-            error: execution.error,
-        });
         assert_eq!(
             command.subcommands.is_empty(),
             execution.is_some(),
@@ -477,7 +474,7 @@ where
 fn invocation_contract<T>(
     contexts: &[&'static StaticCommand<'static>],
     resolver: &mut TypeResolver,
-) -> (Vec<CommandContextContract>, Option<CommandExecutionTypes>)
+) -> (Vec<CommandContextContract>, Option<ExecutionContract>)
 where
     T: StaticCommandArgs + SemanticCommandContract,
 {
@@ -576,15 +573,9 @@ fn option_contract(flag: &StaticFlag<'_>, value_type: Option<TypeContractValue>)
     );
 
     let value_type = if flag.takes_value {
-        Some(
-            value_type
-                .expect("generated value-taking options must expose a semantic value type"),
-        )
+        Some(value_type.expect("generated value-taking options must expose a semantic value type"))
     } else {
-        assert!(
-            value_type.is_none(),
-            "generated switches must not expose a consumed value type",
-        );
+        assert!(value_type.is_none(), "generated switches must not expose a consumed value type",);
         None
     };
 

@@ -85,7 +85,7 @@ pub(crate) fn contract(attribute: TokenStream, input: TokenStream) -> syn::Resul
         impl #facade::__private::ExecutionContractSource for #command_type {
             fn resolve_execution(
                 resolver: &mut #facade::__private::TypeResolver,
-            ) -> #facade::__private::CommandExecutionTypes {
+            ) -> #facade::ExecutionContract {
                 #resolution
             }
         }

@@ -984,7 +984,6 @@ fn semantic_projection(command: &model::Command, facade: &TokenStream) -> Semant
     let declaration = key::declaration_hash(&command.binding.fingerprint);
     let fields_ident = format_ident!("__ArgxContractFieldsFor{}H{}", suffix, declaration);
     let subcommands_ident = format_ident!("__ArgxContractSubcommandsFor{}H{}", suffix, declaration);
-    let execution_ident = format_ident!("__ArgxContractExecutionFor{}H{}", suffix, declaration);
     let partial_ident = partial_type_constructor(command);
     let shape_ident = format_ident!("__ArgxContractShapeFor{}H{}", suffix, declaration);
     let (impl_generics, ty_generics, where_clause) = command.binding.generics.split_for_impl();
@@ -1271,38 +1270,10 @@ fn semantic_projection(command: &model::Command, facade: &TokenStream) -> Semant
         },
     );
 
-    let (execution, execution_declaration) = if directly_invocable {
-        (
-            quote!(#execution_ident<Self>),
-            Some(quote! {
-                #[doc = "Argx-generated execution contract witness."]
-                #[doc(hidden)]
-                #[derive(Debug, Clone, Copy)]
-                #[allow(
-                    unreachable_pub,
-                    unnameable_types,
-                    reason = "generated witness is exposed only through Argx's hidden projection trait"
-                )]
-                #visibility struct #execution_ident<T>(::core::marker::PhantomData<fn() -> T>);
-
-                impl<T> #facade::__private::ResolveExecutionContract for #execution_ident<T>
-                where
-                    T: #facade::__private::ExecutionContractSource,
-                {
-                    fn resolve(
-                        resolver: &mut #facade::__private::TypeResolver,
-                    ) -> ::std::option::Option<#facade::__private::CommandExecutionTypes> {
-                        ::std::option::Option::Some(
-                            <T as #facade::__private::ExecutionContractSource>::resolve_execution(
-                                resolver,
-                            ),
-                        )
-                    }
-                }
-            }),
-        )
+    let execution = if directly_invocable {
+        quote!(#facade::__private::ExecutionProjection<Self>)
     } else {
-        (quote!(#facade::__private::NoTypeProjection), None)
+        quote!(#facade::__private::NoTypeProjection)
     };
 
     SemanticProjection {
@@ -1311,7 +1282,6 @@ fn semantic_projection(command: &model::Command, facade: &TokenStream) -> Semant
             #partial_declaration
             #field_declaration
             #subcommand_declaration
-            #execution_declaration
         },
         partial,
         partial_constructor,

@@ -396,8 +396,7 @@ pub use contract::{
 pub use error::{Error, InvalidValue};
 pub use type_contract::{
     ContractType, PrimitiveType, TYPE_CONTRACT_VERSION, TypeContract, TypeContractValue,
-    TypeDefinition, TypeDefinitionKind, TypeFieldContract, TypeVariantContract,
-    TypeVariantKind,
+    TypeDefinition, TypeDefinitionKind, TypeFieldContract, TypeVariantContract, TypeVariantKind,
 };
 
 // Generated absolute paths must also work when a derive is used inside this crate. Integration

@@ -59,7 +59,7 @@ pub(crate) fn contract(input: &DeriveInput) -> syn::Result<TokenStream> {
             fn type_key() -> #facade::__private::TypeKey {
                 #[doc = "Private nominal type-contract declaration marker."]
                 struct Marker;
-                #facade::__private::TypeKey::new::<Marker>(
+                #facade::__private::TypeKey::named::<Marker>(
                     ::std::vec![#(#type_keys),*],
                     ::std::vec![#(#const_keys),*],
                 )
