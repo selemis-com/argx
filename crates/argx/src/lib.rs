@@ -204,7 +204,7 @@
 //! # Ok::<(), argx::ContractError>(())
 //! ```
 //!
-//! A [`Contract`] contains the canonical root and selected command, command aliases, direct
+//! A [`struct@Contract`] contains the canonical root and selected command, command aliases, direct
 //! invocability, the root-to-selected invocation contexts, positional and named arguments, value
 //! cardinality, global scope, environment/default sources, and normalized `requires` / `conflicts`
 //! relationships. Command paths supplied in a [`ContractRequest`] may use aliases; returned paths
@@ -270,6 +270,7 @@ mod binding;
 pub mod contract;
 mod error;
 mod help;
+pub mod type_contract;
 
 use std::ffi::{OsStr, OsString};
 
@@ -279,6 +280,10 @@ pub use contract::{
     ContractRequest, InvocationContract, OptionContract, ValueContract,
 };
 pub use error::{Error, InvalidValue};
+pub use type_contract::{
+    ContractType, PrimitiveType, TYPE_CONTRACT_VERSION, TypeContract, TypeContractValue,
+    TypeDefinition, TypeDefinitionKind, TypeFieldContract, TypeVariantContract, TypeVariantKind,
+};
 
 // Generated absolute paths must also work when a derive is used inside this crate. Integration
 // targets already receive this name through Cargo; the library target needs the self alias.
@@ -289,7 +294,7 @@ pub use error::{Error, InvalidValue};
 extern crate self as argx;
 
 #[cfg(feature = "derive")]
-pub use argx_derive::{Args, Parser, Subcommand};
+pub use argx_derive::{Args, Contract, Parser, Subcommand};
 
 /// Marks a reusable argument group derived with `#[derive(Args)]`.
 ///

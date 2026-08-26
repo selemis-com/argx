@@ -18,6 +18,7 @@ mod codegen;
 mod crate_name;
 mod key;
 mod model;
+mod type_contract;
 
 use proc_macro::TokenStream;
 use syn::{DeriveInput, parse_macro_input};
@@ -52,6 +53,13 @@ pub fn derive_parser(input: TokenStream) -> TokenStream {
 pub fn derive_args(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     expand_command(&input, false).unwrap_or_else(syn::Error::into_compile_error).into()
+}
+
+/// Derives a standalone machine-readable contract for a Rust struct or enum.
+#[proc_macro_derive(Contract, attributes(argx))]
+pub fn derive_contract(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    type_contract::contract(&input).unwrap_or_else(syn::Error::into_compile_error).into()
 }
 
 /// Derives a subcommand set for an enum.

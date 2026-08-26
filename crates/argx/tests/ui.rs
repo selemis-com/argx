@@ -17,9 +17,23 @@ mod tests {
             ("environment", "argx"),
             ("flatten", "argx"),
             ("subcommands", "argx"),
+            ("contract", "argx"),
+            ("contract_renamed", "cli_args"),
         ] {
             support::assert_ui_success(fixture, dependency);
         }
+    }
+
+    #[test]
+    fn invalid_type_contract_declarations_are_rejected_deterministically() {
+        support::assert_ui_failure(
+            "invalid_contract",
+            "argx",
+            snapbox::str![[r#"
+error: Contract can only be derived for structs and enums
+
+"#]],
+        );
     }
 
     #[test]

@@ -9,6 +9,7 @@ mod contract;
 mod model;
 mod scope;
 mod traits;
+mod type_contract;
 mod value;
 
 pub use compose::{
@@ -23,6 +24,9 @@ pub use model::{
 };
 pub(crate) use scope::{Named, long as resolve_long, short as resolve_short};
 pub use traits::{CommandArgs, CommandContract, Subcommands};
+pub use type_contract::{
+    TypeContractSource, TypeKey, TypeResolver, const_key, discover_type_contract,
+};
 pub use value::{
     RawValue, os_value, os_values, parsed_value, parsed_values, text_value, text_values,
 };
