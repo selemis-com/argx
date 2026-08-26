@@ -2,8 +2,9 @@
 //!
 //! The derive crate is intentionally a compile-time frontend. It parses attributes and Rust
 //! documentation into one normalized semantic model, validates every invariant visible to the
-//! current expansion, and emits static runtime/contract tables plus typed binding code. Runtime
-//! parsing policy lives in the `argx` facade crate rather than in generated token-matching logic.
+//! current expansion, and emits shared static command metadata plus typed binding and semantic
+//! projections. Runtime parsing policy lives in the `argx` facade crate rather than in generated
+//! token-matching logic.
 
 #![doc(
     html_logo_url = "https://raw.githubusercontent.com/selemis-com/argx/master/.github/assets/logo.jpg",

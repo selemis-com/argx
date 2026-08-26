@@ -1,9 +1,9 @@
-//! Private runtime projection of normalized command semantics.
+//! Private static projection of normalized command semantics.
 //!
-//! These types are immutable tables generated once per derive. The raw parser and help renderer
-//! borrow them directly, while typed binding refers back to arguments through stable [`Key`]
-//! values. Keeping this projection free of destination Rust types lets the runtime parse without
-//! reflection or per-invocation command construction.
+//! These immutable tables are generated once per derive and shared by parsing, help rendering,
+//! typed binding, and machine-contract discovery. Typed binding refers back to arguments through
+//! stable [`Key`] values, while semantic Rust value types remain in a separate lazy projection so
+//! parsing does not require contract support.
 
 /// Stable semantic identity assigned to one command or argument declaration.
 pub type Key = u64;
@@ -105,7 +105,7 @@ pub static HELP_ACTION: Action<'static> = Action {
     kind: ActionKind::Help,
 };
 
-/// Static command semantics consumed by parsing and help generation.
+/// Static command semantics shared by parsing, help generation, and contract discovery.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Command<'a> {
     /// Command name as exposed on the command line.
@@ -175,10 +175,14 @@ pub struct Flag<'a> {
     pub env: Option<&'a str>,
     /// Whether one occurrence consumes a value.
     pub takes_value: bool,
+    /// Whether this named argument may occur more than once.
+    pub repeatable: bool,
     /// Whether this flag must occur at least once.
     pub required: bool,
     /// Whether the final value is required when the configured environment variable is unset.
     pub required_if_env_unset: bool,
+    /// Whether absence is satisfied by a typed Rust default expression.
+    pub has_default: bool,
     /// Whether a detached value may itself be flag-like.
     pub allow_hyphen_values: bool,
     /// Whether a detached negative number may be consumed while other flag-like values are
@@ -199,8 +203,10 @@ impl Flag<'static> {
         global: false,
         env: None,
         takes_value: false,
+        repeatable: false,
         required: false,
         required_if_env_unset: false,
+        has_default: false,
         allow_hyphen_values: false,
         allow_negative_numbers: false,
     };

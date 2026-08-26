@@ -1,9 +1,9 @@
 //! Canonical semantic model built from derive input before code generation.
 //!
 //! CLI meaning is normalized here exactly once. Code generation then projects that meaning into
-//! private runtime command tables while Rust-specific construction and value conversion remain in
-//! separate binding data. Future help, contract, and completion projections should extend this
-//! model rather than reinterpret attributes or runtime parser tables.
+//! shared static command tables while Rust-specific construction, value conversion, and semantic
+//! type resolution remain separate. Future projections should extend this model rather than
+//! reinterpret attributes or generated command tables.
 //!
 //! Validation is split between declaration-local checks that the proc macro can resolve directly
 //! and composition checks emitted into generated constants. The latter are necessary for flattened

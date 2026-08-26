@@ -1,10 +1,10 @@
 //! Code generation for `Parser` and `Args` structs.
 //!
-//! One normalized command produces three coordinated artifacts: static runtime parse/help tables,
-//! static machine-contract tables, and typed partial-state binding code. Flattened `Args` children
-//! are composed into the first two at compile time while retaining nested Rust values in the typed
-//! state. Partial binding state is wrapped in generated nominal witnesses so private composed types
-//! do not leak through the public derive ABI. This is intentionally verbose generation: semantics
+//! One normalized command produces two coordinated artifacts: static command metadata and typed
+//! partial-state binding code. Flattened `Args` children are composed into the static metadata at
+//! compile time while retaining nested Rust values in the typed state. Partial binding state is
+//! wrapped in generated nominal witnesses so private composed types do not leak through the public
+//! derive ABI. This is intentionally verbose generation: semantics
 //! should be decided in `model`, not rediscovered from emitted tables.
 
 use proc_macro2::TokenStream;
@@ -27,19 +27,6 @@ struct Tables {
     constraints: TokenStream,
     /// Final flattened help-group slice expression stored on the command.
     help_groups: TokenStream,
-}
-
-/// Generated static machine-contract table expressions for one command declaration.
-#[derive(Debug)]
-struct ContractTables {
-    /// Declarations required to compose flattened child contract tables.
-    decls: TokenStream,
-    /// Final named-argument contract slice expression.
-    flags: TokenStream,
-    /// Final positional-argument contract slice expression.
-    args: TokenStream,
-    /// Final normalized constraint slice expression.
-    constraints: TokenStream,
 }
 
 /// Generated semantic type projection for one command declaration.
@@ -106,8 +93,8 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
     let keys = key::constants(&facade, &command.binding.fingerprint, flags.len(), args.len());
     let command_key = key::ident("COMMAND", None);
 
-    // Runtime and contract tables are generated side by side from the same normalized argument.
-    // They intentionally differ in shape but must never reinterpret attributes independently.
+    // Static command metadata is generated once from the normalized argument model and is shared
+    // by parsing, help generation, and machine-contract discovery.
     let flag_tables = flags.iter().enumerate().map(|(index, (_, field))| {
         let table = format_ident!("ARGX_FLAG_{index}");
         let key = key::ident("FLAG", Some(index));
@@ -123,12 +110,14 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
         let global = argument.global;
         let env = option_str(argument.env.as_deref());
         let takes_value = !field.is_switch();
+        let repeatable = argument.shape == model::Shape::Many;
         let required = argument.shape == model::Shape::Required
             && argument.env.is_none()
             && !argument.has_default;
         let required_if_env_unset = argument.shape == model::Shape::Required
             && argument.env.is_some()
             && !argument.has_default;
+        let has_default = argument.has_default;
         let allow_hyphen_values = argument.allow_hyphen_values;
         let allow_negative_numbers = argument.allow_negative_numbers;
         quote! {
@@ -143,49 +132,13 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                 global: #global,
                 env: #env,
                 takes_value: #takes_value,
+                repeatable: #repeatable,
                 required: #required,
                 required_if_env_unset: #required_if_env_unset,
+                has_default: #has_default,
                 allow_hyphen_values: #allow_hyphen_values,
                 allow_negative_numbers: #allow_negative_numbers,
             };
-        }
-    });
-
-    let contract_flag_tables = flags.iter().enumerate().map(|(index, (_, field))| {
-        let table = format_ident!("ARGX_CONTRACT_FLAG_{index}");
-        let key = key::ident("FLAG", Some(index));
-        let Some(argument) = field.argument() else {
-            unreachable!("flag list only contains argument fields");
-        };
-        let model::ArgumentKind::Flag { longs, aliases, shorts } = &argument.kind else {
-            unreachable!("flag list only contains named arguments");
-        };
-        let name = &field.binding.name;
-        let help = option_str(argument.help.as_deref());
-        let global = argument.global;
-        let env = option_str(argument.env.as_deref());
-        let cardinality = contract_cardinality(argument.shape, field.is_switch(), &facade);
-        let required = argument.shape == model::Shape::Required && !argument.has_default;
-        let has_default = argument.has_default;
-        let allow_hyphen_values = argument.allow_hyphen_values;
-        let allow_negative_numbers = argument.allow_negative_numbers;
-        quote! {
-            static #table: #facade::__private::FlagSpec<'static> =
-                #facade::__private::FlagSpec {
-                    key: #key,
-                    name: #name,
-                    help: #help,
-                    longs: &[#(#longs),*],
-                    aliases: &[#(#aliases),*],
-                    shorts: &[#(#shorts),*],
-                    global: #global,
-                    env: #env,
-                    cardinality: #cardinality,
-                    required: #required,
-                    has_default: #has_default,
-                    allow_hyphen_values: #allow_hyphen_values,
-                    allow_negative_numbers: #allow_negative_numbers,
-                };
         }
     });
 
@@ -212,33 +165,6 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                 };
         }
     });
-    let contract_arg_tables = args.iter().enumerate().map(|(index, (_, field))| {
-        let table = format_ident!("ARGX_CONTRACT_ARG_{index}");
-        let key = key::ident("ARG", Some(index));
-        let Some(argument) = field.argument() else {
-            unreachable!("positional list only contains argument fields");
-        };
-        let name = &field.binding.name;
-        let help = option_str(argument.help.as_deref());
-        let cardinality = contract_cardinality(argument.shape, false, &facade);
-        let required = matches!(argument.shape, model::Shape::Bool | model::Shape::Required)
-            && !argument.has_default;
-        let has_default = argument.has_default;
-        let allow_negative_numbers = argument.allow_negative_numbers;
-        quote! {
-            static #table: #facade::__private::ArgSpec<'static> =
-                #facade::__private::ArgSpec {
-                    key: #key,
-                    name: #name,
-                    help: #help,
-                    cardinality: #cardinality,
-                    required: #required,
-                    has_default: #has_default,
-                    allow_negative_numbers: #allow_negative_numbers,
-                };
-        }
-    });
-
     let constraint_count = command
         .fields
         .iter()
@@ -251,12 +177,6 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
     let command_args = &tables.args;
     let command_constraints = &tables.constraints;
     let command_help_groups = &tables.help_groups;
-    let contract_tables =
-        contract_tables(command, &facade, flags.len(), args.len(), constraint_count);
-    let contract_table_decls = &contract_tables.decls;
-    let contract_flags = &contract_tables.flags;
-    let contract_args = &contract_tables.args;
-    let contract_constraints = &contract_tables.constraints;
     let constraint_tables = constraint_tables(command, &facade, command_flags, command_args);
     let semantic_projection = semantic_projection(command, &facade);
     let semantic_declarations = &semantic_projection.declarations;
@@ -607,13 +527,6 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
             quote!(<#ty as #facade::__private::Subcommands>::COMMANDS)
         },
     );
-    let contract_subcommands = subcommand.map_or_else(
-        || quote!(&[]),
-        |(_, field)| {
-            let ty = &field.binding.ty;
-            quote!(<#ty as #facade::__private::Subcommands>::CONTRACTS)
-        },
-    );
     let parser_impl = command.binding.root.then(|| {
         quote! {
             impl #impl_generics #facade::Parser for #ident #ty_generics #where_clause {}
@@ -637,10 +550,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
             #keys
             #(#flag_tables)*
             #(#arg_tables)*
-            #(#contract_flag_tables)*
-            #(#contract_arg_tables)*
             #table_decls
-            #contract_table_decls
             #(#constraint_tables)*
             #version_action
 
@@ -660,17 +570,6 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                     key: #command_key,
                 };
 
-            static ARGX_CONTRACT_COMMAND: #facade::__private::CommandSpec<'static> =
-                #facade::__private::CommandSpec {
-                    name: #name,
-                    about: #about,
-                    aliases: &[#(#aliases),*],
-                    flags: #contract_flags,
-                    args: #contract_args,
-                    constraints: #contract_constraints,
-                    subcommands: #contract_subcommands,
-                };
-
             const _: () = ::core::assert!(
                 #facade::__private::action_flag_spellings_disjoint(
                     ARGX_COMMAND.actions,
@@ -679,13 +578,6 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                 "command contains a flag spelling reserved by a built-in action",
             );
             #flattened_checks
-
-            impl #impl_generics #facade::__private::CommandContract
-                for #ident #ty_generics #where_clause
-            {
-                const CONTRACT: &'static #facade::__private::CommandSpec<'static> =
-                    &ARGX_CONTRACT_COMMAND;
-            }
 
             impl #semantic_impl_generics #facade::__private::CommandTypeContract
                 for #ident #semantic_ty_generics #semantic_where_clause
@@ -906,165 +798,6 @@ fn constraint_target(
     }
 
     quote!(#facade::__private::argument_key_by_name(#flags, #args, #target))
-}
-
-/// Maps one normalized Rust value shape into the private contract vocabulary.
-fn contract_cardinality(shape: model::Shape, switch: bool, facade: &TokenStream) -> TokenStream {
-    if switch {
-        return quote!(#facade::__private::Cardinality::Switch);
-    }
-    match shape {
-        model::Shape::Bool | model::Shape::Required => {
-            quote!(#facade::__private::Cardinality::One)
-        }
-        model::Shape::Optional => quote!(#facade::__private::Cardinality::Optional),
-        model::Shape::Many => quote!(#facade::__private::Cardinality::Many),
-    }
-}
-
-/// Builds one flat machine-contract table from direct fields and flattened children.
-fn contract_tables(
-    command: &model::Command,
-    facade: &TokenStream,
-    flag_count: usize,
-    arg_count: usize,
-    constraint_count: usize,
-) -> ContractTables {
-    if !command.fields.iter().any(model::Field::is_flatten) {
-        let flags = (0..flag_count).map(|index| {
-            let table = format_ident!("ARGX_CONTRACT_FLAG_{index}");
-            quote!(&#table)
-        });
-        let args = (0..arg_count).map(|index| {
-            let table = format_ident!("ARGX_CONTRACT_ARG_{index}");
-            quote!(&#table)
-        });
-        let constraints = (0..constraint_count).map(|index| {
-            let table = format_ident!("ARGX_CONSTRAINT_{index}");
-            quote!(#table)
-        });
-        return ContractTables {
-            decls: TokenStream::new(),
-            flags: quote!(&[#(#flags),*]),
-            args: quote!(&[#(#args),*]),
-            constraints: quote!(&[#(#constraints),*]),
-        };
-    }
-
-    let mut flag_groups = Vec::new();
-    let mut arg_groups = Vec::new();
-    let mut constraint_groups = Vec::new();
-    let mut own_flags = Vec::new();
-    let mut own_args = Vec::new();
-    let mut own_constraints = Vec::new();
-    let mut flag_at = 0_usize;
-    let mut arg_at = 0_usize;
-    let mut constraint_at = 0_usize;
-
-    fn flush_flags(own: &mut Vec<usize>, groups: &mut Vec<TokenStream>) {
-        if own.is_empty() {
-            return;
-        }
-        let refs = own.iter().map(|index| {
-            let table = format_ident!("ARGX_CONTRACT_FLAG_{index}");
-            quote!(&#table)
-        });
-        groups.push(quote!(&[#(#refs),*]));
-        own.clear();
-    }
-
-    fn flush_args(own: &mut Vec<usize>, groups: &mut Vec<TokenStream>) {
-        if own.is_empty() {
-            return;
-        }
-        let refs = own.iter().map(|index| {
-            let table = format_ident!("ARGX_CONTRACT_ARG_{index}");
-            quote!(&#table)
-        });
-        groups.push(quote!(&[#(#refs),*]));
-        own.clear();
-    }
-
-    fn flush_constraints(own: &mut Vec<usize>, groups: &mut Vec<TokenStream>) {
-        if own.is_empty() {
-            return;
-        }
-        let entries = own.iter().map(|index| {
-            let table = format_ident!("ARGX_CONSTRAINT_{index}");
-            quote!(#table)
-        });
-        groups.push(quote!(&[#(#entries),*]));
-        own.clear();
-    }
-
-    for field in &command.fields {
-        match &field.semantics {
-            model::FieldSemantics::Argument(
-                argument @ model::Argument { kind: model::ArgumentKind::Flag { .. }, .. },
-            ) => {
-                own_flags.push(flag_at);
-                flag_at += 1;
-                for _ in argument.requires.iter().chain(&argument.conflicts) {
-                    own_constraints.push(constraint_at);
-                    constraint_at += 1;
-                }
-            }
-            model::FieldSemantics::Argument(
-                argument @ model::Argument { kind: model::ArgumentKind::Positional, .. },
-            ) => {
-                own_args.push(arg_at);
-                arg_at += 1;
-                for _ in argument.requires.iter().chain(&argument.conflicts) {
-                    own_constraints.push(constraint_at);
-                    constraint_at += 1;
-                }
-            }
-            model::FieldSemantics::Flatten => {
-                let ty = &field.binding.ty;
-                flush_flags(&mut own_flags, &mut flag_groups);
-                flush_args(&mut own_args, &mut arg_groups);
-                flush_constraints(&mut own_constraints, &mut constraint_groups);
-                flag_groups
-                    .push(quote!(<#ty as #facade::__private::CommandContract>::CONTRACT.flags));
-                arg_groups
-                    .push(quote!(<#ty as #facade::__private::CommandContract>::CONTRACT.args));
-                constraint_groups.push(
-                    quote!(<#ty as #facade::__private::CommandContract>::CONTRACT.constraints),
-                );
-            }
-            model::FieldSemantics::Subcommand => {}
-        }
-    }
-    flush_flags(&mut own_flags, &mut flag_groups);
-    flush_args(&mut own_args, &mut arg_groups);
-    flush_constraints(&mut own_constraints, &mut constraint_groups);
-
-    debug_assert_eq!(flag_at, flag_count);
-    debug_assert_eq!(arg_at, arg_count);
-    debug_assert_eq!(constraint_at, constraint_count);
-
-    ContractTables {
-        decls: quote! {
-            const ARGX_CONTRACT_FLAG_GROUPS:
-                &[&[&#facade::__private::FlagSpec<'static>]] = &[#(#flag_groups),*];
-            const ARGX_CONTRACT_ARG_GROUPS:
-                &[&[&#facade::__private::ArgSpec<'static>]] = &[#(#arg_groups),*];
-            static ARGX_CONTRACT_FLAGS: [&#facade::__private::FlagSpec<'static>;
-                #facade::__private::table_len(ARGX_CONTRACT_FLAG_GROUPS)] =
-                #facade::__private::concat_contract_flags(ARGX_CONTRACT_FLAG_GROUPS);
-            static ARGX_CONTRACT_ARGS: [&#facade::__private::ArgSpec<'static>;
-                #facade::__private::table_len(ARGX_CONTRACT_ARG_GROUPS)] =
-                #facade::__private::concat_contract_args(ARGX_CONTRACT_ARG_GROUPS);
-            const ARGX_CONTRACT_CONSTRAINT_GROUPS: &[&[#facade::__private::Constraint]] =
-                &[#(#constraint_groups),*];
-            static ARGX_CONTRACT_CONSTRAINTS: [#facade::__private::Constraint;
-                #facade::__private::table_len(ARGX_CONTRACT_CONSTRAINT_GROUPS)] =
-                #facade::__private::concat_constraints(ARGX_CONTRACT_CONSTRAINT_GROUPS);
-        },
-        flags: quote!(&ARGX_CONTRACT_FLAGS),
-        args: quote!(&ARGX_CONTRACT_ARGS),
-        constraints: quote!(&ARGX_CONTRACT_CONSTRAINTS),
-    }
 }
 
 /// Builds one flat parse table from this declaration's own fields and flattened children.

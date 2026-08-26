@@ -6,7 +6,6 @@
 //! changes public error precedence for every derived parser.
 
 use super::{
-    contract::CommandSpec,
     model::{ArgumentState, Command, Key},
     type_contract::TypeResolver,
 };
@@ -15,9 +14,9 @@ use crate::{argv::Event, type_contract::TypeContractValue};
 /// Resolved semantic value types for one command context.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommandValueTypes {
-    /// Value types for named arguments in static contract order; switches have no value.
+    /// Value types for named arguments in static command order; switches have no value.
     pub flags: Vec<Option<TypeContractValue>>,
-    /// Value types for positional arguments in static contract order.
+    /// Value types for positional arguments in static command order.
     pub args: Vec<TypeContractValue>,
 }
 
@@ -43,12 +42,6 @@ pub struct CommandTypes {
 #[derive(Debug, Clone, Copy)]
 pub struct NoTypeProjection;
 
-/// Generated machine-contract projection for one derived command declaration.
-pub trait CommandContract {
-    /// Private static command semantics used to build public machine contracts.
-    const CONTRACT: &'static CommandSpec<'static>;
-}
-
 /// Generated type-level semantic projection for one derived command declaration.
 pub trait CommandTypeContract {
     /// Value-bearing fields in declaration/composition order.
@@ -61,11 +54,11 @@ pub trait CommandTypeContract {
 
 /// Marker implemented by generated command declarations that can execute without selecting a
 /// nested subcommand.
-pub trait InvocableCommandContract: CommandContract + CommandTypeContract {}
+pub trait InvocableCommandContract: CommandArgs + CommandTypeContract {}
 
 /// Generated type-level semantic projection for a derived subcommand enum.
 pub trait SubcommandTypeContract {
-    /// Sibling command branches in static contract order.
+    /// Sibling command branches in static command order.
     type Commands;
 }
 
@@ -137,7 +130,7 @@ where
 
 /// Appends one generated field projection to a command context.
 pub trait ResolveValueFields {
-    /// Resolves this projection into `values` in static contract order.
+    /// Resolves this projection into `values` in static command order.
     fn append(resolver: &mut TypeResolver, values: &mut CommandValueTypes);
 }
 
@@ -172,7 +165,7 @@ pub trait CommandArgs: Sized {
     /// Values collected so far during one parse.
     type Partial;
 
-    /// Private runtime command semantics projected from this declaration.
+    /// Private static command semantics projected from this declaration.
     const COMMAND: &'static Command<'static>;
 
     /// Creates empty binding state for a new parse.
@@ -237,11 +230,8 @@ pub trait Subcommands: Sized {
     /// Values collected for the selected variant during one parse.
     type Partial;
 
-    /// Private runtime command semantics for the enum's named subcommands.
+    /// Private static command semantics for the enum's named subcommands.
     const COMMANDS: &'static [&'static Command<'static>];
-
-    /// Private machine-contract semantics for the enum's named subcommands.
-    const CONTRACTS: &'static [&'static CommandSpec<'static>];
 
     /// Creates empty selection and binding state.
     fn start() -> Self::Partial;

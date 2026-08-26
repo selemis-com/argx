@@ -436,14 +436,14 @@ pub use argx_derive::{Args, Contract, Parser, Subcommand, contract};
 /// assert!(cli.output.json);
 /// # Ok::<(), argx::Error>(())
 /// ```
-pub trait Args: Sized + __private::CommandArgs + __private::CommandContract {}
+pub trait Args: Sized + __private::CommandArgs {}
 
 /// Parses command-line arguments into a typed value.
 ///
 /// The derive generates one static command model and the hidden binding implementation required by
 /// these entry points. Prefer the `try_parse*` methods when the caller owns process policy; the
 /// corresponding `parse*` methods are convenience entry points for ordinary CLI binaries.
-pub trait Parser: Sized + __private::CommandArgs + __private::CommandContract {
+pub trait Parser: Sized + __private::CommandArgs {
     /// Parses the current process arguments, excluding the program name.
     ///
     /// Help and version requests are printed to standard output and terminate successfully. Parse

@@ -35,11 +35,10 @@ pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
         subcommand.variants.len(),
     );
 
-    // Each variant gets independent runtime and contract command projections. A payload command is
-    // composed beneath the variant metadata without creating an extra visible command segment.
+    // Each variant gets one command projection. A payload command is composed beneath the variant
+    // metadata without creating an extra visible command segment.
     let command_tables = subcommand.variants.iter().enumerate().map(|(index, variant)| {
         let table = format_ident!("ARGX_SUBCOMMAND_{index}");
-        let contract_table = format_ident!("ARGX_SUBCOMMAND_CONTRACT_{index}");
         let version_table = format_ident!("ARGX_VERSION_ACTION_{index}");
         let key = key::ident("SUBCOMMAND", Some(index));
         let name = &variant.semantics.name;
@@ -133,42 +132,9 @@ pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
                     };
             }
         });
-        let contract = variant.binding.payload.as_ref().map_or_else(
-            || {
-                quote! {
-                    static #contract_table: #facade::__private::CommandSpec<'static> =
-                        #facade::__private::CommandSpec {
-                            name: #name,
-                            about: #about,
-                            aliases: &[#(#aliases),*],
-                            flags: &[],
-                            args: &[],
-                            constraints: &[],
-                            subcommands: &[],
-                        };
-                }
-            },
-            |ty| {
-                quote! {
-                    static #contract_table: #facade::__private::CommandSpec<'static> =
-                        #facade::__private::CommandSpec {
-                            name: #name,
-                            about: #about,
-                            aliases: &[#(#aliases),*],
-                            flags: <#ty as #facade::__private::CommandContract>::CONTRACT.flags,
-                            args: <#ty as #facade::__private::CommandContract>::CONTRACT.args,
-                            constraints:
-                                <#ty as #facade::__private::CommandContract>::CONTRACT.constraints,
-                            subcommands:
-                                <#ty as #facade::__private::CommandContract>::CONTRACT.subcommands,
-                        };
-                }
-            },
-        );
         quote! {
             #version_action
             #command
-            #contract
             const _: () = ::core::assert!(
                 #facade::__private::action_flag_spellings_disjoint(#table.actions, #table.flags),
                 "subcommand contains a flag spelling reserved by a built-in action",
@@ -177,10 +143,6 @@ pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
     });
     let command_refs = (0..subcommand.variants.len()).map(|index| {
         let table = format_ident!("ARGX_SUBCOMMAND_{index}");
-        quote!(&#table)
-    });
-    let contract_refs = (0..subcommand.variants.len()).map(|index| {
-        let table = format_ident!("ARGX_SUBCOMMAND_CONTRACT_{index}");
         quote!(&#table)
     });
     let semantic_projection = semantic_projection(subcommand, &facade);
@@ -379,9 +341,6 @@ pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
             static ARGX_SUBCOMMANDS: &[&#facade::__private::Command<'static>] =
                 &[#(#command_refs),*];
 
-            static ARGX_SUBCOMMAND_CONTRACTS:
-                &[&#facade::__private::CommandSpec<'static>] = &[#(#contract_refs),*];
-
             #[doc(hidden)]
             pub enum Partial {
                 /// No command has been selected yet.
@@ -402,10 +361,6 @@ pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
 
                 const COMMANDS: &'static [&'static #facade::__private::Command<'static>] =
                     ARGX_SUBCOMMANDS;
-
-                const CONTRACTS:
-                    &'static [&'static #facade::__private::CommandSpec<'static>] =
-                    ARGX_SUBCOMMAND_CONTRACTS;
 
                 fn start() -> Self::Partial {
                     Partial::Unselected

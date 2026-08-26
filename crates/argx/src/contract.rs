@@ -1,9 +1,10 @@
 //! Machine-readable invocation and execution contracts.
 //!
-//! The derives emit contract projections alongside the runtime parser tables, and explicit
-//! execution bindings attach semantic success/error types to invocable command identities.
-//! Discovery walks those projections directly; it does not instantiate destination Rust types,
-//! parse `argv`, inspect environment values, or infer an application's serialization format.
+//! Discovery projects invocation structure directly from the same static command tables used by
+//! parsing and help generation. A separate lazy semantic projection supplies Rust value types, and
+//! explicit execution bindings attach success/error types to invocable command identities.
+//! Discovery does not instantiate destination Rust types, parse `argv`, inspect environment values,
+//! or infer an application's serialization format.
 //! Public contract values are owned so callers can serialize or retain a discovery result without
 //! depending on generated static tables.
 //!
@@ -22,8 +23,8 @@ use serde::Serialize;
 
 use crate::{
     __private::{
-        ArgSpec, Cardinality as StaticCardinality, CommandContract as StaticCommandContract,
-        CommandExecutionTypes, CommandSpec, CommandValueTypes, ConstraintKind, FlagSpec, Key,
+        Arg as StaticArg, Command as StaticCommand, CommandArgs as StaticCommandArgs,
+        CommandExecutionTypes, CommandValueTypes, ConstraintKind, Flag as StaticFlag, Key,
         ResolveCommandTypeContract as SemanticCommandContract, TypeResolver,
     },
     error::display_bytes,
@@ -372,16 +373,16 @@ impl fmt::Display for ContractError {
 
 impl error::Error for ContractError {}
 
-/// Builds one public discovery response from the generated private contract projection.
+/// Builds one public discovery response from the generated static command metadata.
 ///
 /// Alias resolution happens only while walking the requested path. Once selected, every path in
 /// the returned value is rebuilt from canonical command names so aliases cannot leak into the wire
 /// representation.
 pub(crate) fn discover<T>(request: ContractRequest) -> Result<Contract, ContractError>
 where
-    T: StaticCommandContract + SemanticCommandContract,
+    T: StaticCommandArgs + SemanticCommandContract,
 {
-    let root = T::CONTRACT;
+    let root = T::COMMAND;
     let mut selected = root;
     let mut path = Vec::with_capacity(request.path.len());
     let mut contexts = vec![root];
@@ -408,15 +409,15 @@ where
 
 /// Builds one command node at the requested discovery depth.
 fn command_contract<T>(
-    command: &'static CommandSpec<'static>,
+    command: &'static StaticCommand<'static>,
     path: Vec<String>,
-    contexts: &[&'static CommandSpec<'static>],
+    contexts: &[&'static StaticCommand<'static>],
     depth: ContractDepth,
     detailed: bool,
     resolver: &mut TypeResolver,
 ) -> CommandContract
 where
-    T: StaticCommandContract + SemanticCommandContract,
+    T: StaticCommandArgs + SemanticCommandContract,
 {
     let (invocation, execution) = if detailed {
         let (invocation, execution) = invocation_contract::<T>(contexts, resolver);
@@ -473,11 +474,11 @@ where
 
 /// Builds complete invocation contexts and resolves their semantic Rust value types.
 fn invocation_contract<T>(
-    contexts: &[&'static CommandSpec<'static>],
+    contexts: &[&'static StaticCommand<'static>],
     resolver: &mut TypeResolver,
 ) -> (InvocationContract, Option<CommandExecutionTypes>)
 where
-    T: StaticCommandContract + SemanticCommandContract,
+    T: StaticCommandArgs + SemanticCommandContract,
 {
     let branch_indices = contexts
         .windows(2)
@@ -511,8 +512,8 @@ where
 
 /// Builds one command-context contract and resolves semantic constraint keys to public names.
 fn command_context(
-    command: &'static CommandSpec<'static>,
-    contexts: &[&'static CommandSpec<'static>],
+    command: &'static StaticCommand<'static>,
+    contexts: &[&'static StaticCommand<'static>],
     value_types: CommandValueTypes,
 ) -> CommandContextContract {
     assert_eq!(
@@ -558,8 +559,8 @@ fn command_context(
 }
 
 /// Builds one named public option contract.
-fn option_contract(flag: &FlagSpec<'_>, value_type: Option<TypeContractValue>) -> OptionContract {
-    let name = preferred_option_name(flag);
+fn option_contract(flag: &StaticFlag<'_>, value_type: Option<TypeContractValue>) -> OptionContract {
+    let name = flag.diagnostic.to_owned();
     let mut aliases = Vec::with_capacity(flag.longs.len() + flag.aliases.len() + flag.shorts.len());
     aliases.extend(
         flag.longs.iter().map(|long| format!("--{long}")).filter(|spelling| spelling != &name),
@@ -579,9 +580,9 @@ fn option_contract(flag: &FlagSpec<'_>, value_type: Option<TypeContractValue>) -
         aliases,
         help: flag.help.map(str::to_owned),
         global: flag.global,
-        required: flag.required,
-        value: option_value(flag.cardinality, value_type),
-        repeatable: flag.cardinality == StaticCardinality::Many,
+        required: flag.required || flag.required_if_env_unset,
+        value: option_value(flag.takes_value, value_type),
+        repeatable: flag.repeatable,
         environment: flag.env.map(str::to_owned),
         has_default: flag.has_default,
         allow_hyphen_values: flag.allow_hyphen_values,
@@ -591,7 +592,7 @@ fn option_contract(flag: &FlagSpec<'_>, value_type: Option<TypeContractValue>) -
 
 /// Builds one positional public argument contract.
 fn arg_contract(
-    arg: &ArgSpec<'_>,
+    arg: &StaticArg<'_>,
     index: usize,
     value_type: TypeContractValue,
 ) -> ArgumentContract {
@@ -600,73 +601,60 @@ fn arg_contract(
         help: arg.help.map(str::to_owned),
         position: index + 1,
         required: arg.required,
-        value: positional_value(arg.cardinality, arg.required, value_type),
+        value: positional_value(arg.variadic, arg.required, value_type),
         allow_negative_numbers: arg.allow_negative_numbers,
     }
 }
 
 /// Returns value consumption for one named option occurrence.
 fn option_value(
-    value: StaticCardinality,
+    takes_value: bool,
     value_type: Option<TypeContractValue>,
 ) -> Option<ValueContract> {
-    match value {
-        StaticCardinality::Switch => {
-            assert!(
-                value_type.is_none(),
-                "generated switches must not expose a consumed value type",
-            );
-            None
-        }
-        StaticCardinality::One | StaticCardinality::Optional | StaticCardinality::Many => {
-            Some(ValueContract {
-                min_values: 1,
-                max_values: Some(1),
-                value_type: value_type
-                    .expect("generated value-taking options must expose a semantic value type"),
-            })
-        }
+    if !takes_value {
+        assert!(
+            value_type.is_none(),
+            "generated switches must not expose a consumed value type",
+        );
+        return None;
     }
+
+    Some(ValueContract {
+        min_values: 1,
+        max_values: Some(1),
+        value_type: value_type
+            .expect("generated value-taking options must expose a semantic value type"),
+    })
 }
 
 /// Returns total positional value multiplicity for one positional binding.
 fn positional_value(
-    value: StaticCardinality,
+    variadic: bool,
     required: bool,
     value_type: TypeContractValue,
 ) -> ValueContract {
-    match value {
-        StaticCardinality::One => ValueContract { min_values: 1, max_values: Some(1), value_type },
-        StaticCardinality::Optional => {
-            ValueContract { min_values: 0, max_values: Some(1), value_type }
-        }
-        StaticCardinality::Many => {
-            ValueContract { min_values: if required { 1 } else { 0 }, max_values: None, value_type }
-        }
-        StaticCardinality::Switch => {
-            unreachable!("generated positional arguments cannot be value-less switches")
-        }
+    if variadic {
+        return ValueContract {
+            min_values: if required { 1 } else { 0 },
+            max_values: None,
+            value_type,
+        };
+    }
+
+    ValueContract {
+        min_values: if required { 1 } else { 0 },
+        max_values: Some(1),
+        value_type,
     }
 }
 
 /// Resolves one private semantic argument key to its public context-local name.
-fn argument_name(command: &CommandSpec<'_>, key: Key) -> String {
+fn argument_name(command: &StaticCommand<'_>, key: Key) -> String {
     if let Some(flag) = command.flags.iter().copied().find(|flag| flag.key == key) {
-        return preferred_option_name(flag);
+        return flag.diagnostic.to_owned();
     }
     if let Some(arg) = command.args.iter().find(|arg| arg.key == key) {
         return arg.name.to_owned();
     }
     unreachable!("generated contract constraint key must belong to its command context")
-}
-
-/// Returns the preferred canonical command-line spelling for one named option.
-fn preferred_option_name(flag: &FlagSpec<'_>) -> String {
-    if let Some(long) = flag.longs.first() {
-        return format!("--{long}");
-    }
-    if let Some(short) = flag.shorts.first() {
-        return format!("-{}", char::from(*short));
-    }
-    unreachable!("generated named argument must have at least one canonical spelling")
 }
