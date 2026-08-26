@@ -1,4 +1,9 @@
-//! Executable CLI contract tests against public examples.
+//! Executable CLI process-boundary contract tests against public examples.
+//!
+//! This layer owns observable process policy: exit status and the exact bytes written to stdout and
+//! stderr by ordinary `Parser::parse` entry points. Parser semantics should normally be asserted in
+//! `argv.rs` or `typed.rs`; these tests stay intentionally small so subprocess snapshots do not
+//! become a second semantic test suite.
 
 #[path = "support/command.rs"]
 mod support;

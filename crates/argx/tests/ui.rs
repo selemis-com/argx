@@ -1,4 +1,9 @@
-//! Downstream compiler tests for the public derive facade.
+//! Downstream compiler UI contract tests for derive expansions.
+//!
+//! These fixtures own declaration-time acceptance and rejection: invalid attributes, unsupported
+//! shapes, invalid relationships/defaults, flatten/subcommand misuse, and renamed dependencies.
+//! Runtime parser behavior belongs to the integration suites; keeping invalid declarations here
+//! lets failures be checked at the same compilation boundary users encounter.
 
 #[path = "support/ui.rs"]
 mod support;

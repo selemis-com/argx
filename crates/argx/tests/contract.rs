@@ -1,4 +1,9 @@
-//! Native machine-contract discovery tests.
+//! Native machine-contract discovery and wire-protocol tests.
+//!
+//! This layer owns the public projection produced by `Parser::contract`: canonical paths, aliases,
+//! invocation contexts, cardinality, value sources, relationships, discovery depth, and serialized
+//! protocol spelling. Parsing the representative fixture is useful only as a cross-check that the
+//! declaration backing the contract remains invocable; detailed parser semantics live elsewhere.
 
 #[cfg(test)]
 #[cfg(feature = "derive")]

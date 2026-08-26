@@ -1,4 +1,10 @@
-//! End-to-end typed parser contract tests.
+//! Typed parser and binding contract tests.
+//!
+//! This layer starts from derive-generated declarations and owns the semantic transition from raw
+//! parser events to Rust values: cardinality, conversion, flattening, environment/default sources,
+//! constraints, subcommand binding, globals, aliases, and error precedence. Exact executable
+//! stdout/stderr policy belongs to `cli.rs`; compiler rejection of invalid declarations belongs to
+//! `ui.rs`.
 
 #[cfg(test)]
 #[cfg(feature = "derive")]
