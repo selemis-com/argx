@@ -34,22 +34,6 @@ pub struct TypeContract {
     pub definitions: Vec<TypeDefinition>,
 }
 
-/// Shared named definitions referenced by type values embedded in another Argx contract.
-///
-/// Definition identifiers are local to the containing contract document and are the only identity
-/// used by [`TypeContractValue::Reference`]. Definition names are descriptive and need not be
-/// unique. The version identifies the type-contract vocabulary used by both the embedded values
-/// and these definitions.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TypeContractDefinitions {
-    /// Serialized type-contract protocol version.
-    pub version: u32,
-    /// Named Rust declarations referenced by embedded type values.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub definitions: Vec<TypeDefinition>,
-}
-
 impl TypeContract {
     /// Serializes this contract as compact JSON.
     ///

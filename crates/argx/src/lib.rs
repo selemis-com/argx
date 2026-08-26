@@ -314,9 +314,10 @@
 //! ```
 //!
 //! A [`struct@Contract`] contains the canonical root and selected command, command aliases, direct
-//! invocability, the root-to-selected invocation contexts, positional and named arguments, value
-//! cardinality, semantic Rust value types, global scope, environment/default sources, normalized
-//! `requires` / `conflicts` relationships, and semantic success/error types for invocable commands.
+//! invocability, the root-to-selected invocation contexts, positional and named arguments,
+//! semantic Rust value types and multiplicity, global scope, environment/default sources,
+//! normalized `requires` / `conflicts` relationships, and semantic success/error types for
+//! invocable commands.
 //! Named semantic types share one definition table across the returned document. Command paths
 //! supplied in a [`ContractRequest`] may use aliases; returned paths always use canonical command
 //! names.
@@ -388,14 +389,14 @@ pub mod type_contract;
 use std::ffi::{OsStr, OsString};
 
 pub use contract::{
-    ArgumentContract, CONTRACT_VERSION, CommandContextContract, CommandContract,
-    ConstraintContract, ConstraintContractKind, Contract, ContractDepth, ContractError,
-    ContractRequest, ExecutionContract, InvocationContract, OptionContract, ValueContract,
+    CONTRACT_VERSION, CommandContextContract, CommandContract, ConstraintContract,
+    ConstraintContractKind, Contract, ContractDepth, ContractError, ContractRequest,
+    ExecutionContract, OptionContract, PositionalContract,
 };
 pub use error::{Error, InvalidValue};
 pub use type_contract::{
-    ContractType, PrimitiveType, TYPE_CONTRACT_VERSION, TypeContract, TypeContractDefinitions,
-    TypeContractValue, TypeDefinition, TypeDefinitionKind, TypeFieldContract, TypeVariantContract,
+    ContractType, PrimitiveType, TYPE_CONTRACT_VERSION, TypeContract, TypeContractValue,
+    TypeDefinition, TypeDefinitionKind, TypeFieldContract, TypeVariantContract,
     TypeVariantKind,
 };
 

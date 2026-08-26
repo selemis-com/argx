@@ -28,7 +28,7 @@ fn main() {
     assert_eq!(command.flags[0].longs, ["verbose"]);
     let contract = Cli::contract(cli_args::ContractRequest::root()).expect("contract");
     assert_eq!(contract.root, "cli");
-    assert_eq!(contract.command.invocation.expect("invocation").contexts[0].arguments.len(), 1);
+    assert_eq!(contract.command.invocation.expect("invocation")[0].positionals.len(), 1);
 
     let _ = cli_contract(Cli { verbose: false, value: String::from("contract") });
 

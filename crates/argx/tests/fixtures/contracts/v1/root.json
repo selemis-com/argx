@@ -1,86 +1,36 @@
 {
   "version": 1,
   "root": "echo",
-  "types": {
-    "version": 1,
-    "definitions": [
+  "command": {
+    "name": "echo",
+    "about": "Echo values",
+    "invocable": true,
+    "invocation": [
       {
-        "id": "type-0",
-        "name": "EchoOutput",
-        "description": "Successful result of echoing one value.",
-        "kind": "struct",
-        "fields": [
+        "positionals": [
           {
             "name": "value",
+            "required": true,
             "type": {
               "kind": "string"
             }
           }
-        ]
-      },
-      {
-        "id": "type-1",
-        "name": "EchoError",
-        "description": "Echo failure exposed by the command.",
-        "kind": "enum",
-        "variants": [
+        ],
+        "options": [
           {
-            "name": "WriteFailed",
-            "kind": "unit"
+            "name": "--output",
+            "aliases": [
+              "--out"
+            ],
+            "type": {
+              "kind": "string"
+            },
+            "environment": "ECHO_OUTPUT",
+            "hasDefault": true
           }
         ]
       }
-    ]
-  },
-  "command": {
-    "path": [],
-    "name": "echo",
-    "about": "Echo values",
-    "invocable": true,
-    "invocation": {
-      "contexts": [
-        {
-          "path": [],
-          "arguments": [
-            {
-              "name": "value",
-              "position": 1,
-              "required": true,
-              "value": {
-                "minValues": 1,
-                "maxValues": 1,
-                "type": {
-                  "kind": "string"
-                }
-              },
-              "allowNegativeNumbers": false
-            }
-          ],
-          "options": [
-            {
-              "name": "--output",
-              "aliases": [
-                "--out"
-              ],
-              "global": false,
-              "required": false,
-              "value": {
-                "minValues": 1,
-                "maxValues": 1,
-                "type": {
-                  "kind": "string"
-                }
-              },
-              "repeatable": false,
-              "environment": "ECHO_OUTPUT",
-              "hasDefault": true,
-              "allowHyphenValues": false,
-              "allowNegativeNumbers": false
-            }
-          ]
-        }
-      ]
-    },
+    ],
     "execution": {
       "success": {
         "kind": "reference",
@@ -91,5 +41,33 @@
         "definition": "type-1"
       }
     }
-  }
+  },
+  "types": [
+    {
+      "id": "type-0",
+      "name": "EchoOutput",
+      "description": "Successful result of echoing one value.",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "value",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    {
+      "id": "type-1",
+      "name": "EchoError",
+      "description": "Echo failure exposed by the command.",
+      "kind": "enum",
+      "variants": [
+        {
+          "name": "WriteFailed",
+          "kind": "unit"
+        }
+      ]
+    }
+  ]
 }

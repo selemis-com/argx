@@ -1,37 +1,6 @@
 {
   "version": 1,
   "root": "tool",
-  "types": {
-    "version": 1,
-    "definitions": [
-      {
-        "id": "type-0",
-        "name": "GetOutput",
-        "description": "Successful result of retrieving one object.",
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "id",
-            "type": {
-              "kind": "string"
-            }
-          }
-        ]
-      },
-      {
-        "id": "type-1",
-        "name": "GetError",
-        "description": "Retrieval failure exposed by the command.",
-        "kind": "enum",
-        "variants": [
-          {
-            "name": "NotFound",
-            "kind": "unit"
-          }
-        ]
-      }
-    ]
-  },
   "command": {
     "path": [
       "objects",
@@ -43,168 +12,105 @@
       "show"
     ],
     "invocable": true,
-    "invocation": {
-      "contexts": [
-        {
-          "path": [],
-          "options": [
-            {
-              "name": "--config",
-              "aliases": [
-                "--cfg"
-              ],
-              "help": "Configuration file.",
-              "global": true,
-              "required": false,
-              "value": {
-                "minValues": 1,
-                "maxValues": 1,
-                "type": {
-                  "kind": "string"
-                }
-              },
-              "repeatable": false,
-              "hasDefault": false,
-              "allowHyphenValues": false,
-              "allowNegativeNumbers": false
-            },
-            {
-              "name": "--profile",
-              "help": "Execution profile.",
-              "global": false,
-              "required": false,
-              "value": {
-                "minValues": 1,
-                "maxValues": 1,
-                "type": {
-                  "kind": "string"
-                }
-              },
-              "repeatable": false,
-              "environment": "TOOL_PROFILE",
-              "hasDefault": true,
-              "allowHyphenValues": false,
-              "allowNegativeNumbers": false
-            },
-            {
-              "name": "--verbose",
-              "aliases": [
-                "-v"
-              ],
-              "help": "Enable verbose output.",
-              "global": false,
-              "required": false,
-              "repeatable": false,
-              "hasDefault": false,
-              "allowHyphenValues": false,
-              "allowNegativeNumbers": false
+    "invocation": [
+      {
+        "options": [
+          {
+            "name": "--config",
+            "aliases": [
+              "--cfg"
+            ],
+            "help": "Configuration file.",
+            "global": true,
+            "type": {
+              "kind": "string"
             }
-          ]
-        },
-        {
-          "path": [
-            "objects"
-          ]
-        },
-        {
-          "path": [
-            "objects",
-            "get"
-          ],
-          "arguments": [
-            {
-              "name": "id",
-              "help": "Object identifier.",
-              "position": 1,
-              "required": true,
-              "value": {
-                "minValues": 1,
-                "maxValues": 1,
-                "type": {
-                  "kind": "string"
-                }
-              },
-              "allowNegativeNumbers": false
+          },
+          {
+            "name": "--profile",
+            "help": "Execution profile.",
+            "type": {
+              "kind": "string"
             },
-            {
-              "name": "selectors",
-              "help": "Additional selectors.",
-              "position": 2,
-              "required": false,
-              "value": {
-                "minValues": 0,
-                "type": {
-                  "kind": "string"
-                }
-              },
-              "allowNegativeNumbers": false
+            "environment": "TOOL_PROFILE",
+            "hasDefault": true
+          },
+          {
+            "name": "--verbose",
+            "aliases": [
+              "-v"
+            ],
+            "help": "Enable verbose output."
+          }
+        ]
+      },
+      {
+        "path": [
+          "objects"
+        ]
+      },
+      {
+        "path": [
+          "objects",
+          "get"
+        ],
+        "positionals": [
+          {
+            "name": "id",
+            "help": "Object identifier.",
+            "required": true,
+            "type": {
+              "kind": "string"
             }
-          ],
-          "options": [
-            {
-              "name": "--endpoint",
-              "help": "Optional remote endpoint.",
-              "global": false,
-              "required": false,
-              "value": {
-                "minValues": 1,
-                "maxValues": 1,
-                "type": {
-                  "kind": "string"
-                }
-              },
-              "repeatable": false,
-              "hasDefault": false,
-              "allowHyphenValues": false,
-              "allowNegativeNumbers": false
-            },
-            {
-              "name": "--auth-token",
-              "aliases": [
-                "--token"
-              ],
-              "help": "Authentication token.",
-              "global": false,
-              "required": true,
-              "value": {
-                "minValues": 1,
-                "maxValues": 1,
-                "type": {
-                  "kind": "string"
-                }
-              },
-              "repeatable": false,
-              "environment": "TOOL_TOKEN",
-              "hasDefault": false,
-              "allowHyphenValues": false,
-              "allowNegativeNumbers": false
-            },
-            {
-              "name": "--stdout",
-              "help": "Write the result to standard output.",
-              "global": false,
-              "required": false,
-              "repeatable": false,
-              "hasDefault": false,
-              "allowHyphenValues": false,
-              "allowNegativeNumbers": false
+          },
+          {
+            "name": "selectors",
+            "help": "Additional selectors.",
+            "variadic": true,
+            "type": {
+              "kind": "string"
             }
-          ],
-          "constraints": [
-            {
-              "kind": "requires",
-              "source": "--endpoint",
-              "target": "--auth-token"
-            },
-            {
-              "kind": "conflicts",
-              "source": "--endpoint",
-              "target": "--stdout"
+          }
+        ],
+        "options": [
+          {
+            "name": "--endpoint",
+            "help": "Optional remote endpoint.",
+            "type": {
+              "kind": "string"
             }
-          ]
-        }
-      ]
-    },
+          },
+          {
+            "name": "--auth-token",
+            "aliases": [
+              "--token"
+            ],
+            "help": "Authentication token.",
+            "required": true,
+            "type": {
+              "kind": "string"
+            },
+            "environment": "TOOL_TOKEN"
+          },
+          {
+            "name": "--stdout",
+            "help": "Write the result to standard output."
+          }
+        ],
+        "constraints": [
+          {
+            "kind": "requires",
+            "source": "--endpoint",
+            "target": "--auth-token"
+          },
+          {
+            "kind": "conflicts",
+            "source": "--endpoint",
+            "target": "--stdout"
+          }
+        ]
+      }
+    ],
     "execution": {
       "success": {
         "kind": "reference",
@@ -215,5 +121,33 @@
         "definition": "type-1"
       }
     }
-  }
+  },
+  "types": [
+    {
+      "id": "type-0",
+      "name": "GetOutput",
+      "description": "Successful result of retrieving one object.",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    {
+      "id": "type-1",
+      "name": "GetError",
+      "description": "Retrieval failure exposed by the command.",
+      "kind": "enum",
+      "variants": [
+        {
+          "name": "NotFound",
+          "kind": "unit"
+        }
+      ]
+    }
+  ]
 }

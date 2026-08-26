@@ -14,8 +14,11 @@
 //! definition table contains only definitions referenced by detailed nodes returned in that result.
 //!
 //! The serialized representation carries [`CONTRACT_VERSION`] so consumers can identify the wire
-//! format they received. Compatibility guarantees are release-policy concerns rather than inferred
-//! from Rust API compatibility.
+//! format they received. It is intentionally sparse: empty paths/collections and false capability
+//! flags are omitted. Positional multiplicity is expressed directly through `required` and
+//! `variadic`; a named option's `type` is present exactly when each occurrence consumes one value,
+//! while `repeatable` controls occurrence multiplicity. Compatibility guarantees are release-policy
+//! concerns rather than inferred from Rust API compatibility.
 
 use std::{error, fmt};
 
@@ -28,7 +31,7 @@ use crate::{
         ResolveCommandTypeContract as SemanticCommandContract, TypeResolver,
     },
     error::display_bytes,
-    type_contract::{TYPE_CONTRACT_VERSION, TypeContractDefinitions, TypeContractValue},
+    type_contract::{TypeContractValue, TypeDefinition},
 };
 
 /// Current serialized Argx contract protocol version.
@@ -113,13 +116,15 @@ pub struct Contract {
     pub version: u32,
     /// Canonical root command name.
     pub root: String,
+    /// Selected command and requested descendant discovery.
+    pub command: CommandContract,
     /// Shared semantic Rust type definitions referenced by invocation and execution contracts.
     ///
     /// References resolve by document-local definition ID. Definition names are descriptive and
-    /// are not required to be unique.
-    pub types: TypeContractDefinitions,
-    /// Selected command and requested descendant discovery.
-    pub command: CommandContract,
+    /// are not required to be unique. Omitted when the returned command detail references no named
+    /// semantic types.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub types: Vec<TypeDefinition>,
 }
 
 impl Contract {
@@ -179,6 +184,7 @@ impl Contract {
 #[serde(rename_all = "camelCase")]
 pub struct CommandContract {
     /// Canonical child-command path relative to the root command.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub path: Vec<String>,
     /// Canonical command name.
     pub name: String,
@@ -190,9 +196,9 @@ pub struct CommandContract {
     pub aliases: Vec<String>,
     /// Whether this command can be invoked without selecting another subcommand.
     pub invocable: bool,
-    /// Complete invocation detail when this node is included in full.
+    /// Root-to-selected command contexts when this node is included in full.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub invocation: Option<InvocationContract>,
+    pub invocation: Option<Vec<CommandContextContract>>,
     /// Declared semantic execution result when this invocable node is included in full.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub execution: Option<ExecutionContract>,
@@ -218,23 +224,16 @@ pub struct ExecutionContract {
     pub error: TypeContractValue,
 }
 
-/// Complete argv-side contract for one selected command.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct InvocationContract {
-    /// Command contexts from the root through the selected command.
-    pub contexts: Vec<CommandContextContract>,
-}
-
 /// Arguments and relationships owned by one command context on an invocation path.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CommandContextContract {
     /// Canonical child-command path relative to the root command.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub path: Vec<String>,
     /// Positional arguments accepted in this command context.
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub arguments: Vec<ArgumentContract>,
+    pub positionals: Vec<PositionalContract>,
     /// Named options accepted in this command context.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub options: Vec<OptionContract>,
@@ -246,19 +245,25 @@ pub struct CommandContextContract {
 /// One positional argument in a machine invocation contract.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ArgumentContract {
+pub struct PositionalContract {
     /// Semantic positional name.
     pub name: String,
     /// One-line argument description.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub help: Option<String>,
-    /// One-based position within this command context's positional sequence.
-    pub position: usize,
     /// Whether this positional must resolve at least one value.
+    #[serde(skip_serializing_if = "is_false")]
     pub required: bool,
-    /// Number of positional values represented by this argument.
-    pub value: ValueContract,
+    /// Whether this positional consumes every remaining positional value in its command context.
+    #[serde(skip_serializing_if = "is_false")]
+    pub variadic: bool,
+    /// Semantic Rust type produced from each consumed value.
+    ///
+    /// This describes the bound Rust value, not a custom `FromStr` or OS-string lexical encoding.
+    #[serde(rename = "type")]
+    pub value_type: TypeContractValue,
     /// Whether negative numbers may bind while ordinary flag parsing remains enabled.
+    #[serde(skip_serializing_if = "is_false")]
     pub allow_negative_numbers: bool,
 }
 
@@ -275,39 +280,32 @@ pub struct OptionContract {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub help: Option<String>,
     /// Whether this option remains in scope after entering descendants.
+    #[serde(skip_serializing_if = "is_false")]
     pub global: bool,
     /// Whether this option must resolve from argv or environment when no typed default exists.
+    #[serde(skip_serializing_if = "is_false")]
     pub required: bool,
-    /// Value consumption for each occurrence, omitted for value-less switches.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub value: Option<ValueContract>,
+    /// Semantic Rust type consumed by each occurrence; omitted for value-less switches.
+    ///
+    /// Argx named options consume exactly one value per occurrence when this field is present. The
+    /// field describes the bound Rust value, not a custom `FromStr` or OS-string lexical encoding.
+    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
+    pub value_type: Option<TypeContractValue>,
     /// Whether the option may occur more than once.
+    #[serde(skip_serializing_if = "is_false")]
     pub repeatable: bool,
     /// Environment variable consulted after argv when configured.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub environment: Option<String>,
     /// Whether absence is satisfied by a typed Rust default expression.
+    #[serde(skip_serializing_if = "is_false")]
     pub has_default: bool,
     /// Whether detached values may themselves be flag-like.
+    #[serde(skip_serializing_if = "is_false")]
     pub allow_hyphen_values: bool,
     /// Whether negative numbers may bind while ordinary flag-like values remain rejected.
+    #[serde(skip_serializing_if = "is_false")]
     pub allow_negative_numbers: bool,
-}
-
-/// Number of values represented by one positional or one option occurrence.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ValueContract {
-    /// Minimum number of values.
-    pub min_values: usize,
-    /// Maximum number of values, or no upper bound when omitted.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub max_values: Option<usize>,
-    /// Semantic Rust type produced from each consumed value.
-    ///
-    /// This describes the bound Rust value, not a custom `FromStr` or OS-string lexical encoding.
-    #[serde(rename = "type")]
-    pub value_type: TypeContractValue,
 }
 
 /// One normalized relationship between arguments in the same command context.
@@ -330,6 +328,10 @@ pub enum ConstraintContractKind {
     Requires,
     /// Supplying both source and target is invalid.
     Conflicts,
+}
+
+const fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 /// Failure to resolve one dynamic contract discovery request.
@@ -401,10 +403,9 @@ where
     let mut resolver = TypeResolver::default();
     let command =
         command_contract::<T>(selected, path, &contexts, request.depth, true, &mut resolver);
-    let types =
-        TypeContractDefinitions { version: TYPE_CONTRACT_VERSION, definitions: resolver.finish() };
+    let types = resolver.finish();
 
-    Ok(Contract { version: CONTRACT_VERSION, root: root.name.to_owned(), types, command })
+    Ok(Contract { version: CONTRACT_VERSION, root: root.name.to_owned(), command, types })
 }
 
 /// Builds one command node at the requested discovery depth.
@@ -476,7 +477,7 @@ where
 fn invocation_contract<T>(
     contexts: &[&'static StaticCommand<'static>],
     resolver: &mut TypeResolver,
-) -> (InvocationContract, Option<CommandExecutionTypes>)
+) -> (Vec<CommandContextContract>, Option<CommandExecutionTypes>)
 where
     T: StaticCommandArgs + SemanticCommandContract,
 {
@@ -507,7 +508,7 @@ where
         })
         .collect();
 
-    (InvocationContract { contexts }, selected_execution)
+    (contexts, selected_execution)
 }
 
 /// Builds one command-context contract and resolves semantic constraint keys to public names.
@@ -528,12 +529,11 @@ fn command_context(
     );
 
     let path = contexts.iter().skip(1).map(|context| context.name.to_owned()).collect();
-    let arguments = command
+    let positionals = command
         .args
         .iter()
         .zip(value_types.args)
-        .enumerate()
-        .map(|(index, (arg, value_type))| arg_contract(arg, index, value_type))
+        .map(|(arg, value_type)| arg_contract(arg, value_type))
         .collect();
     let options = command
         .flags
@@ -555,7 +555,7 @@ fn command_context(
         })
         .collect();
 
-    CommandContextContract { path, arguments, options, constraints }
+    CommandContextContract { path, positionals, options, constraints }
 }
 
 /// Builds one named public option contract.
@@ -575,13 +575,26 @@ fn option_contract(flag: &StaticFlag<'_>, value_type: Option<TypeContractValue>)
             .filter(|spelling| spelling != &name),
     );
 
+    let value_type = if flag.takes_value {
+        Some(
+            value_type
+                .expect("generated value-taking options must expose a semantic value type"),
+        )
+    } else {
+        assert!(
+            value_type.is_none(),
+            "generated switches must not expose a consumed value type",
+        );
+        None
+    };
+
     OptionContract {
         name,
         aliases,
         help: flag.help.map(str::to_owned),
         global: flag.global,
         required: flag.required || flag.required_if_env_unset,
-        value: option_value(flag.takes_value, value_type),
+        value_type,
         repeatable: flag.repeatable,
         environment: flag.env.map(str::to_owned),
         has_default: flag.has_default,
@@ -591,51 +604,15 @@ fn option_contract(flag: &StaticFlag<'_>, value_type: Option<TypeContractValue>)
 }
 
 /// Builds one positional public argument contract.
-fn arg_contract(
-    arg: &StaticArg<'_>,
-    index: usize,
-    value_type: TypeContractValue,
-) -> ArgumentContract {
-    ArgumentContract {
+fn arg_contract(arg: &StaticArg<'_>, value_type: TypeContractValue) -> PositionalContract {
+    PositionalContract {
         name: arg.name.to_owned(),
         help: arg.help.map(str::to_owned),
-        position: index + 1,
         required: arg.required,
-        value: positional_value(arg.variadic, arg.required, value_type),
+        variadic: arg.variadic,
+        value_type,
         allow_negative_numbers: arg.allow_negative_numbers,
     }
-}
-
-/// Returns value consumption for one named option occurrence.
-fn option_value(takes_value: bool, value_type: Option<TypeContractValue>) -> Option<ValueContract> {
-    if !takes_value {
-        assert!(value_type.is_none(), "generated switches must not expose a consumed value type",);
-        return None;
-    }
-
-    Some(ValueContract {
-        min_values: 1,
-        max_values: Some(1),
-        value_type: value_type
-            .expect("generated value-taking options must expose a semantic value type"),
-    })
-}
-
-/// Returns total positional value multiplicity for one positional binding.
-const fn positional_value(
-    variadic: bool,
-    required: bool,
-    value_type: TypeContractValue,
-) -> ValueContract {
-    if variadic {
-        return ValueContract {
-            min_values: if required { 1 } else { 0 },
-            max_values: None,
-            value_type,
-        };
-    }
-
-    ValueContract { min_values: if required { 1 } else { 0 }, max_values: Some(1), value_type }
 }
 
 /// Resolves one private semantic argument key to its public context-local name.

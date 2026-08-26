@@ -1,7 +1,7 @@
 //! Native machine-contract discovery and wire-protocol tests.
 //!
 //! This layer owns the public projection produced by `Parser::contract`: canonical paths, aliases,
-//! invocation contexts, cardinality, value sources, relationships, discovery depth, and serialized
+//! invocation contexts, multiplicity, value sources, relationships, discovery depth, and serialized
 //! protocol spelling. Parsing the representative fixture is useful only as a cross-check that the
 //! declaration backing the contract remains invocable; detailed parser semantics live elsewhere.
 
@@ -368,7 +368,7 @@ mod tests {
     }
 
     #[test]
-    fn repeated_named_options_describe_occurrence_and_value_multiplicity_separately() {
+    fn repeated_named_options_expose_element_type_and_repeatability() {
         let cli = RepeatedOptionCli::try_parse_from(["repeat", "--tag", "one", "--tag", "two"])
             .expect("repeated option fixture should parse");
         assert_eq!(cli.tag, ["one", "two"]);
@@ -377,14 +377,11 @@ mod tests {
             .expect("repeated option contract should exist");
         let invocation =
             contract.command.invocation.as_ref().expect("root command should be detailed");
-        let option = &invocation.contexts[0].options[0];
+        let option = &invocation[0].options[0];
 
         assert_eq!(option.name, "--tag");
         assert!(option.repeatable);
-        let value = option.value.as_ref().expect("tag takes a value");
-        assert_eq!(value.min_values, 1);
-        assert_eq!(value.max_values, Some(1));
-        assert_eq!(value.value_type, TypeContractValue::String);
+        assert_eq!(option.value_type, Some(TypeContractValue::String));
     }
 
     #[test]
@@ -401,14 +398,13 @@ mod tests {
         let contract = ProjectionCli::contract(request).expect("root contract should exist");
         let invocation =
             contract.command.invocation.as_ref().expect("root command should be detailed");
-        let context = &invocation.contexts[0];
+        let context = &invocation[0];
 
         assert_eq!(context.options[0].name, "-t");
         assert!(context.options[0].required);
-        assert_eq!(context.arguments[0].name, "input");
-        assert!(!context.arguments[0].required);
-        assert_eq!(context.arguments[0].value.min_values, 0);
-        assert_eq!(context.arguments[0].value.max_values, Some(1));
+        assert_eq!(context.positionals[0].name, "input");
+        assert!(!context.positionals[0].required);
+        assert!(!context.positionals[0].variadic);
         assert_eq!(context.constraints[0].source, "input");
         assert_eq!(context.constraints[0].target, "-t");
 
@@ -426,9 +422,8 @@ mod tests {
 
         let contract = TypedContractCli::contract(ContractRequest::root())
             .expect("typed invocation contract should exist");
-        assert_eq!(contract.types.version, argx::TYPE_CONTRACT_VERSION);
-        assert_eq!(contract.types.definitions.len(), 1);
-        let definition = &contract.types.definitions[0];
+        assert_eq!(contract.types.len(), 1);
+        let definition = &contract.types[0];
         assert_eq!(definition.id, "type-0");
         assert_eq!(definition.name, "OutputFormat");
         assert!(matches!(
@@ -438,10 +433,10 @@ mod tests {
         ));
 
         let invocation = contract.command.invocation.expect("root command should be detailed");
-        let context = &invocation.contexts[0];
+        let context = &invocation[0];
         let option_type =
-            &context.options[0].value.as_ref().expect("format takes a value").value_type;
-        let positional_type = &context.arguments[0].value.value_type;
+            context.options[0].value_type.as_ref().expect("format takes a value");
+        let positional_type = &context.positionals[0].value_type;
         let expected = TypeContractValue::Reference { definition: "type-0".to_owned() };
         assert_eq!(option_type, &expected);
         assert_eq!(positional_type, &expected);
@@ -464,12 +459,10 @@ mod tests {
             execution.error,
             TypeContractValue::Reference { definition: "type-1".to_owned() },
         );
-        assert_eq!(contract.types.definitions.len(), 2);
-        assert_eq!(contract.types.definitions[0].name, "ExecutionOutput");
-        assert_eq!(contract.types.definitions[1].name, "ExecutionError");
-        assert!(
-            contract.types.definitions.iter().all(|definition| definition.name != "RuntimeContext")
-        );
+        assert_eq!(contract.types.len(), 2);
+        assert_eq!(contract.types[0].name, "ExecutionOutput");
+        assert_eq!(contract.types[1].name, "ExecutionError");
+        assert!(contract.types.iter().all(|definition| definition.name != "RuntimeContext"));
     }
 
     #[test]
@@ -501,9 +494,9 @@ mod tests {
                 execution.success,
                 TypeContractValue::Reference { definition: "type-0".to_owned() },
             );
-            assert_eq!(contract.types.definitions.len(), 1);
-            assert_eq!(contract.types.definitions[0].name, "GenericOutput");
-            let TypeDefinitionKind::Struct { fields } = &contract.types.definitions[0].kind else {
+            assert_eq!(contract.types.len(), 1);
+            assert_eq!(contract.types[0].name, "GenericOutput");
+            let TypeDefinitionKind::Struct { fields } = &contract.types[0].kind else {
                 panic!("GenericOutput must resolve to a struct definition");
             };
             assert_eq!(fields[0].value_type, TypeContractValue::Primitive { primitive },);
@@ -511,7 +504,7 @@ mod tests {
             let invocation =
                 contract.command.invocation.as_ref().expect("root command is detailed");
             assert_eq!(
-                invocation.contexts[0].arguments[0].value.value_type,
+                invocation[0].positionals[0].value_type,
                 TypeContractValue::Primitive { primitive },
             );
         }
@@ -521,14 +514,14 @@ mod tests {
     fn type_definitions_follow_the_discovery_detail_that_is_returned() {
         let shallow = TypedNestedCli::contract(ContractRequest::root())
             .expect("shallow nested contract should exist");
-        assert!(shallow.types.definitions.is_empty());
+        assert!(shallow.types.is_empty());
         assert!(shallow.command.subcommands[0].invocation.is_none());
 
         let selected = TypedNestedCli::contract(ContractRequest::new(["leaf"]))
             .expect("selected typed descendant should exist");
-        assert_eq!(selected.types.definitions.len(), 2);
-        assert_eq!(selected.types.definitions[0].name, "OutputFormat");
-        assert_eq!(selected.types.definitions[1].name, "TypedLeafOutput");
+        assert_eq!(selected.types.len(), 2);
+        assert_eq!(selected.types[0].name, "OutputFormat");
+        assert_eq!(selected.types[1].name, "TypedLeafOutput");
         assert_eq!(
             selected
                 .command
@@ -539,12 +532,12 @@ mod tests {
             TypeContractValue::Reference { definition: "type-1".to_owned() },
         );
         let invocation = selected.command.invocation.expect("selected command should be detailed");
-        let value_type = &invocation.contexts[1].arguments[0].value.value_type;
+        let value_type = &invocation[1].positionals[0].value_type;
         assert_eq!(value_type, &TypeContractValue::Reference { definition: "type-0".to_owned() },);
 
         let recursive = TypedNestedCli::contract(ContractRequest::root().recursive())
             .expect("recursive nested contract should exist");
-        assert_eq!(recursive.types.definitions.len(), 2);
+        assert_eq!(recursive.types.len(), 2);
         assert!(recursive.command.subcommands[0].invocation.is_some());
         assert!(recursive.command.subcommands[1].invocation.is_some());
     }
@@ -590,23 +583,19 @@ mod tests {
         assert!(command.execution.is_some());
 
         let invocation = command.invocation.as_ref().expect("selected command must be detailed");
-        assert_eq!(invocation.contexts.len(), 3);
-        assert_eq!(invocation.contexts[0].path, Vec::<String>::new());
-        assert!(invocation.contexts[1].path.iter().map(String::as_str).eq(["objects"]));
-        assert!(invocation.contexts[2].path.iter().map(String::as_str).eq(["objects", "get"]));
+        assert_eq!(invocation.len(), 3);
+        assert_eq!(invocation[0].path, Vec::<String>::new());
+        assert!(invocation[1].path.iter().map(String::as_str).eq(["objects"]));
+        assert!(invocation[2].path.iter().map(String::as_str).eq(["objects", "get"]));
 
-        let root = &invocation.contexts[0];
-        assert!(root.arguments.is_empty());
+        let root = &invocation[0];
+        assert!(root.positionals.is_empty());
         assert_eq!(root.options.len(), 3);
         assert_eq!(root.options[0].name, "--config");
         assert!(root.options[0].aliases.iter().map(String::as_str).eq(["--cfg"]));
         assert!(root.options[0].global);
         assert!(!root.options[0].required);
-        assert_eq!(root.options[0].value.as_ref().expect("config takes a value").min_values, 1);
-        assert_eq!(
-            root.options[0].value.as_ref().expect("config takes a value").max_values,
-            Some(1),
-        );
+        assert_eq!(root.options[0].value_type, Some(TypeContractValue::String));
         assert!(!root.options[0].repeatable);
 
         assert_eq!(root.options[1].name, "--profile");
@@ -616,9 +605,9 @@ mod tests {
 
         assert_eq!(root.options[2].name, "--verbose");
         assert!(root.options[2].aliases.iter().map(String::as_str).eq(["-v"]));
-        assert!(root.options[2].value.is_none());
+        assert!(root.options[2].value_type.is_none());
 
-        let leaf = &invocation.contexts[2];
+        let leaf = &invocation[2];
         assert_eq!(leaf.options.len(), 3);
         assert_eq!(leaf.options[0].name, "--endpoint");
         assert_eq!(leaf.options[1].name, "--auth-token");
@@ -626,18 +615,17 @@ mod tests {
         assert!(leaf.options[1].required);
         assert!(leaf.options[1].aliases.iter().map(String::as_str).eq(["--token"]));
         assert_eq!(leaf.options[2].name, "--stdout");
-        assert!(leaf.options[2].value.is_none());
+        assert!(leaf.options[2].value_type.is_none());
 
-        assert_eq!(leaf.arguments.len(), 2);
-        assert_eq!(leaf.arguments[0].name, "id");
-        assert_eq!(leaf.arguments[0].position, 1);
-        assert_eq!(leaf.arguments[0].value.min_values, 1);
-        assert_eq!(leaf.arguments[0].value.max_values, Some(1));
-        assert!(leaf.arguments[0].required);
-        assert_eq!(leaf.arguments[1].name, "selectors");
-        assert_eq!(leaf.arguments[1].position, 2);
-        assert_eq!(leaf.arguments[1].value.min_values, 0);
-        assert!(leaf.arguments[1].value.max_values.is_none());
+        assert_eq!(leaf.positionals.len(), 2);
+        assert_eq!(leaf.positionals[0].name, "id");
+        assert!(leaf.positionals[0].required);
+        assert!(!leaf.positionals[0].variadic);
+        assert_eq!(leaf.positionals[0].value_type, TypeContractValue::String);
+        assert_eq!(leaf.positionals[1].name, "selectors");
+        assert!(!leaf.positionals[1].required);
+        assert!(leaf.positionals[1].variadic);
+        assert_eq!(leaf.positionals[1].value_type, TypeContractValue::String);
 
         assert_eq!(leaf.constraints.len(), 2);
         assert_eq!(leaf.constraints[0].kind, ConstraintContractKind::Requires);
