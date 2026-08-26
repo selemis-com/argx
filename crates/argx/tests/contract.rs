@@ -635,7 +635,159 @@ mod tests {
 
         assert_eq!(
             json,
-            include_str!("fixtures/contracts/v1/nested.json"),
+            r#"{
+  "version": 1,
+  "root": "tool",
+  "command": {
+    "path": [
+      "objects",
+      "get"
+    ],
+    "name": "get",
+    "about": "Retrieve one object.",
+    "aliases": [
+      "show"
+    ],
+    "invocable": true,
+    "invocation": [
+      {
+        "options": [
+          {
+            "name": "--config",
+            "aliases": [
+              "--cfg"
+            ],
+            "help": "Configuration file.",
+            "global": true,
+            "type": {
+              "kind": "string"
+            }
+          },
+          {
+            "name": "--profile",
+            "help": "Execution profile.",
+            "type": {
+              "kind": "string"
+            },
+            "environment": "TOOL_PROFILE",
+            "hasDefault": true
+          },
+          {
+            "name": "--verbose",
+            "aliases": [
+              "-v"
+            ],
+            "help": "Enable verbose output."
+          }
+        ]
+      },
+      {
+        "path": [
+          "objects"
+        ]
+      },
+      {
+        "path": [
+          "objects",
+          "get"
+        ],
+        "positionals": [
+          {
+            "name": "id",
+            "help": "Object identifier.",
+            "required": true,
+            "type": {
+              "kind": "string"
+            }
+          },
+          {
+            "name": "selectors",
+            "help": "Additional selectors.",
+            "variadic": true,
+            "type": {
+              "kind": "string"
+            }
+          }
+        ],
+        "options": [
+          {
+            "name": "--endpoint",
+            "help": "Optional remote endpoint.",
+            "type": {
+              "kind": "string"
+            }
+          },
+          {
+            "name": "--auth-token",
+            "aliases": [
+              "--token"
+            ],
+            "help": "Authentication token.",
+            "required": true,
+            "type": {
+              "kind": "string"
+            },
+            "environment": "TOOL_TOKEN"
+          },
+          {
+            "name": "--stdout",
+            "help": "Write the result to standard output."
+          }
+        ],
+        "constraints": [
+          {
+            "kind": "requires",
+            "source": "--endpoint",
+            "target": "--auth-token"
+          },
+          {
+            "kind": "conflicts",
+            "source": "--endpoint",
+            "target": "--stdout"
+          }
+        ]
+      }
+    ],
+    "execution": {
+      "success": {
+        "kind": "reference",
+        "definition": "type-0"
+      },
+      "error": {
+        "kind": "reference",
+        "definition": "type-1"
+      }
+    }
+  },
+  "types": [
+    {
+      "id": "type-0",
+      "name": "GetOutput",
+      "description": "Successful result of retrieving one object.",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    {
+      "id": "type-1",
+      "name": "GetError",
+      "description": "Retrieval failure exposed by the command.",
+      "kind": "enum",
+      "variants": [
+        {
+          "name": "NotFound",
+          "kind": "unit"
+        }
+      ]
+    }
+  ]
+}"#,
             "contract v1 wire fixture changed",
         );
     }
@@ -686,7 +838,79 @@ mod tests {
 
         assert_eq!(
             json,
-            include_str!("fixtures/contracts/v1/root.json"),
+            r#"{
+  "version": 1,
+  "root": "echo",
+  "command": {
+    "name": "echo",
+    "about": "Echo values",
+    "invocable": true,
+    "invocation": [
+      {
+        "positionals": [
+          {
+            "name": "value",
+            "required": true,
+            "type": {
+              "kind": "string"
+            }
+          }
+        ],
+        "options": [
+          {
+            "name": "--output",
+            "aliases": [
+              "--out"
+            ],
+            "type": {
+              "kind": "string"
+            },
+            "environment": "ECHO_OUTPUT",
+            "hasDefault": true
+          }
+        ]
+      }
+    ],
+    "execution": {
+      "success": {
+        "kind": "reference",
+        "definition": "type-0"
+      },
+      "error": {
+        "kind": "reference",
+        "definition": "type-1"
+      }
+    }
+  },
+  "types": [
+    {
+      "id": "type-0",
+      "name": "EchoOutput",
+      "description": "Successful result of echoing one value.",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "value",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    {
+      "id": "type-1",
+      "name": "EchoError",
+      "description": "Echo failure exposed by the command.",
+      "kind": "enum",
+      "variants": [
+        {
+          "name": "WriteFailed",
+          "kind": "unit"
+        }
+      ]
+    }
+  ]
+}"#,
             "contract v1 wire fixture changed",
         );
     }
