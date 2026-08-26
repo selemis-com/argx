@@ -152,7 +152,11 @@ pub(super) fn argument_state_branch(
 }
 
 /// Generates final conversion for one destination field.
-pub(super) fn finish_field(field: &model::Field, field_index: usize, facade: &TokenStream) -> TokenStream {
+pub(super) fn finish_field(
+    field: &model::Field,
+    field_index: usize,
+    facade: &TokenStream,
+) -> TokenStream {
     let slot = syn::Index::from(field_index);
 
     if matches!(&field.semantics, model::FieldSemantics::Flatten) {

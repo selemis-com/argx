@@ -4,14 +4,13 @@ use proc_macro2::Span;
 use quote::ToTokens as _;
 use syn::{Data, DeriveInput, Fields, GenericParam, Type, visit::Visit as _};
 
-use crate::{attrs, case};
-
 use super::{
     Argument, ArgumentKind, Command, CommandBinding, CommandSemantics, Field, FieldBinding,
     FieldSemantics, GenericName, GenericUse, HelpSection, Shape, ValueBinding, ValueConversion,
     ident_name,
     shape::{peel_option, peel_vec, rendered_path, validate_value_shape},
 };
+use crate::{attrs, case};
 
 impl Command {
     /// Parses and validates one command into the canonical derive-time model.

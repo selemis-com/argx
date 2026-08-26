@@ -4,13 +4,12 @@ use proc_macro2::Span;
 use quote::ToTokens as _;
 use syn::{Data, DeriveInput, Fields, GenericParam, visit::Visit as _};
 
-use crate::{attrs, case};
-
 use super::{
     CommandSemantics, GenericName, GenericUse, HelpSection, Subcommand, SubcommandBinding, Variant,
     VariantBinding, ident_name,
     shape::{peel_option, peel_vec},
 };
+use crate::{attrs, case};
 
 impl Subcommand {
     /// Parses and validates a subcommand enum before code generation.
