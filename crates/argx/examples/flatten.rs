@@ -18,7 +18,7 @@ struct Common {
 /// Command composed from a reusable argument group.
 #[derive(Debug, Parser)]
 struct Cli {
-    /// Shared arguments flattened into this command.
+    /// Shared arguments
     #[argx(flatten)]
     common: Common,
 }

@@ -18,6 +18,8 @@ struct Tables {
     args: TokenStream,
     /// Final normalized constraint slice expression stored on the command.
     constraints: TokenStream,
+    /// Final flattened help-group slice expression stored on the command.
+    help_groups: TokenStream,
 }
 
 /// Generates static parse metadata and typed binding for one command struct.
@@ -140,6 +142,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
     let command_flags = &tables.flags;
     let command_args = &tables.args;
     let command_constraints = &tables.constraints;
+    let command_help_groups = &tables.help_groups;
     let constraint_tables = constraint_tables(command, &facade, command_flags, command_args);
 
     let partial_types = command.fields.iter().map(|field| match &field.semantics {
@@ -427,6 +430,17 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
 
     let name = &command.semantics.name;
     let about = option_str(command.semantics.about.as_deref());
+    let description = option_str(command.semantics.description.as_deref());
+    let help_sections = command.semantics.help_sections.iter().map(|section| {
+        let heading = &section.heading;
+        let body = &section.body;
+        quote! {
+            #facade::__private::HelpSection {
+                heading: #heading,
+                body: #body,
+            }
+        }
+    });
     let aliases = &command.semantics.aliases;
     let short_version =
         command.semantics.version.as_ref().or(command.semantics.long_version.as_ref());
@@ -487,6 +501,9 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                 #facade::__private::Command {
                     name: #name,
                     about: #about,
+                    description: #description,
+                    help_sections: &[#(#help_sections),*],
+                    help_groups: #command_help_groups,
                     aliases: &[#(#aliases),*],
                     actions: #command_actions,
                     flags: #command_flags,
@@ -659,9 +676,12 @@ fn constraint_tables(
             .requires
             .iter()
             .map(|target| (quote!(#facade::__private::ConstraintKind::Requires), target))
-            .chain(argument.conflicts.iter().map(|target| {
-                (quote!(#facade::__private::ConstraintKind::Conflicts), target)
-            }))
+            .chain(
+                argument
+                    .conflicts
+                    .iter()
+                    .map(|target| (quote!(#facade::__private::ConstraintKind::Conflicts), target)),
+            )
         {
             let table = format_ident!("ARGX_CONSTRAINT_{constraint_index}");
             constraint_index += 1;
@@ -739,12 +759,15 @@ fn command_tables(
             flags: quote!(&[#(#flags),*]),
             args: quote!(&[#(#args),*]),
             constraints: quote!(&[#(#constraints),*]),
+            help_groups: quote!(&[]),
         };
     }
 
     let mut flag_groups = Vec::new();
     let mut arg_groups = Vec::new();
     let mut constraint_groups = Vec::new();
+    let mut help_group_groups = Vec::new();
+    let mut help_group_decls = Vec::new();
     let mut own_flags = Vec::new();
     let mut own_args = Vec::new();
     let mut own_constraints = Vec::new();
@@ -791,10 +814,9 @@ fn command_tables(
 
     for field in &command.fields {
         match &field.semantics {
-            model::FieldSemantics::Argument(argument @ model::Argument {
-                kind: model::ArgumentKind::Flag { .. },
-                ..
-            }) => {
+            model::FieldSemantics::Argument(
+                argument @ model::Argument { kind: model::ArgumentKind::Flag { .. }, .. },
+            ) => {
                 own_flags.push(flag_at);
                 flag_at += 1;
                 for _ in argument.requires.iter().chain(&argument.conflicts) {
@@ -802,10 +824,9 @@ fn command_tables(
                     constraint_at += 1;
                 }
             }
-            model::FieldSemantics::Argument(argument @ model::Argument {
-                kind: model::ArgumentKind::Positional,
-                ..
-            }) => {
+            model::FieldSemantics::Argument(
+                argument @ model::Argument { kind: model::ArgumentKind::Positional, .. },
+            ) => {
                 own_args.push(arg_at);
                 arg_at += 1;
                 for _ in argument.requires.iter().chain(&argument.conflicts) {
@@ -822,6 +843,22 @@ fn command_tables(
                 arg_groups.push(quote!(<#ty as #facade::__private::CommandArgs>::COMMAND.args));
                 constraint_groups
                     .push(quote!(<#ty as #facade::__private::CommandArgs>::COMMAND.constraints));
+                if let Some(heading) = field.help_heading.as_deref() {
+                    let group = format_ident!("ARGX_HELP_GROUP_{}", help_group_decls.len());
+                    help_group_decls.push(quote! {
+                        static #group: #facade::__private::HelpGroup<'static> =
+                            #facade::__private::HelpGroup {
+                                heading: #heading,
+                                flags: <#ty as #facade::__private::CommandArgs>::COMMAND.flags,
+                                args: <#ty as #facade::__private::CommandArgs>::COMMAND.args,
+                            };
+                    });
+                    help_group_groups.push(quote!(&[&#group]));
+                } else {
+                    help_group_groups.push(
+                        quote!(<#ty as #facade::__private::CommandArgs>::COMMAND.help_groups),
+                    );
+                }
                 flatten_checks.push(quote! {
                     const _: () = ::core::assert!(
                         <#ty as #facade::__private::CommandArgs>::COMMAND.subcommands.is_empty(),
@@ -843,6 +880,7 @@ fn command_tables(
     Tables {
         decls: quote! {
             #(#flatten_checks)*
+            #(#help_group_decls)*
             const ARGX_FLAG_GROUPS: &[&[&#facade::__private::Flag<'static>]] =
                 &[#(#flag_groups),*];
             const ARGX_ARG_GROUPS: &[&[&#facade::__private::Arg<'static>]] =
@@ -853,6 +891,11 @@ fn command_tables(
             static ARGX_ARGS: [&#facade::__private::Arg<'static>;
                 #facade::__private::table_len(ARGX_ARG_GROUPS)] =
                 #facade::__private::concat_args(ARGX_ARG_GROUPS);
+            const ARGX_HELP_GROUP_GROUPS: &[&[&#facade::__private::HelpGroup<'static>]] =
+                &[#(#help_group_groups),*];
+            static ARGX_HELP_GROUPS: [&#facade::__private::HelpGroup<'static>;
+                #facade::__private::table_len(ARGX_HELP_GROUP_GROUPS)] =
+                #facade::__private::concat_help_groups(ARGX_HELP_GROUP_GROUPS);
             const ARGX_CONSTRAINT_GROUPS: &[&[#facade::__private::Constraint]] =
                 &[#(#constraint_groups),*];
             static ARGX_CONSTRAINTS: [#facade::__private::Constraint;
@@ -862,6 +905,7 @@ fn command_tables(
         flags: quote!(&ARGX_FLAGS),
         args: quote!(&ARGX_ARGS),
         constraints: quote!(&ARGX_CONSTRAINTS),
+        help_groups: quote!(&ARGX_HELP_GROUPS),
     }
 }
 

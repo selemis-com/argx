@@ -65,6 +65,31 @@ pub enum ActionKind<'a> {
     },
 }
 
+/// One user-authored help section derived from command documentation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HelpSection<'a> {
+    /// Section heading without Markdown syntax.
+    pub heading: &'a str,
+    /// Section body rendered verbatim after generated command sections.
+    pub body: &'a str,
+}
+
+/// One documented group of arguments contributed through a flattened `Args` field.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HelpGroup<'a> {
+    /// Group heading supplied by the flatten field's Rust documentation.
+    pub heading: &'a str,
+    /// Named arguments contributed by the flattened declaration.
+    pub flags: &'a [&'a Flag<'a>],
+    /// Positional arguments contributed by the flattened declaration.
+    pub args: &'a [&'a Arg<'a>],
+}
+
+impl HelpGroup<'static> {
+    /// Empty group used as a const-composition placeholder.
+    pub const EMPTY: Self = Self { heading: "", flags: &[], args: &[] };
+}
+
 /// Help is present in every command scope and is modeled as an ordinary built-in action.
 pub static HELP_ACTION: Action<'static> = Action {
     name: "help",
@@ -82,6 +107,12 @@ pub struct Command<'a> {
     pub name: &'a str,
     /// One-line description shown in generated help.
     pub about: Option<&'a str>,
+    /// Full command prose shown before generated help sections.
+    pub description: Option<&'a str>,
+    /// User-authored help sections shown after generated command sections.
+    pub help_sections: &'a [HelpSection<'a>],
+    /// Documented flattened argument groups in composition order.
+    pub help_groups: &'a [&'a HelpGroup<'a>],
     /// Hidden spellings accepted in addition to the canonical command name.
     pub aliases: &'a [&'a str],
     /// Built-in parser actions available in this command scope.
@@ -103,6 +134,9 @@ impl Command<'static> {
     pub const EMPTY: Self = Self {
         name: "",
         about: None,
+        description: None,
+        help_sections: &[],
+        help_groups: &[],
         aliases: &[],
         actions: &[&HELP_ACTION],
         flags: &[],

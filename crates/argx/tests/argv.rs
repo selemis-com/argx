@@ -224,10 +224,8 @@ mod tests {
 
     #[test]
     fn multi_digit_negative_numbers_remain_positional_with_digit_short_flags() {
-        static PRINT1: Flag<'static> =
-            Flag { key: 24, name: "print1", shorts: b"1", ..Flag::BOOL };
-        static PRINT2: Flag<'static> =
-            Flag { key: 25, name: "print2", shorts: b"2", ..Flag::BOOL };
+        static PRINT1: Flag<'static> = Flag { key: 24, name: "print1", shorts: b"1", ..Flag::BOOL };
+        static PRINT2: Flag<'static> = Flag { key: 25, name: "print2", shorts: b"2", ..Flag::BOOL };
         static VALUE: Arg<'static> =
             Arg { key: 26, name: "value", allow_negative_numbers: true, ..Arg::REQUIRED };
         static NUMBER_COMMAND: Command<'static> = Command {
@@ -239,10 +237,7 @@ mod tests {
 
         let argv = argv(&["-12"]);
         let mut parser = ArgvParser::new(&NUMBER_COMMAND, &argv);
-        assert_eq!(
-            parser.next_event(),
-            Some(Ok(Event::Arg { arg: &VALUE, value: b"-12" }))
-        );
+        assert_eq!(parser.next_event(), Some(Ok(Event::Arg { arg: &VALUE, value: b"-12" })));
         assert_eq!(parser.next_event(), None);
     }
 

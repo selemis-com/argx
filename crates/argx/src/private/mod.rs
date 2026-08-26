@@ -11,11 +11,12 @@ mod value;
 
 pub use compose::{
     action_flag_spellings_disjoint, argument_key_by_name, command_keys_unique, concat_args,
-    concat_constraints, concat_flags, flag_spellings_unique, positional_layout_valid, table_len,
+    concat_constraints, concat_flags, concat_help_groups, flag_spellings_unique,
+    positional_layout_valid, table_len,
 };
 pub use model::{
     Action, ActionKind, Arg, ArgumentState, Command, Constraint, ConstraintKind, Flag, HELP_ACTION,
-    Key, key_base,
+    HelpGroup, HelpSection, Key, key_base,
 };
 pub(crate) use scope::{Named, long as resolve_long, short as resolve_short};
 pub use traits::{CommandArgs, Subcommands};

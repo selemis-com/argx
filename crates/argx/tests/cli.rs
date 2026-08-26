@@ -114,6 +114,37 @@ Options:
     }
 
     #[test]
+    fn structured_help_example_renders_documented_sections_and_groups() {
+        support::example_command("structured_help")
+            .arg("--help")
+            .assert()
+            .success()
+            .stdout_eq(snapbox::str![[r#"
+Inspect objects in a workspace.
+
+The command keeps its longer explanation alongside the Rust type that defines it.
+
+Usage: structured-help [OPTIONS]
+
+Options:
+  -h, --help  Print help
+
+Output:
+  --json           Emit structured JSON output.
+  --field <FIELD>  Include one output field; repeat the option to select more than one.
+
+Examples:
+    structured-help --field id --field title
+    structured-help --json
+
+Machine-readable usage:
+Use the application's schema command when a structured command contract is needed.
+
+"#]])
+            .stderr_eq("");
+    }
+
+    #[test]
     fn version_actions_use_stdout_and_success_status() {
         support::example_command("version")
             .arg("-V")

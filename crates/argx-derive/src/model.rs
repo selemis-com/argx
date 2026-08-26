@@ -46,12 +46,24 @@ pub(crate) struct CommandSemantics {
     pub name: String,
     /// One-line help summary for this command.
     pub about: Option<String>,
+    /// Full prose rendered before generated command help sections.
+    pub description: Option<String>,
+    /// User-authored help sections from Rust doc comments.
+    pub help_sections: Vec<HelpSection>,
     /// Short version text expression.
     pub version: Option<syn::Expr>,
     /// Long version text expression.
     pub long_version: Option<syn::Expr>,
     /// Hidden command spellings accepted in addition to the canonical name.
     pub aliases: Vec<String>,
+}
+
+/// One user-authored command help section.
+pub(crate) struct HelpSection {
+    /// Section heading.
+    pub heading: String,
+    /// Section body.
+    pub body: String,
 }
 
 /// One enum deriving `Subcommand`.
@@ -94,6 +106,8 @@ pub(crate) struct Field {
     pub binding: FieldBinding,
     /// CLI meaning of this field.
     pub semantics: FieldSemantics,
+    /// Help-section heading applied when this field flattens another `Args` declaration.
+    pub help_heading: Option<String>,
 }
 
 /// Rust-facing information for one destination field.
@@ -235,7 +249,14 @@ impl Command {
         if name.is_empty() {
             return Err(syn::Error::new(Span::call_site(), "command name cannot be empty"));
         }
-        let about = attributes.about.or_else(|| attrs::doc_summary(&input.attrs));
+        let docs = attrs::doc_help(&input.attrs);
+        let about = attributes.about.clone().or(docs.summary);
+        let description = attributes.about.or(docs.description);
+        let help_sections = docs
+            .sections
+            .into_iter()
+            .map(|section| HelpSection { heading: section.heading, body: section.body })
+            .collect();
         let version = attributes.version;
         let long_version = attributes.long_version;
 
@@ -247,7 +268,15 @@ impl Command {
                 root,
                 unit,
             },
-            semantics: CommandSemantics { name, about, version, long_version, aliases: Vec::new() },
+            semantics: CommandSemantics {
+                name,
+                about,
+                description,
+                help_sections,
+                version,
+                long_version,
+                aliases: Vec::new(),
+            },
             fields,
         })
     }
@@ -276,7 +305,14 @@ impl Subcommand {
             let attributes = attrs::variant(&variant.attrs)?;
             let rust_name = ident_name(&variant.ident);
             let name = attributes.name.unwrap_or_else(|| case::to_kebab(&rust_name));
-            let about = attributes.about.or_else(|| attrs::doc_summary(&variant.attrs));
+            let docs = attrs::doc_help(&variant.attrs);
+            let about = attributes.about.clone().or(docs.summary);
+            let description = attributes.about.or(docs.description);
+            let help_sections = docs
+                .sections
+                .into_iter()
+                .map(|section| HelpSection { heading: section.heading, body: section.body })
+                .collect();
             let version = attributes.version;
             let long_version = attributes.long_version;
             validate_subcommand_name(&name, variant.ident.span())?;
@@ -329,7 +365,15 @@ impl Subcommand {
 
             variants.push(Variant {
                 binding: VariantBinding { ident: variant.ident.clone(), payload },
-                semantics: CommandSemantics { name, about, version, long_version, aliases },
+                semantics: CommandSemantics {
+                    name,
+                    about,
+                    description,
+                    help_sections,
+                    version,
+                    long_version,
+                    aliases,
+                },
             });
         }
 
@@ -406,7 +450,7 @@ impl Field {
                     "`subcommand` does not support collection wrappers",
                 ));
             }
-            return Ok(Self { binding, semantics: FieldSemantics::Subcommand });
+            return Ok(Self { binding, semantics: FieldSemantics::Subcommand, help_heading: None });
         }
 
         if attributes.flatten {
@@ -438,7 +482,11 @@ impl Field {
                 ));
             }
 
-            return Ok(Self { binding, semantics: FieldSemantics::Flatten });
+            return Ok(Self {
+                binding,
+                semantics: FieldSemantics::Flatten,
+                help_heading: attrs::doc_summary(&field.attrs),
+            });
         }
 
         let shape = Shape::from_type(&binding.ty);
@@ -552,6 +600,7 @@ impl Field {
                 allow_hyphen_values: attributes.allow_hyphen_values,
                 allow_negative_numbers: attributes.allow_negative_numbers,
             }),
+            help_heading: None,
         })
     }
 
@@ -764,7 +813,9 @@ fn validate_constraints(fields: &[Field]) -> syn::Result<()> {
         };
         let source = field.binding.name.as_str();
 
-        for (kind, targets) in [("requires", &argument.requires), ("conflicts", &argument.conflicts)] {
+        for (kind, targets) in
+            [("requires", &argument.requires), ("conflicts", &argument.conflicts)]
+        {
             let mut seen = Vec::<&str>::new();
             for target in targets {
                 if target.is_empty() {

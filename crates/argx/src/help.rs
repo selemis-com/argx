@@ -2,10 +2,20 @@
 
 use std::fmt::Write as _;
 
-use crate::__private::{Action, Arg, Command, Flag, Named, resolve_long, resolve_short};
+use crate::__private::{
+    Action, Arg, Command, Flag, HelpGroup, Key, Named, resolve_long, resolve_short,
+};
+
+/// Renderable argument rows collected under one help section.
+type HelpRows = Vec<(String, String)>;
+
+/// Help sections paired with their rendered argument rows.
+type GroupedHelp<'a> = Vec<(&'a str, HelpRows)>;
 
 /// One flag as visible from the selected command scope.
 struct VisibleFlag<'a> {
+    /// Command-path scope where this visible occurrence is mounted.
+    scope: usize,
     /// Original declaration metadata used for help text and value behavior.
     flag: &'a Flag<'a>,
     /// Long spellings that remain visible after lexical shadowing.
@@ -21,10 +31,13 @@ pub(crate) fn render(path: &[&Command<'_>]) -> String {
     };
 
     let visible_flags = visible_flags(path);
+    let (grouped_keys, grouped_rows) = grouped_rows(path, &visible_flags);
 
     let mut output = String::new();
-    if let Some(about) = command.about.filter(|about| !about.is_empty()) {
-        output.push_str(about);
+    if let Some(description) =
+        command.description.or(command.about).filter(|description| !description.is_empty())
+    {
+        output.push_str(description);
         output.push_str("\n\n");
     }
 
@@ -55,10 +68,15 @@ pub(crate) fn render(path: &[&Command<'_>]) -> String {
     }
     output.push('\n');
 
-    if !command.args.is_empty() {
+    let ungrouped_args = command
+        .args
+        .iter()
+        .copied()
+        .filter(|arg| !grouped_keys.contains(&arg.key))
+        .collect::<Vec<_>>();
+    if !ungrouped_args.is_empty() {
         output.push_str("\nArguments:\n");
-        let rows = command
-            .args
+        let rows = ungrouped_args
             .iter()
             .map(|arg| (arg_usage(arg), arg.help.unwrap_or("").to_owned()))
             .collect::<Vec<_>>();
@@ -78,6 +96,7 @@ pub(crate) fn render(path: &[&Command<'_>]) -> String {
     output.push_str("\nOptions:\n");
     let mut rows = visible_flags
         .iter()
+        .filter(|flag| !grouped_keys.contains(&flag.flag.key))
         .map(|flag| (flag_label(flag), flag_help(flag.flag)))
         .collect::<Vec<_>>();
     rows.extend(
@@ -85,7 +104,86 @@ pub(crate) fn render(path: &[&Command<'_>]) -> String {
     );
     write_rows(&mut output, &rows);
 
+    for (heading, rows) in grouped_rows {
+        output.push('\n');
+        output.push_str(heading);
+        output.push_str(":\n");
+        write_rows(&mut output, &rows);
+    }
+
+    for section in command.help_sections {
+        output.push('\n');
+        output.push_str(section.heading);
+        output.push_str(":\n");
+        if !section.body.is_empty() {
+            output.push_str(section.body);
+            output.push('\n');
+        }
+    }
+
     output
+}
+
+/// Builds documented flattened-group rows and the semantic keys claimed by those groups.
+fn grouped_rows<'a>(
+    path: &[&'a Command<'a>],
+    visible_flags: &[VisibleFlag<'a>],
+) -> (Vec<Key>, GroupedHelp<'a>) {
+    let Some(&selected) = path.last() else {
+        return (Vec::new(), Vec::new());
+    };
+    let selected_scope = path.len() - 1;
+
+    let mut grouped_keys = Vec::new();
+    let mut sections = GroupedHelp::new();
+    for (scope, command) in path.iter().enumerate().rev() {
+        for group in command.help_groups.iter().copied() {
+            if group.heading.is_empty() {
+                continue;
+            }
+            let heading = group.heading;
+            let mut rows = Vec::new();
+            if scope == selected_scope {
+                for arg in selected.args {
+                    if group_contains_arg(group, arg) && !grouped_keys.contains(&arg.key) {
+                        grouped_keys.push(arg.key);
+                        rows.push((arg_usage(arg), arg.help.unwrap_or("").to_owned()));
+                    }
+                }
+            }
+            for flag in visible_flags {
+                if flag.scope == scope
+                    && group_contains_flag(group, flag.flag)
+                    && !grouped_keys.contains(&flag.flag.key)
+                {
+                    grouped_keys.push(flag.flag.key);
+                    rows.push((flag_label(flag), flag_help(flag.flag)));
+                }
+            }
+            if rows.is_empty() {
+                continue;
+            }
+            if let Some((_, existing)) =
+                sections.iter_mut().find(|(existing, _)| *existing == heading)
+            {
+                existing.extend(rows);
+            } else {
+                sections.push((heading, rows));
+            }
+        }
+    }
+
+    (grouped_keys, sections)
+}
+
+/// Reports whether one help group contains a named argument.
+fn group_contains_flag(group: &HelpGroup<'_>, flag: &Flag<'_>) -> bool {
+    group.flags.iter().any(|candidate| std::ptr::eq(*candidate, flag))
+}
+
+/// Reports whether one help group contains a positional argument.
+fn group_contains_arg(group: &HelpGroup<'_>, arg: &Arg<'_>) -> bool {
+    group.args.iter().any(|candidate| std::ptr::eq(*candidate, arg))
 }
 
 /// Resolves flags visible from the selected command using the parser's lexical scope rules.
@@ -98,14 +196,11 @@ fn visible_flags<'a>(path: &[&'a Command<'a>]) -> Vec<VisibleFlag<'a>> {
     };
     let current = ancestors.len();
 
-    let candidates = command
-        .flags
-        .iter()
-        .copied()
-        .map(|flag| (current, flag))
-        .chain(ancestors.iter().enumerate().rev().flat_map(|(scope, command)| {
+    let candidates = command.flags.iter().copied().map(|flag| (current, flag)).chain(
+        ancestors.iter().enumerate().rev().flat_map(|(scope, command)| {
             command.flags.iter().copied().filter(|flag| flag.global).map(move |flag| (scope, flag))
-        }));
+        }),
+    );
 
     candidates
         .filter_map(|(scope, flag)| {
@@ -134,7 +229,12 @@ fn visible_flags<'a>(path: &[&'a Command<'a>]) -> Vec<VisibleFlag<'a>> {
                 })
                 .collect::<Vec<_>>();
 
-            (!longs.is_empty() || !shorts.is_empty()).then_some(VisibleFlag { flag, longs, shorts })
+            (!longs.is_empty() || !shorts.is_empty()).then_some(VisibleFlag {
+                scope,
+                flag,
+                longs,
+                shorts,
+            })
         })
         .collect()
 }
@@ -470,12 +570,8 @@ Options:
         };
         static LEAF: Command<'static> =
             Command { name: "leaf", flags: &[&SHARED], ..Command::EMPTY };
-        static ROOT: Command<'static> = Command {
-            name: "tool",
-            flags: &[&SHARED],
-            subcommands: &[&LEAF],
-            ..Command::EMPTY
-        };
+        static ROOT: Command<'static> =
+            Command { name: "tool", flags: &[&SHARED], subcommands: &[&LEAF], ..Command::EMPTY };
 
         snapbox::Assert::new().action_env("SNAPSHOTS").eq(
             render(&[&ROOT, &LEAF]),

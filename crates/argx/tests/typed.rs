@@ -265,6 +265,132 @@ mod tests {
         key: String,
     }
 
+    /// Inspect and modify widgets.
+    ///
+    /// Commands operate on the selected workspace.
+    ///
+    /// # Examples
+    ///
+    /// documented-help list
+    /// documented-help get widget-1
+    ///
+    /// # Machine-readable usage
+    ///
+    /// Use `documented-help schema` to inspect command contracts.
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    #[argx(name = "documented-help")]
+    struct DocumentedHelpCli {
+        #[argx(long)]
+        workspace: Option<String>,
+    }
+
+    /// Payload details used when the selectable variant owns the short summary.
+    ///
+    /// # Examples
+    ///
+    /// documented-subcommand run --force
+    #[derive(Debug, PartialEq, Eq, argx::Args)]
+    struct DocumentedPayload {
+        #[argx(long)]
+        force: bool,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Subcommand)]
+    enum DocumentedSubcommand {
+        /// Run the documented operation.
+        Run(DocumentedPayload),
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    #[argx(name = "documented-subcommand")]
+    struct DocumentedSubcommandCli {
+        #[argx(subcommand)]
+        command: DocumentedSubcommand,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Args)]
+    struct GroupedOutputArgs {
+        /// Emit structured output.
+        #[argx(long, global)]
+        json: bool,
+        /// Select output fields.
+        #[argx(long, global)]
+        field: Vec<String>,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Subcommand)]
+    enum GroupedHelpCommand {
+        /// Show current status.
+        Status,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    #[argx(name = "grouped-help")]
+    struct GroupedHelpCli {
+        /// Output
+        #[argx(flatten)]
+        output: GroupedOutputArgs,
+        #[argx(subcommand)]
+        command: GroupedHelpCommand,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Args)]
+    struct NestedGroupValues {
+        /// Select the network interface.
+        #[argx(long)]
+        interface: Option<String>,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Args)]
+    struct NestedGroupArgs {
+        /// Network
+        #[argx(flatten)]
+        values: NestedGroupValues,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    #[argx(name = "propagated-group")]
+    struct PropagatedGroupCli {
+        #[argx(flatten)]
+        nested: NestedGroupArgs,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    #[argx(name = "overridden-group")]
+    struct OverriddenGroupCli {
+        /// Runtime
+        #[argx(flatten)]
+        nested: NestedGroupArgs,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Args)]
+    struct ReusedGroupedArgs {
+        /// Shared setting.
+        #[argx(long, global)]
+        shared: Option<String>,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Args)]
+    struct ReusedGroupedLeaf {
+        #[argx(flatten)]
+        shared: ReusedGroupedArgs,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Subcommand)]
+    enum ReusedGroupedCommand {
+        Leaf(ReusedGroupedLeaf),
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    #[argx(name = "reused-group")]
+    struct ReusedGroupedCli {
+        /// Root settings
+        #[argx(flatten)]
+        shared: ReusedGroupedArgs,
+        #[argx(subcommand)]
+        command: ReusedGroupedCommand,
+    }
+
     const SHORT_VERSION: &str = "1.2.3";
     const LONG_VERSION: &str = "1.2.3 (build abc123)";
 
@@ -850,6 +976,97 @@ Options:
     }
 
     #[test]
+    fn generated_help_renders_structured_sections_from_rust_docs() {
+        snapbox::Assert::new().action_env("SNAPSHOTS").eq(
+            DocumentedHelpCli::render_help(),
+            snapbox::str![[r#"
+Inspect and modify widgets.
+
+Commands operate on the selected workspace.
+
+Usage: documented-help [OPTIONS]
+
+Options:
+  --workspace <WORKSPACE>
+  -h, --help               Print help
+
+Examples:
+documented-help list
+documented-help get widget-1
+
+Machine-readable usage:
+Use `documented-help schema` to inspect command contracts.
+
+"#]],
+        );
+    }
+
+    #[test]
+    fn subcommand_help_inherits_documented_sections_from_its_payload() {
+        let error = DocumentedSubcommandCli::try_parse_args(["run", "--help"])
+            .expect_err("help should stop before constructing the payload");
+        let Error::DisplayHelp { help } = error else {
+            panic!("expected generated help");
+        };
+        assert!(help.starts_with("Run the documented operation.\n\n"));
+        assert!(help.contains("\nExamples:\ndocumented-subcommand run --force\n"));
+    }
+
+    #[test]
+    fn flatten_field_docs_group_arguments_without_renderer_insertion_metadata() {
+        snapbox::Assert::new().action_env("SNAPSHOTS").eq(
+            GroupedHelpCli::render_help(),
+            snapbox::str![[r#"
+Usage: grouped-help [OPTIONS] <COMMAND>
+
+Commands:
+  status  Show current status.
+
+Options:
+  -h, --help  Print help
+
+Output:
+  --json           Emit structured output.
+  --field <FIELD>  Select output fields.
+
+"#]],
+        );
+    }
+
+    #[test]
+    fn inherited_global_arguments_keep_their_documented_group_in_subcommand_help() {
+        let error = GroupedHelpCli::try_parse_args(["status", "--help"])
+            .expect_err("help should stop before constructing the command");
+        let Error::DisplayHelp { help } = error else {
+            panic!("expected generated help");
+        };
+        assert!(help.contains("\nOutput:\n  --json"));
+        assert!(help.contains("  --field <FIELD>"));
+        assert!(!help.contains("Options:\n  --json"));
+    }
+
+    #[test]
+    fn undocumented_flattening_propagates_nested_groups_and_documented_flattening_overrides_them() {
+        let propagated = PropagatedGroupCli::render_help();
+        assert!(propagated.contains("\nNetwork:\n  --interface <INTERFACE>"));
+
+        let overridden = OverriddenGroupCli::render_help();
+        assert!(overridden.contains("\nRuntime:\n  --interface <INTERFACE>"));
+        assert!(!overridden.contains("\nNetwork:\n"));
+    }
+
+    #[test]
+    fn reused_flattened_args_are_grouped_only_by_their_visible_scope() {
+        let error = ReusedGroupedCli::try_parse_args(["leaf", "--help"])
+            .expect_err("help should stop before constructing the command");
+        let Error::DisplayHelp { help } = error else {
+            panic!("expected generated help");
+        };
+        assert!(help.contains("Options:\n  --shared <SHARED>"));
+        assert!(!help.contains("Root settings:"));
+    }
+
+    #[test]
     fn help_precedes_deferred_binding_errors_but_not_detached_value_rules() {
         assert!(matches!(
             HelpCli::try_parse_args(["--verbose", "--verbose", "--help"]),
@@ -1080,10 +1297,7 @@ Options:
             ),
             "constraint-env-requires" => assert_eq!(
                 EnvironmentConstraintCli::try_parse_args(std::iter::empty::<&str>()),
-                Err(Error::MissingRequirement {
-                    name: "--token",
-                    required_by: "--endpoint",
-                }),
+                Err(Error::MissingRequirement { name: "--token", required_by: "--endpoint" }),
             ),
             "constraint-env-conflicts" => assert_eq!(
                 EnvironmentConstraintCli::try_parse_args(["--stdout"]),
@@ -1265,10 +1479,7 @@ Options:\n  --color <COLOR>\n  -h, --help       Print help\n",
             }),
         );
 
-        for args in [
-            ["--output", "out.txt", "--stdout"],
-            ["--stdout", "--output", "out.txt"],
-        ] {
+        for args in [["--output", "out.txt", "--stdout"], ["--stdout", "--output", "out.txt"]] {
             assert_eq!(
                 ConstraintCli::try_parse_args(args),
                 Err(Error::ConflictingArguments { name: "--output", other: "--stdout" }),

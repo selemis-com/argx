@@ -2,6 +2,24 @@
 
 use syn::{Attribute, Expr, Lit, LitChar, LitStr, Meta, Token};
 
+/// Structured help extracted from Rust doc comments on a command declaration.
+pub(crate) struct DocHelp {
+    /// First prose paragraph, collapsed to one line for command listings.
+    pub summary: Option<String>,
+    /// Full prose before the first level-one heading.
+    pub description: Option<String>,
+    /// User-authored level-one sections in declaration order.
+    pub sections: Vec<DocSection>,
+}
+
+/// One level-one help section extracted from Rust doc comments.
+pub(crate) struct DocSection {
+    /// Section heading without the Markdown marker.
+    pub heading: String,
+    /// Section body with paragraph and code-block line structure preserved.
+    pub body: String,
+}
+
 /// An attribute whose bare form asks Argx to infer a value from the Rust identifier.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Inferred<T> {
@@ -222,9 +240,7 @@ fn string_or_array(
     attribute: &str,
 ) -> syn::Result<Vec<LitStr>> {
     if !meta.input.peek(Token![=]) {
-        return Err(meta.error(format!(
-            "`{attribute}` expects a string or non-empty string array"
-        )));
+        return Err(meta.error(format!("`{attribute}` expects a string or non-empty string array")));
     }
 
     match meta.value()?.parse::<Expr>()? {
@@ -286,42 +302,84 @@ pub(crate) fn reject(attributes: &[Attribute], context: &str) -> syn::Result<()>
 
 /// Returns the first paragraph of Rust doc comments as a one-line help summary.
 pub(crate) fn doc_summary(attributes: &[Attribute]) -> Option<String> {
-    let mut summary = String::new();
-    let mut started = false;
+    let lines = doc_lines(attributes);
+    first_paragraph(trim_blank_lines(&lines))
+}
 
-    for attribute in attributes.iter().filter(|attribute| attribute.path().is_ident("doc")) {
-        let Meta::NameValue(meta) = &attribute.meta else {
+/// Parses command-level Rust docs into prose plus user-authored level-one help sections.
+pub(crate) fn doc_help(attributes: &[Attribute]) -> DocHelp {
+    let lines = doc_lines(attributes);
+    let first_heading =
+        lines.iter().position(|line| level_one_heading(line).is_some()).unwrap_or(lines.len());
+    let preamble = trim_blank_lines(&lines[..first_heading]);
+    let description = (!preamble.is_empty()).then(|| preamble.join("\n"));
+    let summary = first_paragraph(preamble);
+
+    let mut sections = Vec::new();
+    let mut index = first_heading;
+    while index < lines.len() {
+        let Some(heading) = level_one_heading(&lines[index]) else {
+            index += 1;
             continue;
         };
-        let Expr::Lit(value) = &meta.value else {
-            continue;
-        };
-        let Lit::Str(value) = &value.lit else {
-            continue;
-        };
-        let line = value.value();
-        let line = line.trim();
-        if line.is_empty() {
-            if started {
-                break;
-            }
-            continue;
+        index += 1;
+        let body_start = index;
+        while index < lines.len() && level_one_heading(&lines[index]).is_none() {
+            index += 1;
         }
-        if started {
-            summary.push(' ');
-        }
-        summary.push_str(line);
-        started = true;
+        let body = trim_blank_lines(&lines[body_start..index]).join("\n");
+        sections.push(DocSection { heading: heading.to_owned(), body });
     }
 
-    started.then_some(summary)
+    DocHelp { summary, description, sections }
+}
+
+/// Extracts normalized source lines from `#[doc = ...]` attributes.
+fn doc_lines(attributes: &[Attribute]) -> Vec<String> {
+    attributes
+        .iter()
+        .filter(|attribute| attribute.path().is_ident("doc"))
+        .filter_map(|attribute| {
+            let Meta::NameValue(meta) = &attribute.meta else {
+                return None;
+            };
+            let Expr::Lit(value) = &meta.value else {
+                return None;
+            };
+            let Lit::Str(value) = &value.lit else {
+                return None;
+            };
+            let line = value.value();
+            Some(line.strip_prefix(' ').unwrap_or(&line).trim_end().to_owned())
+        })
+        .collect()
+}
+
+/// Returns a level-one Markdown heading, excluding deeper headings such as `## Details`.
+fn level_one_heading(line: &str) -> Option<&str> {
+    line.strip_prefix("# ").map(str::trim).filter(|heading| !heading.is_empty())
+}
+
+/// Removes only blank boundary lines while preserving body formatting.
+fn trim_blank_lines(lines: &[String]) -> &[String] {
+    let start = lines.iter().position(|line| !line.trim().is_empty()).unwrap_or(lines.len());
+    let end =
+        lines.iter().rposition(|line| !line.trim().is_empty()).map_or(start, |index| index + 1);
+    &lines[start..end]
+}
+
+/// Collapses the first prose paragraph to one line for short command descriptions.
+fn first_paragraph(lines: &[String]) -> Option<String> {
+    let paragraph = lines.iter().take_while(|line| !line.trim().is_empty()).collect::<Vec<_>>();
+    (!paragraph.is_empty())
+        .then(|| paragraph.into_iter().map(|line| line.trim()).collect::<Vec<_>>().join(" "))
 }
 
 #[cfg(test)]
 mod tests {
     use syn::{DeriveInput, parse_quote};
 
-    use super::doc_summary;
+    use super::{doc_help, doc_summary};
 
     #[test]
     fn doc_summary_uses_only_the_first_paragraph() {
@@ -333,5 +391,36 @@ mod tests {
             struct Example;
         };
         assert_eq!(doc_summary(&input.attrs).as_deref(), Some("First line. Second line."));
+    }
+
+    #[test]
+    fn doc_help_preserves_preamble_and_level_one_sections() {
+        let input: DeriveInput = parse_quote! {
+            /// Short summary.
+            ///
+            /// Longer command context.
+            ///
+            /// # Examples
+            ///
+            /// ```text
+            /// tool run
+            /// ```
+            ///
+            /// ## Detail
+            /// Still part of the examples body.
+            ///
+            /// # Machine-readable usage
+            /// Use `tool schema`.
+            struct Example;
+        };
+        let help = doc_help(&input.attrs);
+        assert_eq!(help.summary.as_deref(), Some("Short summary."));
+        assert_eq!(help.description.as_deref(), Some("Short summary.\n\nLonger command context."));
+        assert_eq!(help.sections.len(), 2);
+        assert_eq!(help.sections[0].heading, "Examples");
+        assert!(help.sections[0].body.contains("```text\ntool run\n```"));
+        assert!(help.sections[0].body.contains("## Detail"));
+        assert_eq!(help.sections[1].heading, "Machine-readable usage");
+        assert_eq!(help.sections[1].body, "Use `tool schema`.");
     }
 }

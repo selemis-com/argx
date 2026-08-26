@@ -117,6 +117,35 @@ mod tests {
         stdout: bool,
     }
 
+    #[derive(argx::Args)]
+    struct GroupedModelArgs {
+        #[argx(long)]
+        json: bool,
+        #[argx(long)]
+        field: Vec<String>,
+    }
+
+    #[derive(argx::Parser)]
+    struct GroupedModel {
+        /// Output
+        #[argx(flatten)]
+        output: GroupedModelArgs,
+    }
+
+    /// Documented command summary.
+    ///
+    /// Additional command context remains available to full help.
+    ///
+    /// # Examples
+    ///
+    /// example run
+    ///
+    /// # Machine-readable usage
+    ///
+    /// Use `example schema`.
+    #[derive(argx::Parser)]
+    struct DocumentedModel;
+
     mod add {
         #[derive(argx::Args)]
         pub(super) struct Options {
@@ -195,6 +224,39 @@ mod tests {
         assert!(!command.args[1].required);
         assert!(command.args[1].variadic);
         assert!(!command.args[1].allow_negative_numbers);
+    }
+
+    #[test]
+    fn flatten_field_docs_are_projected_as_help_groups() {
+        let value = GroupedModel { output: GroupedModelArgs { json: false, field: Vec::new() } };
+        assert!(!value.output.json);
+        assert!(value.output.field.is_empty());
+
+        let command = GroupedModel::COMMAND;
+        assert_eq!(command.help_groups.len(), 1);
+        let group = command.help_groups[0];
+        assert_eq!(group.heading, "Output");
+        assert_eq!(group.flags.len(), 2);
+        assert!(group.args.is_empty());
+        assert!(std::ptr::eq(group.flags[0], command.flags[0]));
+        assert!(std::ptr::eq(group.flags[1], command.flags[1]));
+    }
+
+    #[test]
+    fn command_docs_are_projected_as_structured_help() {
+        let command = DocumentedModel::COMMAND;
+        assert_eq!(command.about, Some("Documented command summary."));
+        assert_eq!(
+            command.description,
+            Some(
+                "Documented command summary.\n\nAdditional command context remains available to full help."
+            )
+        );
+        assert_eq!(command.help_sections.len(), 2);
+        assert_eq!(command.help_sections[0].heading, "Examples");
+        assert_eq!(command.help_sections[0].body, "example run");
+        assert_eq!(command.help_sections[1].heading, "Machine-readable usage");
+        assert_eq!(command.help_sections[1].body, "Use `example schema`.");
     }
 
     #[test]

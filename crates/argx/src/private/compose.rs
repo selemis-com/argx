@@ -1,6 +1,6 @@
 //! Const-time composition and validation of independently derived command tables.
 
-use super::model::{Action, Arg, Constraint, ConstraintKind, Flag, Key};
+use super::model::{Action, Arg, Constraint, ConstraintKind, Flag, HelpGroup, Key};
 
 /// Returns the total number of entries across several static table slices.
 pub const fn table_len<T>(groups: &[&[T]]) -> usize {
@@ -71,11 +71,8 @@ pub const fn concat_args<const N: usize>(
 ///
 /// Panics during const evaluation if `N` is not [`table_len`] of `groups`.
 pub const fn concat_constraints<const N: usize>(groups: &[&[Constraint]]) -> [Constraint; N] {
-    const PLACEHOLDER: Constraint = Constraint {
-        kind: ConstraintKind::Requires,
-        source: 0,
-        target: 0,
-    };
+    const PLACEHOLDER: Constraint =
+        Constraint { kind: ConstraintKind::Requires, source: 0, target: 0 };
     let mut joined = [PLACEHOLDER; N];
     let mut at = 0;
     let mut group = 0;
@@ -90,6 +87,32 @@ pub const fn concat_constraints<const N: usize>(groups: &[&[Constraint]]) -> [Co
         group += 1;
     }
     assert!(at == N, "concatenated constraint-table length must match table_len");
+    joined
+}
+
+/// Concatenates help-group slices into one static array while preserving composition order.
+///
+/// # Panics
+///
+/// Panics during const evaluation if `N` is not [`table_len`] of `groups`.
+pub const fn concat_help_groups<const N: usize>(
+    groups: &[&[&'static HelpGroup<'static>]],
+) -> [&'static HelpGroup<'static>; N] {
+    static PLACEHOLDER: HelpGroup<'static> = HelpGroup::EMPTY;
+    let mut joined = [&PLACEHOLDER; N];
+    let mut at = 0;
+    let mut group = 0;
+    while group < groups.len() {
+        let entries = groups[group];
+        let mut index = 0;
+        while index < entries.len() {
+            joined[at] = entries[index];
+            at += 1;
+            index += 1;
+        }
+        group += 1;
+    }
+    assert!(at == N, "concatenated help-group length must match table_len");
     joined
 }
 

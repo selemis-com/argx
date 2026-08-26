@@ -25,6 +25,22 @@ pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
         let key = key::ident("SUBCOMMAND", Some(index));
         let name = &variant.semantics.name;
         let about = option_str(variant.semantics.about.as_deref());
+        let own_description = variant.semantics.description.as_deref();
+        let own_help_sections = variant
+            .semantics
+            .help_sections
+            .iter()
+            .map(|section| {
+                let heading = &section.heading;
+                let body = &section.body;
+                quote! {
+                    #facade::__private::HelpSection {
+                        heading: #heading,
+                        body: #body,
+                    }
+                }
+            })
+            .collect::<Vec<_>>();
         let aliases = &variant.semantics.aliases;
         let short_version =
             variant.semantics.version.as_ref().or(variant.semantics.long_version.as_ref());
@@ -51,11 +67,16 @@ pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
         } else {
             quote!(&[&#facade::__private::HELP_ACTION])
         };
-        let command = variant.binding.payload.as_ref().map_or_else(|| quote! {
+        let command = variant.binding.payload.as_ref().map_or_else(|| {
+            let description = option_str(own_description);
+            quote! {
                 static #table: #facade::__private::Command<'static> =
                     #facade::__private::Command {
                         name: #name,
                         about: #about,
+                        description: #description,
+                        help_sections: &[#(#own_help_sections),*],
+                        help_groups: &[],
                         aliases: &[#(#aliases),*],
                         actions: #actions,
                         flags: &[],
@@ -64,11 +85,25 @@ pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
                         subcommands: &[],
                         key: #key,
                     };
-            }, |ty| quote! {
+            }
+        }, |ty| {
+            let description = own_description.map_or_else(
+                || quote!(<#ty as #facade::__private::CommandArgs>::COMMAND.description),
+                |description| quote!(::std::option::Option::Some(#description)),
+            );
+            let help_sections = if variant.semantics.help_sections.is_empty() {
+                quote!(<#ty as #facade::__private::CommandArgs>::COMMAND.help_sections)
+            } else {
+                quote!(&[#(#own_help_sections),*])
+            };
+            quote! {
                 static #table: #facade::__private::Command<'static> =
                     #facade::__private::Command {
                         name: #name,
                         about: #about,
+                        description: #description,
+                        help_sections: #help_sections,
+                        help_groups: <#ty as #facade::__private::CommandArgs>::COMMAND.help_groups,
                         aliases: &[#(#aliases),*],
                         actions: #actions,
                         flags: <#ty as #facade::__private::CommandArgs>::COMMAND.flags,
@@ -77,7 +112,8 @@ pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
                         subcommands: <#ty as #facade::__private::CommandArgs>::COMMAND.subcommands,
                         key: #key,
                     };
-            });
+            }
+        });
         quote! {
             #version_action
             #command

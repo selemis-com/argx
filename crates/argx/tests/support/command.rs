@@ -14,6 +14,8 @@ static ENVIRONMENT_EXAMPLE: OnceLock<PathBuf> = OnceLock::new();
 static VERSION_EXAMPLE: OnceLock<PathBuf> = OnceLock::new();
 /// Compiled path for the subcommand public example.
 static SUBCOMMANDS_EXAMPLE: OnceLock<PathBuf> = OnceLock::new();
+/// Compiled path for the structured-help public example.
+static STRUCTURED_HELP_EXAMPLE: OnceLock<PathBuf> = OnceLock::new();
 
 /// Returns a deterministic command targeting one real public example.
 pub(crate) fn example_command(name: &str) -> Command {
@@ -23,6 +25,9 @@ pub(crate) fn example_command(name: &str) -> Command {
         "environment" => ENVIRONMENT_EXAMPLE.get_or_init(|| compile_example("environment")),
         "version" => VERSION_EXAMPLE.get_or_init(|| compile_example("version")),
         "subcommands" => SUBCOMMANDS_EXAMPLE.get_or_init(|| compile_example("subcommands")),
+        "structured_help" => {
+            STRUCTURED_HELP_EXAMPLE.get_or_init(|| compile_example("structured_help"))
+        }
         other => panic!("unsupported CLI-test example `{other}`"),
     };
     Command::new(binary).env("NO_COLOR", "1")
