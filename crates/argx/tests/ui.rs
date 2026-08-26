@@ -24,9 +24,87 @@ mod tests {
             ("subcommands", "argx"),
             ("contract", "argx"),
             ("contract_renamed", "cli_args"),
+            ("execution_contract", "argx"),
         ] {
             support::assert_ui_success(fixture, dependency);
         }
+    }
+
+    #[test]
+    fn invalid_execution_contract_declarations_are_rejected_deterministically() {
+        support::assert_ui_failure(
+            "invalid_execution_contract",
+            "argx",
+            snapbox::str![[r#"
+error: #[argx::contract] requires an invocable command type, for example #[argx::contract(GetArgs)]
+error: Argx execution contract handlers must be non-generic
+error: Argx execution contracts require a concrete Result<Success, Error> return type
+error: Argx execution contracts do not support opaque `impl Trait` return types
+error: unsupported Argx execution contract attribute; expected `error = Type`
+error: #[argx::contract(CommandType)] can only be applied to a free function
+
+"#]],
+        );
+    }
+
+    #[test]
+    fn missing_execution_contract_is_rejected_when_discovery_is_requested() {
+        support::assert_ui_failure(
+            "missing_execution_contract",
+            "argx",
+            snapbox::str![[r#"
+error[E0277]: the trait bound `Cli: argx::__private::ResolveCommandTypeContract` is not satisfied
+
+"#]],
+        );
+    }
+
+    #[test]
+    fn duplicate_execution_contracts_are_rejected_by_coherence() {
+        support::assert_ui_failure(
+            "duplicate_execution_contract",
+            "argx",
+            snapbox::str![[r#"
+error[E0119]: conflicting implementations of trait `argx::__private::ExecutionContractSource` for type `Command`
+
+"#]],
+        );
+    }
+
+    #[test]
+    fn execution_contracts_cannot_attach_to_non_invocable_command_groups() {
+        support::assert_ui_failure(
+            "non_invocable_execution_contract",
+            "argx",
+            snapbox::str![[r#"
+error[E0277]: the trait bound `GroupArgs: argx::__private::InvocableCommandContract` is not satisfied
+
+"#]],
+        );
+    }
+
+    #[test]
+    fn execution_result_types_must_have_semantic_contracts() {
+        support::assert_ui_failure(
+            "uncontractable_execution_result",
+            "argx",
+            snapbox::str![[r#"
+error[E0277]: the trait bound `Output: argx::__private::TypeContractSource` is not satisfied
+
+"#]],
+        );
+    }
+
+    #[test]
+    fn unit_subcommands_require_an_args_payload_for_execution_discovery() {
+        support::assert_ui_failure(
+            "unit_subcommand_execution_contract",
+            "argx",
+            snapbox::str![[r#"
+error[E0277]: the trait bound `__ArgxUnitCommandCommandsStatusRequiresArgsPayload[..]: argx::__private::CommandTypeContract` is not satisfied
+
+"#]],
+        );
     }
 
     #[test]

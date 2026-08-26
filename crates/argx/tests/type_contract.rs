@@ -79,6 +79,15 @@ mod tests {
         assert_eq!(String::type_contract().root, TypeContractValue::String);
         assert_eq!(std::ffi::OsString::type_contract().root, TypeContractValue::OsString);
         assert_eq!(std::path::PathBuf::type_contract().root, TypeContractValue::Path);
+        let infallible = std::convert::Infallible::type_contract();
+        assert_eq!(
+            infallible.root,
+            TypeContractValue::Reference { definition: "type-0".to_owned() },
+        );
+        assert!(matches!(
+            &infallible.definitions[0].kind,
+            TypeDefinitionKind::Enum { variants } if variants.is_empty()
+        ));
         assert_eq!(
             Option::<u32>::type_contract().root,
             TypeContractValue::Optional {

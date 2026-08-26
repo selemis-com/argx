@@ -16,6 +16,7 @@ mod attrs;
 mod case;
 mod codegen;
 mod crate_name;
+mod execution_contract;
 mod key;
 mod model;
 mod type_contract;
@@ -60,6 +61,23 @@ pub fn derive_args(input: TokenStream) -> TokenStream {
 pub fn derive_contract(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     type_contract::contract(&input).unwrap_or_else(syn::Error::into_compile_error).into()
+}
+
+/// Attaches one canonical execution result contract to an invocable command type.
+///
+/// The annotated free function remains ordinary Rust. Its parameters are runtime-only and do not
+/// participate in the machine contract. Its concrete `Result<Success, Error>` return type supplies
+/// the semantic success and error contracts. `error = MachineError` may override only the
+/// machine-facing error type when runtime error plumbing is intentionally opaque. The attribute
+/// records contract metadata only; it does not register, wrap, or invoke the function for dispatch.
+#[proc_macro_attribute]
+pub fn contract(attribute: TokenStream, input: TokenStream) -> TokenStream {
+    execution_contract::contract(
+        proc_macro2::TokenStream::from(attribute),
+        proc_macro2::TokenStream::from(input),
+    )
+    .unwrap_or_else(syn::Error::into_compile_error)
+    .into()
 }
 
 /// Derives a subcommand set for an enum.

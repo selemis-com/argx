@@ -7,6 +7,11 @@ struct Cli {
     value: String,
 }
 
+#[cli_args::contract(Cli)]
+fn cli_contract(_command: Cli) -> Result<(), ()> {
+    Ok(())
+}
+
 #[derive(cli_args::Args)]
 struct Common;
 
@@ -24,6 +29,8 @@ fn main() {
     let contract = Cli::contract(cli_args::ContractRequest::root()).expect("contract");
     assert_eq!(contract.root, "cli");
     assert_eq!(contract.command.invocation.expect("invocation").contexts[0].arguments.len(), 1);
+
+    let _ = cli_contract(Cli { verbose: false, value: String::from("contract") });
 
     let cli = Cli { verbose: false, value: String::from("value") };
     assert!(!cli.verbose);

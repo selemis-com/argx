@@ -17,7 +17,7 @@
 
 Argx is a derive-first command-line argument parser for Rust. Rust structs and enums define the
 command tree while generated static metadata drives argv parsing, typed binding, help and version
-output, diagnostics, and machine-readable invocation contracts.
+output, diagnostics, and machine-readable contracts.
 
 The model is deliberately small:
 
@@ -26,7 +26,7 @@ The model is deliberately small:
 - `#[derive(Subcommand)]` defines exact, typed child-command selection;
 - Rust field shapes define argument cardinality and conversion;
 - Rust documentation and `#[argx(...)]` metadata define the human-facing CLI;
-- [`Parser::contract`](https://docs.rs/argx/latest/argx/trait.Parser.html#method.contract) exposes the same invocation model to tools and agents.
+- [`Parser::contract`](https://docs.rs/argx/latest/argx/trait.Parser.html#method.contract) exposes invocation and execution semantics to tools and agents.
 
 ## Installation
 
@@ -34,8 +34,8 @@ The model is deliberately small:
 cargo add argx
 ```
 
-The default `derive` feature exports the `Parser`, `Args`, and `Subcommand` derive macros and is the
-normal way to define a CLI.
+The default `derive` feature exports the `Parser`, `Args`, `Subcommand`, and `Contract` derive
+macros together with the `#[argx::contract(...)]` execution-contract attribute.
 
 ## Quick start
 
@@ -218,15 +218,37 @@ help and version go to stdout with status 0, while failures go to stderr with st
 `try_parse*` methods return the corresponding [`Error`](https://docs.rs/argx/latest/argx/enum.Error.html)
 instead, which is useful for tests, embedding, and custom process policy.
 
-## Machine-readable invocation contracts
+## Machine-readable contracts
 
 Argx can discover a versioned description of the CLI without maintaining a second reflection or
-schema registry:
+schema registry. Invocable commands attach one explicit execution contract to their Rust command
+identity:
 
 ```rust
 use argx::{ContractRequest, Parser as _};
 
-let contract = Cli::contract(ContractRequest::new(["get"]).recursive())
+#[derive(argx::Args)]
+struct GetArgs {
+    id: String,
+}
+
+#[derive(argx::Subcommand)]
+enum ContractCommand {
+    Get(GetArgs),
+}
+
+#[derive(argx::Parser)]
+struct ContractCli {
+    #[argx(subcommand)]
+    command: ContractCommand,
+}
+
+#[argx::contract(GetArgs)]
+fn get(_args: GetArgs) -> Result<(), ()> {
+    Ok(())
+}
+
+let contract = ContractCli::contract(ContractRequest::new(["get"]).recursive())
     .expect("get command must exist");
 println!(
     "{}",
@@ -236,16 +258,17 @@ println!(
 
 A contract describes canonical command paths, accepted aliases, whether a command is directly
 invocable, positional and named arguments, value cardinality, semantic Rust value types, global
-scope, environment/default sources, and `requires` / `conflicts` relationships. Named semantic
-types share one definition table across the returned document. Shallow discovery returns the
-selected command in full plus direct child summaries; recursive discovery expands the complete
-descendant subtree. Lookup accepts command aliases, while returned paths remain canonical.
+scope, environment/default sources, `requires` / `conflicts` relationships, and semantic
+success/error types for invocable commands. Named semantic types share one definition table across
+the returned document. Shallow discovery returns the selected command in full plus direct child
+summaries; recursive discovery expands the complete descendant subtree. Lookup accepts command
+aliases, while returned paths remain canonical.
 
 The wire format is explicitly versioned by
-[`CONTRACT_VERSION`](https://docs.rs/argx/latest/argx/constant.CONTRACT_VERSION.html). It remains an
-**invocation contract**: attached semantic types describe the Rust values produced from consumed
-arguments, not their runtime serialization format or the lexical encoding accepted by arbitrary
-custom parsers.
+[`CONTRACT_VERSION`](https://docs.rs/argx/latest/argx/constant.CONTRACT_VERSION.html). Attached
+semantic types describe Rust values at the command boundary. Invocation types do not define the
+lexical encoding accepted by arbitrary custom parsers, and execution result types do not prescribe
+an application's runtime serialization or transport.
 
 ## Examples
 

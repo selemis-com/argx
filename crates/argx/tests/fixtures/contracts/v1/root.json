@@ -52,6 +52,14 @@
           ]
         }
       ]
+    },
+    "execution": {
+      "success": {
+        "kind": "unit"
+      },
+      "error": {
+        "kind": "unit"
+      }
     }
   }
 }

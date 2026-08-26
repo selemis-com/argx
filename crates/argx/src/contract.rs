@@ -1,9 +1,10 @@
-//! Stable machine-readable invocation contracts.
+//! Stable machine-readable invocation and execution contracts.
 //!
-//! The derive emits a contract projection alongside the runtime parser tables. Discovery walks that
-//! static projection directly; it does not instantiate the destination Rust types, parse `argv`, or
-//! inspect environment values. Public contract values are owned so callers can serialize or retain
-//! a discovery result without depending on the generated static tables.
+//! The derives emit contract projections alongside the runtime parser tables, and explicit
+//! execution bindings attach semantic success/error types to invocable command identities.
+//! Discovery walks those projections directly; it does not instantiate destination Rust types,
+//! parse `argv`, or inspect environment values. Public contract values are owned so callers can
+//! serialize or retain a discovery result without depending on generated static tables.
 //!
 //! The serialized representation is a versioned protocol. Additive Rust API changes therefore do
 //! not implicitly permit wire-format changes: consumers should use [`CONTRACT_VERSION`] when
@@ -16,7 +17,7 @@ use serde::Serialize;
 use crate::{
     __private::{
         ArgSpec, Cardinality as StaticCardinality, CommandContract as StaticCommandContract,
-        CommandSpec, CommandValueTypes, ConstraintKind, FlagSpec, Key,
+        CommandExecutionTypes, CommandSpec, CommandValueTypes, ConstraintKind, FlagSpec, Key,
         ResolveCommandTypeContract as SemanticCommandContract, TypeResolver,
     },
     type_contract::{TYPE_CONTRACT_VERSION, TypeContractDefinitions, TypeContractValue},
@@ -104,7 +105,7 @@ pub struct Contract {
     pub version: u32,
     /// Canonical root command name.
     pub root: String,
-    /// Shared semantic Rust type definitions referenced by invocation values.
+    /// Shared semantic Rust type definitions referenced by invocation and execution contracts.
     pub types: TypeContractDefinitions,
     /// Selected command and requested descendant discovery.
     pub command: CommandContract,
@@ -122,6 +123,11 @@ impl Contract {
     /// struct Cli {
     ///     #[argx(long)]
     ///     verbose: bool,
+    /// }
+    ///
+    /// #[argx::contract(Cli)]
+    /// fn run(_cli: Cli) -> Result<(), ()> {
+    ///     Ok(())
     /// }
     ///
     /// let contract = Cli::contract(ContractRequest::root()).unwrap();
@@ -166,9 +172,22 @@ pub struct CommandContract {
     /// Complete invocation detail when this node is included in full.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub invocation: Option<InvocationContract>,
+    /// Declared semantic execution result when this invocable node is included in full.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub execution: Option<ExecutionContract>,
     /// Discovered child commands.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub subcommands: Vec<Self>,
+}
+
+/// Semantic execution result contract for one directly invocable command.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExecutionContract {
+    /// Semantic Rust type returned when command execution succeeds.
+    pub success: TypeContractValue,
+    /// Semantic Rust type returned when command execution fails.
+    pub error: TypeContractValue,
 }
 
 /// Complete argv-side contract for one selected command.
@@ -364,7 +383,21 @@ fn command_contract<T>(
 where
     T: StaticCommandContract + SemanticCommandContract,
 {
-    let invocation = detailed.then(|| invocation_contract::<T>(contexts, resolver));
+    let (invocation, execution) = if detailed {
+        let (invocation, execution) = invocation_contract::<T>(contexts, resolver);
+        let execution = execution.map(|execution| ExecutionContract {
+            success: execution.success,
+            error: execution.error,
+        });
+        assert_eq!(
+            command.subcommands.is_empty(),
+            execution.is_some(),
+            "generated invocable command and execution contract projections must remain aligned",
+        );
+        (Some(invocation), execution)
+    } else {
+        (None, None)
+    };
 
     let child_detailed = depth == ContractDepth::Recursive;
     let subcommands = if depth == ContractDepth::Shallow && !detailed {
@@ -398,6 +431,7 @@ where
         aliases: command.aliases.iter().copied().map(str::to_owned).collect(),
         invocable: command.subcommands.is_empty(),
         invocation,
+        execution,
         subcommands,
     }
 }
@@ -406,7 +440,7 @@ where
 fn invocation_contract<T>(
     contexts: &[&'static CommandSpec<'static>],
     resolver: &mut TypeResolver,
-) -> InvocationContract
+) -> (InvocationContract, Option<CommandExecutionTypes>)
 where
     T: StaticCommandContract + SemanticCommandContract,
 {
@@ -422,17 +456,22 @@ where
                 .expect("generated contract contexts must follow the static command topology")
         })
         .collect::<Vec<_>>();
+    let last_index = contexts.len().saturating_sub(1);
+    let mut selected_execution = None;
     let contexts = contexts
         .iter()
         .enumerate()
         .map(|(index, context)| {
-            let value_types = T::contract_value_types(&branch_indices[..index], resolver)
-                .expect("generated contract command path must resolve semantic value types");
-            command_context(context, &contexts[..=index], value_types)
+            let semantic = T::contract_types(&branch_indices[..index], resolver)
+                .expect("generated contract command path must resolve semantic types");
+            if index == last_index {
+                selected_execution = semantic.execution;
+            }
+            command_context(context, &contexts[..=index], semantic.values)
         })
         .collect();
 
-    InvocationContract { contexts }
+    (InvocationContract { contexts }, selected_execution)
 }
 
 /// Builds one command-context contract and resolves semantic constraint keys to public names.

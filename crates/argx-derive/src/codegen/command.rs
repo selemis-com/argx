@@ -53,6 +53,8 @@ struct SemanticProjection {
     partial_constructor: Option<proc_macro2::Ident>,
     /// Type-level resolver for values owned by this command context.
     fields: TokenStream,
+    /// Type-level resolver for this command's execution result when directly invocable.
+    execution: TokenStream,
     /// Type-level resolver for the nested subcommand field, when present.
     subcommands: TokenStream,
 }
@@ -260,7 +262,15 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
     let semantic_declarations = &semantic_projection.declarations;
     let partial_type = &semantic_projection.partial;
     let semantic_fields = &semantic_projection.fields;
+    let semantic_execution = &semantic_projection.execution;
     let semantic_subcommands = &semantic_projection.subcommands;
+    let invocable_contract_impl = subcommand.is_none().then(|| {
+        quote! {
+            impl #impl_generics #facade::__private::InvocableCommandContract
+                for #ident #ty_generics #where_clause
+            {}
+        }
+    });
 
     // Partial state mirrors Rust field order. Direct arguments accumulate raw bytes, flattened
     // declarations retain their own partial state, and subcommands retain branch-selection state.
@@ -681,8 +691,11 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                 for #ident #semantic_ty_generics #semantic_where_clause
             {
                 type Fields = #semantic_fields;
+                type Execution = #semantic_execution;
                 type Subcommands = #semantic_subcommands;
             }
+
+            #invocable_contract_impl
 
             impl #impl_generics #facade::__private::CommandArgs
                 for #ident #ty_generics #where_clause
@@ -1238,6 +1251,7 @@ fn semantic_projection(command: &model::Command, facade: &TokenStream) -> Semant
     let declaration = key::declaration_hash(&command.binding.fingerprint);
     let fields_ident = format_ident!("__ArgxContractFieldsFor{}H{}", suffix, declaration);
     let subcommands_ident = format_ident!("__ArgxContractSubcommandsFor{}H{}", suffix, declaration);
+    let execution_ident = format_ident!("__ArgxContractExecutionFor{}H{}", suffix, declaration);
     let partial_ident = partial_type_constructor(command);
     let shape_ident = format_ident!("__ArgxContractShapeFor{}H{}", suffix, declaration);
     let (impl_generics, ty_generics, where_clause) = command.binding.generics.split_for_impl();
@@ -1476,6 +1490,7 @@ fn semantic_projection(command: &model::Command, facade: &TokenStream) -> Semant
         }
     });
 
+    let directly_invocable = subcommand_projection.is_none();
     let (subcommands, subcommand_declaration) = subcommand_projection.map_or_else(
         || (quote!(#facade::__private::NoTypeProjection), None),
         |associated| {
@@ -1508,7 +1523,7 @@ fn semantic_projection(command: &model::Command, facade: &TokenStream) -> Semant
                         index: usize,
                         rest: &[usize],
                         resolver: &mut #facade::__private::TypeResolver,
-                    ) -> ::std::option::Option<#facade::__private::CommandValueTypes> {
+                    ) -> ::std::option::Option<#facade::__private::CommandTypes> {
                         <<<T as #shape_ident>::#associated as
                             #facade::__private::SubcommandTypeContract>::Commands as
                             #facade::__private::ResolveSubcommandTree>::resolve(
@@ -1523,16 +1538,52 @@ fn semantic_projection(command: &model::Command, facade: &TokenStream) -> Semant
         },
     );
 
+    let (execution, execution_declaration) = if directly_invocable {
+        (
+            quote!(#execution_ident<Self>),
+            Some(quote! {
+                #[doc = "Argx-generated execution contract witness."]
+                #[doc(hidden)]
+                #[derive(Debug, Clone, Copy)]
+                #[allow(
+                    unreachable_pub,
+                    unnameable_types,
+                    reason = "generated witness is exposed only through Argx's hidden projection trait"
+                )]
+                #visibility struct #execution_ident<T>(::core::marker::PhantomData<fn() -> T>);
+
+                impl<T> #facade::__private::ResolveExecutionContract for #execution_ident<T>
+                where
+                    T: #facade::__private::ExecutionContractSource,
+                {
+                    fn resolve(
+                        resolver: &mut #facade::__private::TypeResolver,
+                    ) -> ::std::option::Option<#facade::__private::CommandExecutionTypes> {
+                        ::std::option::Option::Some(
+                            <T as #facade::__private::ExecutionContractSource>::resolve_execution(
+                                resolver,
+                            ),
+                        )
+                    }
+                }
+            }),
+        )
+    } else {
+        (quote!(#facade::__private::NoTypeProjection), None)
+    };
+
     SemanticProjection {
         declarations: quote! {
             #shape
             #partial_declaration
             #field_declaration
             #subcommand_declaration
+            #execution_declaration
         },
         partial,
         partial_constructor,
         fields,
+        execution,
         subcommands,
     }
 }

@@ -479,42 +479,50 @@ fn semantic_projection(subcommand: &model::Subcommand, facade: &TokenStream) -> 
 
     let mut shape_declarations = Vec::new();
     let mut shape_definitions = Vec::new();
+    let mut unit_markers = Vec::new();
     let mut bounds = Vec::new();
     let mut arms = Vec::new();
-    let mut needs_shape = false;
 
     for (index, variant) in subcommand.variants.iter().enumerate() {
+        let associated = format_ident!("Variant{index}");
+        shape_declarations.push(quote!(type #associated;));
+
         if let Some(ty) = &variant.binding.payload {
-            needs_shape = true;
-            let associated = format_ident!("Variant{index}");
-            shape_declarations.push(quote!(type #associated;));
             shape_definitions.push(quote!(type #associated = #ty;));
-            bounds.push(quote!(
-                <T as #shape_ident>::#associated:
-                    #facade::__private::ResolveCommandTypeContract
-            ));
-            arms.push(quote! {
-                #index => <<T as #shape_ident>::#associated as
-                    #facade::__private::ResolveCommandTypeContract>::contract_value_types(
-                        rest,
-                        resolver,
-                    ),
-            });
         } else {
-            arms.push(quote! {
-                #index if rest.is_empty() => ::std::option::Option::Some(
-                    #facade::__private::CommandValueTypes {
-                        flags: ::std::vec::Vec::new(),
-                        args: ::std::vec::Vec::new(),
-                    },
-                ),
-                #index => ::std::option::Option::None,
+            let variant_ident = &variant.binding.ident;
+            let marker = format_ident!(
+                "__ArgxUnitCommand{}{}RequiresArgsPayloadH{}",
+                suffix,
+                variant_ident,
+                declaration,
+            );
+            unit_markers.push(quote! {
+                #[doc = "Argx marker for a unit subcommand that cannot carry an execution identity."]
+                #[doc(hidden)]
+                #[derive(Debug, Clone, Copy)]
+                struct #marker;
             });
+            shape_definitions.push(quote!(type #associated = #marker;));
         }
+
+        bounds.push(quote!(
+            <T as #shape_ident>::#associated:
+                #facade::__private::ResolveCommandTypeContract
+        ));
+        arms.push(quote! {
+            #index => <<T as #shape_ident>::#associated as
+                #facade::__private::ResolveCommandTypeContract>::contract_types(
+                    rest,
+                    resolver,
+                ),
+        });
     }
 
-    let shape = needs_shape.then(|| {
-        quote! {
+    SemanticProjection {
+        declarations: quote! {
+            #(#unit_markers)*
+
             trait #shape_ident {
                 #(#shape_declarations)*
             }
@@ -522,28 +530,6 @@ fn semantic_projection(subcommand: &model::Subcommand, facade: &TokenStream) -> 
             impl #impl_generics #shape_ident for #ident #ty_generics #where_clause {
                 #(#shape_definitions)*
             }
-        }
-    });
-    let resolver_where = if needs_shape {
-        quote! {
-            where
-                T: #shape_ident,
-                #(#bounds,)*
-        }
-    } else {
-        TokenStream::new()
-    };
-    let privacy_allow = needs_shape.then(|| {
-        quote! {
-            #[allow(
-                private_bounds,
-                reason = "generated contract witnesses intentionally hide concrete payload types"
-            )]
-        }
-    });
-    SemanticProjection {
-        declarations: quote! {
-            #shape
 
             #[doc = "Argx-generated semantic contract witness."]
             #[doc(hidden)]
@@ -555,15 +541,20 @@ fn semantic_projection(subcommand: &model::Subcommand, facade: &TokenStream) -> 
             )]
             #visibility struct #commands_ident<T>(::core::marker::PhantomData<fn() -> T>);
 
-            #privacy_allow
+            #[allow(
+                private_bounds,
+                reason = "generated contract witnesses intentionally hide concrete payload types"
+            )]
             impl<T> #facade::__private::ResolveSubcommandTree for #commands_ident<T>
-            #resolver_where
+            where
+                T: #shape_ident,
+                #(#bounds,)*
             {
                 fn resolve(
                     index: usize,
                     rest: &[usize],
                     resolver: &mut #facade::__private::TypeResolver,
-                ) -> ::std::option::Option<#facade::__private::CommandValueTypes> {
+                ) -> ::std::option::Option<#facade::__private::CommandTypes> {
                     match index {
                         #(#arms)*
                         _ => ::std::option::Option::None,

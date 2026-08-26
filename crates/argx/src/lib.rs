@@ -2,7 +2,7 @@
 //!
 //! Argx derives a static command model from Rust structs and enums. The same model drives raw argv
 //! parsing, typed value binding, generated help and version output, diagnostics, and
-//! machine-readable invocation contracts. Normal applications therefore define the command once
+//! machine-readable contracts. Normal applications therefore define the command once
 //! rather than maintaining separate parser, help, and discovery schemas.
 //!
 //! # Quick start
@@ -184,10 +184,11 @@
 //! process-oriented parsing methods print those actions to stdout and exit successfully. Other
 //! parse/binding errors go to stderr and exit with status 2.
 //!
-//! # Machine-readable invocation contracts
+//! # Machine-readable contracts
 //!
-//! [`Parser::contract`] exposes a versioned description of how the CLI can be invoked. This is
-//! derived from Argx's internal command metadata rather than from a separate reflection registry.
+//! [`Parser::contract`] exposes a versioned description of how the CLI can be invoked and what each
+//! invocable command returns. This is derived from Argx's internal command metadata and explicit
+//! execution bindings rather than from a separate reflection registry.
 //!
 //! ```
 //! use argx::{ContractRequest, Parser as _};
@@ -198,6 +199,8 @@
 //! # enum Command { Get(GetArgs) }
 //! # #[derive(argx::Parser)]
 //! # struct Cli { #[argx(subcommand)] command: Command }
+//! # #[argx::contract(GetArgs)]
+//! # fn get(_args: GetArgs) -> Result<(), ()> { Ok(()) }
 //! let contract = Cli::contract(ContractRequest::new(["get"]).recursive())?;
 //! assert_eq!(contract.version, argx::CONTRACT_VERSION);
 //! assert_eq!(contract.command.path, ["get"]);
@@ -206,19 +209,21 @@
 //!
 //! A [`struct@Contract`] contains the canonical root and selected command, command aliases, direct
 //! invocability, the root-to-selected invocation contexts, positional and named arguments, value
-//! cardinality, semantic Rust value types, global scope, environment/default sources, and
-//! normalized `requires` / `conflicts` relationships. Named semantic types share one definition
-//! table across the returned document. Command paths supplied in a [`ContractRequest`] may use
-//! aliases; returned paths always use canonical command names.
+//! cardinality, semantic Rust value types, global scope, environment/default sources, normalized
+//! `requires` / `conflicts` relationships, and semantic success/error types for invocable commands.
+//! Named semantic types share one definition table across the returned document. Command paths
+//! supplied in a [`ContractRequest`] may use aliases; returned paths always use canonical command
+//! names.
 //!
 //! [`ContractDepth::Shallow`] includes the selected command in full and direct children as
 //! summaries. [`ContractDepth::Recursive`] expands the selected command's complete descendant
 //! subtree. [`Contract::to_json`] and [`Contract::to_json_pretty`] serialize the public protocol,
 //! whose current version is [`CONTRACT_VERSION`].
 //!
-//! The contract remains deliberately an **invocation contract**. Attached semantic types describe
-//! the Rust value produced from each consumed argument; they do not define that value's runtime
-//! serialization format or the lexical encoding accepted by an arbitrary [`std::str::FromStr`].
+//! Attached semantic types describe Rust values at the command boundary. For invocation values they
+//! do not define the lexical encoding accepted by an arbitrary [`std::str::FromStr`]; for execution
+//! results they describe the declared success/error values rather than how an application
+//! serializes or transports them at runtime.
 //!
 //! # Failure model
 //!
@@ -278,7 +283,7 @@ use std::ffi::{OsStr, OsString};
 pub use contract::{
     ArgumentContract, CONTRACT_VERSION, CommandContextContract, CommandContract,
     ConstraintContract, ConstraintContractKind, Contract, ContractDepth, ContractError,
-    ContractRequest, InvocationContract, OptionContract, ValueContract,
+    ContractRequest, ExecutionContract, InvocationContract, OptionContract, ValueContract,
 };
 pub use error::{Error, InvalidValue};
 pub use type_contract::{
@@ -296,7 +301,7 @@ pub use type_contract::{
 extern crate self as argx;
 
 #[cfg(feature = "derive")]
-pub use argx_derive::{Args, Contract, Parser, Subcommand};
+pub use argx_derive::{Args, Contract, Parser, Subcommand, contract};
 
 /// Marks a reusable argument group derived with `#[derive(Args)]`.
 ///
@@ -447,14 +452,24 @@ pub trait Parser: Sized + __private::CommandArgs + __private::CommandContract {
         binding::parse_refs::<Self>(&refs)
     }
 
-    /// Discovers the machine-readable invocation contract for this CLI.
+    /// Discovers the machine-readable invocation and execution contract for this CLI.
     ///
     /// Command paths are relative to the root command and may use canonical names or aliases.
-    /// Returned paths always use canonical command names. Custom consumed value types anywhere in
-    /// the command tree must implement [`ContractType`], normally through
-    /// `#[derive(argx::Contract)]`. This requirement applies only when contract discovery is used
-    /// and does not affect parsing support. Contract discovery does not parse process arguments or
-    /// evaluate environment fallbacks.
+    /// Returned paths always use canonical command names. Custom consumed values and execution
+    /// success/error types anywhere in the command tree must implement [`ContractType`], normally
+    /// through `#[derive(argx::Contract)]`. Every directly invocable command must also have exactly
+    /// one `#[argx::contract(CommandType)]` handler declaration.
+    ///
+    /// Unit subcommand variants do not provide a distinct Rust type to which an execution contract
+    /// can be attached. CLIs using machine-contract discovery should represent such commands with
+    /// an empty `Args` payload instead. The payload type is the execution identity, so branches
+    /// that need different execution contracts must use distinct payload types.
+    ///
+    /// By default the handler's concrete `Result<T, E>` supplies both result contracts. Use
+    /// `#[argx::contract(CommandType, error = MachineError)]` when the runtime error type is opaque
+    /// infrastructure and a stable machine-facing error type should be exposed instead. These
+    /// requirements apply only when contract discovery is used and do not affect parsing support.
+    /// Contract discovery does not parse process arguments or evaluate environment fallbacks.
     ///
     /// # Examples
     ///
@@ -477,10 +492,16 @@ pub trait Parser: Sized + __private::CommandArgs + __private::CommandContract {
     ///     command: Command,
     /// }
     ///
+    /// #[argx::contract(GetArgs)]
+    /// fn get(_args: GetArgs) -> Result<(), ()> {
+    ///     Ok(())
+    /// }
+    ///
     /// let contract = Cli::contract(ContractRequest::new(["get"]))?;
     /// assert_eq!(contract.command.path.len(), 1);
     /// assert_eq!(contract.command.path[0], "get");
     /// assert!(contract.command.invocation.is_some());
+    /// assert!(contract.command.execution.is_some());
     /// # Ok::<(), argx::ContractError>(())
     /// ```
     ///

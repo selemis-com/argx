@@ -8,6 +8,8 @@
 #[cfg(test)]
 #[cfg(feature = "derive")]
 mod tests {
+    #![expect(dead_code, reason = "contract fixtures include metadata-only handler functions")]
+
     use argx::{
         ConstraintContractKind, ContractDepth, ContractRequest, Parser as _, PrimitiveType,
         TypeContractValue, TypeDefinitionKind,
@@ -45,6 +47,10 @@ mod tests {
         command: ObjectCommands,
     }
 
+    /// Arguments for listing objects.
+    #[derive(argx::Args)]
+    struct ListArgs {}
+
     /// Commands operating on objects.
     #[derive(argx::Subcommand)]
     enum ObjectCommands {
@@ -52,8 +58,12 @@ mod tests {
         #[argx(alias = "show")]
         Get(GetArgs),
         /// List objects.
-        List,
+        List(ListArgs),
     }
+
+    /// Arguments for service status.
+    #[derive(argx::Args)]
+    struct StatusArgs {}
 
     /// Top-level commands.
     #[derive(argx::Subcommand)]
@@ -62,7 +72,7 @@ mod tests {
         #[argx(alias = "obj")]
         Objects(ObjectsArgs),
         /// Show service status.
-        Status,
+        Status(StatusArgs),
     }
 
     /// Representative nested CLI used by contract discovery tests.
@@ -164,12 +174,16 @@ mod tests {
         format: OutputFormat,
     }
 
+    /// Empty nested command used to exercise unit execution results.
+    #[derive(argx::Args)]
+    struct EmptyArgs {}
+
     /// Nested typed command branches.
     #[expect(dead_code, reason = "shape is exercised through generated contract metadata")]
     #[derive(argx::Subcommand)]
     enum TypedNestedCommands {
         Leaf(TypedLeafArgs),
-        Empty,
+        Empty(EmptyArgs),
     }
 
     /// Root with no values of its own and a typed descendant.
@@ -179,6 +193,95 @@ mod tests {
     struct TypedNestedCli {
         #[argx(subcommand)]
         command: TypedNestedCommands,
+    }
+
+    #[argx::contract(GetArgs)]
+    const fn get_contract() -> Result<(), ()> {
+        Ok(())
+    }
+
+    #[argx::contract(ListArgs)]
+    const fn list_contract() -> Result<(), ()> {
+        Ok(())
+    }
+
+    #[argx::contract(StatusArgs)]
+    const fn status_contract() -> Result<(), ()> {
+        Ok(())
+    }
+
+    #[argx::contract(JsonCli)]
+    const fn json_contract() -> Result<(), ()> {
+        Ok(())
+    }
+
+    #[argx::contract(RepeatedOptionCli)]
+    const fn repeated_option_contract() -> Result<(), ()> {
+        Ok(())
+    }
+
+    #[argx::contract(ProjectionCli)]
+    const fn projection_contract() -> Result<(), ()> {
+        Ok(())
+    }
+
+    #[argx::contract(TypedContractCli)]
+    const fn typed_contract() -> Result<(), ()> {
+        Ok(())
+    }
+
+    #[argx::contract(GenericContractCli<u16>)]
+    const fn generic_u16_contract() -> Result<(), ()> {
+        Ok(())
+    }
+
+    /// Successful output for the nested typed leaf.
+    #[derive(argx::Contract)]
+    struct TypedLeafOutput {
+        format: OutputFormat,
+    }
+
+    #[argx::contract(TypedLeafArgs)]
+    const fn typed_leaf_contract() -> Result<TypedLeafOutput, ()> {
+        Ok(TypedLeafOutput { format: OutputFormat::Json })
+    }
+
+    #[argx::contract(EmptyArgs)]
+    const fn empty_contract() -> Result<(), ()> {
+        Ok(())
+    }
+
+    /// Successful output used to verify execution contract definitions.
+    #[derive(Debug, PartialEq, Eq, argx::Contract)]
+    struct ExecutionOutput {
+        accepted: bool,
+    }
+
+    /// Stable execution error used to verify error contract definitions.
+    #[derive(Debug, PartialEq, Eq, argx::Contract)]
+    enum ExecutionError {
+        Rejected,
+    }
+
+    /// Root command used to isolate execution result discovery.
+    #[derive(argx::Parser)]
+    #[argx(name = "execute")]
+    struct ExecutionCli {
+        value: String,
+    }
+
+    /// Runtime-only state deliberately excluded from machine contracts.
+    struct RuntimeContext;
+
+    /// Runtime error deliberately replaced by the stable machine-facing error contract.
+    #[derive(Debug)]
+    struct RuntimeExecutionError;
+
+    #[argx::contract(ExecutionCli, error = ExecutionError)]
+    const fn execute_contract(
+        _context: &RuntimeContext,
+    ) -> Result<ExecutionOutput, RuntimeExecutionError> {
+        Ok(ExecutionOutput { accepted: true })
     }
 
     #[test]
@@ -313,6 +416,38 @@ mod tests {
     }
 
     #[test]
+    fn execution_contracts_share_semantic_types_and_ignore_runtime_parameters() {
+        let result = execute_contract(&RuntimeContext)
+            .expect("execution fixture should remain an ordinary callable function");
+        assert!(result.accepted);
+
+        let contract = ExecutionCli::contract(ContractRequest::root())
+            .expect("execution contract should exist");
+        let execution = contract.command.execution.expect("root command is invocable");
+        assert_eq!(
+            execution.success,
+            TypeContractValue::Reference { definition: "type-0".to_owned() },
+        );
+        assert_eq!(
+            execution.error,
+            TypeContractValue::Reference { definition: "type-1".to_owned() },
+        );
+        assert_eq!(contract.types.definitions.len(), 2);
+        assert_eq!(contract.types.definitions[0].name, "ExecutionOutput");
+        assert_eq!(contract.types.definitions[1].name, "ExecutionError");
+        assert!(
+            contract.types.definitions.iter().all(|definition| definition.name != "RuntimeContext")
+        );
+        assert!(
+            contract
+                .types
+                .definitions
+                .iter()
+                .all(|definition| definition.name != "RuntimeExecutionError")
+        );
+    }
+
+    #[test]
     fn generic_parser_contracts_resolve_the_monomorphized_value_type() {
         let contract = GenericContractCli::<u16>::contract(ContractRequest::root())
             .expect("generic parser contract should exist");
@@ -332,14 +467,25 @@ mod tests {
 
         let selected = TypedNestedCli::contract(ContractRequest::new(["leaf"]))
             .expect("selected typed descendant should exist");
-        assert_eq!(selected.types.definitions.len(), 1);
+        assert_eq!(selected.types.definitions.len(), 2);
+        assert_eq!(selected.types.definitions[0].name, "OutputFormat");
+        assert_eq!(selected.types.definitions[1].name, "TypedLeafOutput");
+        assert_eq!(
+            selected
+                .command
+                .execution
+                .as_ref()
+                .expect("selected command should expose execution")
+                .success,
+            TypeContractValue::Reference { definition: "type-1".to_owned() },
+        );
         let invocation = selected.command.invocation.expect("selected command should be detailed");
         let value_type = &invocation.contexts[1].arguments[0].value.value_type;
         assert_eq!(value_type, &TypeContractValue::Reference { definition: "type-0".to_owned() },);
 
         let recursive = TypedNestedCli::contract(ContractRequest::root().recursive())
             .expect("recursive nested contract should exist");
-        assert_eq!(recursive.types.definitions.len(), 1);
+        assert_eq!(recursive.types.definitions.len(), 2);
         assert!(recursive.command.subcommands[0].invocation.is_some());
         assert!(recursive.command.subcommands[1].invocation.is_some());
     }
@@ -354,6 +500,7 @@ mod tests {
         assert_eq!(contract.command.name, "tool");
         assert!(!contract.command.invocable);
         assert!(contract.command.invocation.is_some());
+        assert!(contract.command.execution.is_none());
         assert_eq!(contract.command.subcommands.len(), 2);
 
         let objects = &contract.command.subcommands[0];
@@ -361,12 +508,14 @@ mod tests {
         assert!(objects.aliases.iter().map(String::as_str).eq(["obj"]));
         assert!(!objects.invocable);
         assert!(objects.invocation.is_none());
+        assert!(objects.execution.is_none());
         assert!(objects.subcommands.is_empty());
 
         let status = &contract.command.subcommands[1];
         assert!(status.path.iter().map(String::as_str).eq(["status"]));
         assert!(status.invocable);
         assert!(status.invocation.is_none());
+        assert!(status.execution.is_none());
     }
 
     #[test]
@@ -379,6 +528,7 @@ mod tests {
         assert_eq!(command.name, "get");
         assert!(command.aliases.iter().map(String::as_str).eq(["show"]));
         assert!(command.invocable);
+        assert!(command.execution.is_some());
 
         let invocation = command.invocation.as_ref().expect("selected command must be detailed");
         assert_eq!(invocation.contexts.len(), 3);
@@ -450,6 +600,8 @@ mod tests {
         assert_eq!(objects.subcommands.len(), 2);
         assert!(objects.subcommands[0].invocation.is_some());
         assert!(objects.subcommands[1].invocation.is_some());
+        assert!(objects.subcommands[0].execution.is_some());
+        assert!(objects.subcommands[1].execution.is_some());
         assert!(objects.subcommands[0].path.iter().map(String::as_str).eq(["objects", "get"]));
         assert!(objects.subcommands[1].path.iter().map(String::as_str).eq(["objects", "list"]));
     }

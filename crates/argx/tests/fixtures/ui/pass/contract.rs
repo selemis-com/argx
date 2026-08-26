@@ -23,6 +23,11 @@ struct Cli {
     output: String,
 }
 
+#[argx::contract(Cli)]
+fn cli_contract(_command: Cli) -> Result<(), ()> {
+    Ok(())
+}
+
 mod private_invocation_types {
     #[derive(Debug, PartialEq, Eq, argx::Contract)]
     enum PrivateFormat {
@@ -49,6 +54,21 @@ mod private_invocation_types {
     #[derive(argx::Args)]
     struct PrivateRun {
         value: PrivateFormat,
+    }
+
+    #[derive(argx::Contract)]
+    struct PrivateOutput {
+        accepted: bool,
+    }
+
+    #[derive(argx::Contract)]
+    enum PrivateError {
+        Rejected,
+    }
+
+    #[argx::contract(PrivateRun)]
+    fn private_run_contract(_command: PrivateRun) -> Result<PrivateOutput, PrivateError> {
+        Ok(PrivateOutput { accepted: true })
     }
 
     #[derive(argx::Subcommand)]

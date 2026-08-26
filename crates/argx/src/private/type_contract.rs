@@ -3,6 +3,7 @@
 use std::{
     any::TypeId,
     collections::{BTreeMap, BTreeSet, HashMap, HashSet, LinkedList, VecDeque},
+    convert::Infallible,
     ffi::{OsStr, OsString},
     fmt,
     path::{Path, PathBuf},
@@ -144,6 +145,7 @@ macro_rules! key_markers {
 
 key_markers!(
     UnitKey,
+    InfallibleKey,
     BoolKey,
     CharKey,
     I8Key,
@@ -210,6 +212,18 @@ impl TypeContractSource for () {
 
     fn type_key() -> TypeKey {
         TypeKey::new::<UnitKey>(Vec::new(), Vec::new())
+    }
+}
+
+impl TypeContractSource for Infallible {
+    fn resolve_type(resolver: &mut TypeResolver) -> TypeContractValue {
+        resolver.named(Self::type_key(), "Infallible", None, |_resolver| TypeDefinitionKind::Enum {
+            variants: Vec::new(),
+        })
+    }
+
+    fn type_key() -> TypeKey {
+        TypeKey::new::<InfallibleKey>(Vec::new(), Vec::new())
     }
 }
 
