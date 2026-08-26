@@ -40,30 +40,20 @@ macros together with the `#[argx::contract(...)]` execution-contract attribute.
 ## Quick start
 
 ```rust
-use std::path::PathBuf;
-
 use argx::{Args, Parser, Subcommand};
 
-/// Manage stored objects.
-#[derive(Debug, Parser)]
+#[derive(Parser)]
 #[argx(name = "acme", version = env!("CARGO_PKG_VERSION"))]
 struct Cli {
-    /// Output
-    #[argx(flatten)]
-    output: OutputArgs,
+    /// Enable verbose diagnostics.
+    #[argx(long, global)]
+    verbose: bool,
 
     #[argx(subcommand)]
     command: Command,
 }
 
-#[derive(Debug, Args)]
-struct OutputArgs {
-    /// Emit machine-readable JSON.
-    #[argx(long, global)]
-    json: bool,
-}
-
-#[derive(Debug, Subcommand)]
+#[derive(Subcommand)]
 enum Command {
     /// Read one object.
     Get(GetArgs),
@@ -72,74 +62,37 @@ enum Command {
     Status,
 }
 
-#[derive(Debug, Args)]
+#[derive(Args)]
 struct GetArgs {
     /// Object identifier.
     id: String,
-
-    /// Write the object to a file.
-    #[argx(long, short)]
-    output: Option<PathBuf>,
 }
 
 fn main() {
     let cli = Cli::parse();
-    println!("{cli:#?}");
+    if cli.verbose {
+        eprintln!("verbose mode enabled");
+    }
+    match cli.command {
+        Command::Get(args) => println!("{}", args.id),
+        Command::Status => println!("ok"),
+    }
 }
 ```
 
-Argx derives `get` from `Get`, `--output` and `-o` from the field name, generated help from the Rust
-documentation, and a built-in `-V` / `--version` action from the version metadata. Because `--json`
-is global, it remains valid after a subcommand has been selected.
+```text
+$ acme get object-7
+object-7
 
-## Arguments and values
-
-A field is positional unless it has `#[argx(long)]` or `#[argx(short)]`. Named arguments can expose
-both spellings, plus hidden long aliases with `alias` or `aliases`.
-
-| Rust field shape | CLI behavior |
-| --- | --- |
-| named `bool` | value-less switch |
-| `T` | exactly one required value |
-| `Option<T>` | zero or one value |
-| `Vec<T>` | zero or more values |
-| `Option<Vec<T>>` | optional zero-or-more collection |
-
-`String` values require UTF-8. `OsString` and `PathBuf` preserve operating-system strings, including
-non-UTF-8 argv on Unix. Other direct value types are parsed through `FromStr`.
-
-Argx supports long values in both `--output file` and `--output=file` form, short-option bundles,
-`--` to stop flag interpretation, repeated collection flags, and exact subcommand matching. Use
-`allow_hyphen_values` when a named option must accept arbitrary flag-like values, or
-`allow_negative_numbers` when only negative-number spellings should be accepted as values.
-
-Type-shape inference is syntactic. Special handling for `bool`, `Option`, `Vec`, `String`,
-`OsString`, and `PathBuf` requires those standard types to appear directly in the field type; a type
-alias around one of them is treated as an ordinary `FromStr` value type.
-
-## Reusable arguments and subcommands
-
-`#[derive(Args)]` declarations can be composed into another command with `#[argx(flatten)]`:
-
-```rust
-#[derive(argx::Args)]
-struct Common {
-    /// Enable verbose diagnostics.
-    #[argx(long, global)]
-    verbose: bool,
-}
-
-#[derive(argx::Parser)]
-struct Cli {
-    /// Common options
-    #[argx(flatten)]
-    common: Common,
-}
+$ acme --help
+Usage: acme [OPTIONS] <COMMAND>
+...
 ```
 
-The flatten field's documentation becomes a help-group heading. Flattening is structural: the
-nested arguments participate in the containing command's validation, help, and machine contract
-rather than creating another command scope.
+Argx supports positional and named arguments, short bundles, exact nested subcommands, reusable
+flattened argument groups, lexical globals, hidden aliases, typed defaults, environment fallbacks,
+argument relationships, documentation-derived structured help, version actions, and versioned
+machine-readable invocation contracts.
 
 A `Subcommand` enum creates command scopes. Variants may be unit variants or carry one direct
 `Args` payload:
@@ -285,9 +238,8 @@ an unknown result.
 
 ## Examples
 
-The repository examples are deliberately small and each isolates one public behavior. Every file
-starts with runnable commands and notes about the invariant it demonstrates, so the examples also
-serve as focused reference documentation.
+The examples are executable documentation. Each focuses on one public behavior and includes
+runnable invocations in its module documentation.
 
 | Example | Focus | Try it |
 | --- | --- | --- |
@@ -300,11 +252,6 @@ serve as focused reference documentation.
 | [`aliases`](crates/argx/examples/aliases.rs) | Hidden compatibility spellings and canonical help | `cargo run --example aliases -- --colour always rm` |
 | [`structured_help`](crates/argx/examples/structured_help.rs) | Documentation-derived descriptions, groups, and sections | `cargo run --example structured_help -- --help` |
 | [`version`](crates/argx/examples/version.rs) | Lexically scoped short and long version actions | `cargo run --example version -- run --version` |
-
-`structured_help` is the best example to inspect when designing the user-facing CLI, while
-`subcommands`, `flatten`, and `constraints` show the main composition rules. For the precise parsing
-model, derive restrictions, failure precedence, and machine-contract semantics, see the
-[crate documentation](https://docs.rs/argx).
 
 ## Support
 
