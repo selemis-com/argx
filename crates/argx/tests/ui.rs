@@ -40,7 +40,7 @@ error: #[argx::contract] requires an invocable command type, for example #[argx:
 error: Argx execution contract handlers must be non-generic
 error: Argx execution contracts require a concrete Result<Success, Error> return type
 error: Argx execution contracts do not support opaque `impl Trait` return types
-error: unsupported Argx execution contract attribute; expected `error = Type`
+error: unsupported Argx execution contract arguments; expected only #[argx::contract(CommandType)]
 error: #[argx::contract(CommandType)] can only be applied to a free function
 
 "#]],

@@ -69,22 +69,6 @@ pub trait SubcommandTypeContract {
     type Commands;
 }
 
-/// Resolves the successful branch of one concrete handler `Result` while leaving its runtime
-/// error type opaque.
-pub trait ExecutionSuccess {
-    /// Resolves the successful result type into the shared type-definition scope.
-    fn resolve_success(resolver: &mut TypeResolver) -> TypeContractValue;
-}
-
-impl<T, E> ExecutionSuccess for Result<T, E>
-where
-    T: super::type_contract::TypeContractSource,
-{
-    fn resolve_success(resolver: &mut TypeResolver) -> TypeContractValue {
-        T::resolve_type(resolver)
-    }
-}
-
 /// Resolves a concrete handler return type into semantic success and error types.
 pub trait ExecutionResult {
     /// Resolves this result type into the shared type-definition scope.

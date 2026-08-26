@@ -2,7 +2,35 @@
   "version": 1,
   "root": "tool",
   "types": {
-    "version": 1
+    "version": 1,
+    "definitions": [
+      {
+        "id": "type-0",
+        "name": "GetOutput",
+        "description": "Successful result of retrieving one object.",
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "id",
+            "value": {
+              "kind": "string"
+            }
+          }
+        ]
+      },
+      {
+        "id": "type-1",
+        "name": "GetError",
+        "description": "Retrieval failure exposed by the command.",
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "NotFound",
+            "kind": "unit"
+          }
+        ]
+      }
+    ]
   },
   "command": {
     "path": [
@@ -179,10 +207,12 @@
     },
     "execution": {
       "success": {
-        "kind": "unit"
+        "kind": "reference",
+        "definition": "type-0"
       },
       "error": {
-        "kind": "unit"
+        "kind": "reference",
+        "definition": "type-1"
       }
     }
   }

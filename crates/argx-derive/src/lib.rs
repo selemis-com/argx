@@ -66,10 +66,10 @@ pub fn derive_contract(input: TokenStream) -> TokenStream {
 /// Attaches one canonical execution result contract to an invocable command type.
 ///
 /// The annotated free function remains ordinary Rust. Its parameters are runtime-only and do not
-/// participate in the machine contract. Its concrete `Result<Success, Error>` return type supplies
-/// the semantic success and error contracts. `error = MachineError` may override only the
-/// machine-facing error type when runtime error plumbing is intentionally opaque. The attribute
-/// records contract metadata only; it does not register, wrap, or invoke the function for dispatch.
+/// participate in the machine contract. Its concrete `Result<Success, Error>` return type is the
+/// command's semantic execution contract: both `Success` and `Error` must implement Argx's type
+/// contract. The attribute records contract metadata only; it does not register, wrap, or invoke
+/// the function for dispatch.
 #[proc_macro_attribute]
 pub fn contract(attribute: TokenStream, input: TokenStream) -> TokenStream {
     execution_contract::contract(

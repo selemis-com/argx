@@ -2,7 +2,35 @@
   "version": 1,
   "root": "echo",
   "types": {
-    "version": 1
+    "version": 1,
+    "definitions": [
+      {
+        "id": "type-0",
+        "name": "EchoOutput",
+        "description": "Successful result of echoing one value.",
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "value",
+            "value": {
+              "kind": "string"
+            }
+          }
+        ]
+      },
+      {
+        "id": "type-1",
+        "name": "EchoError",
+        "description": "Echo failure exposed by the command.",
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "WriteFailed",
+            "kind": "unit"
+          }
+        ]
+      }
+    ]
   },
   "command": {
     "path": [],
@@ -55,10 +83,12 @@
     },
     "execution": {
       "success": {
-        "kind": "unit"
+        "kind": "reference",
+        "definition": "type-0"
       },
       "error": {
-        "kind": "unit"
+        "kind": "reference",
+        "definition": "type-1"
       }
     }
   }

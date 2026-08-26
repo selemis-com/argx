@@ -24,10 +24,10 @@ fn opaque_result() -> impl Sized {
     Ok::<(), ()>(())
 }
 
-struct UnknownAttribute;
+struct UnsupportedArguments;
 
-#[argx::contract(UnknownAttribute, success = ())]
-fn unknown_attribute() -> Result<(), ()> {
+#[argx::contract(UnsupportedArguments, error = ())]
+fn unsupported_arguments() -> Result<(), ()> {
     Ok(())
 }
 

@@ -243,9 +243,19 @@ struct ContractCli {
     command: ContractCommand,
 }
 
+#[derive(argx::Contract)]
+struct GetOutput {
+    id: String,
+}
+
+#[derive(argx::Contract)]
+enum GetError {
+    NotFound,
+}
+
 #[argx::contract(GetArgs)]
-fn get(_args: GetArgs) -> Result<(), ()> {
-    Ok(())
+fn get(args: GetArgs) -> Result<GetOutput, GetError> {
+    Ok(GetOutput { id: args.id })
 }
 
 let contract = ContractCli::contract(ContractRequest::new(["get"]).recursive())
@@ -267,8 +277,11 @@ aliases, while returned paths remain canonical.
 The wire format is explicitly versioned by
 [`CONTRACT_VERSION`](https://docs.rs/argx/latest/argx/constant.CONTRACT_VERSION.html). Attached
 semantic types describe Rust values at the command boundary. Invocation types do not define the
-lexical encoding accepted by arbitrary custom parsers, and execution result types do not prescribe
-an application's runtime serialization or transport.
+lexical encoding accepted by arbitrary custom parsers. For an execution binding, the handler's
+`Result<Success, Error>` is the command contract: both branches are described directly, while Argx
+does not prescribe how an application serializes or transports those values. A
+`{"kind":"unit"}` branch means that outcome intentionally carries no semantic payload; it is not
+an unknown result.
 
 ## Examples
 

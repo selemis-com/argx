@@ -38,19 +38,6 @@ const fn const_handler() -> Result<(), ()> {
     Ok(())
 }
 
-struct RuntimeFailure;
-
-#[derive(argx::Contract)]
-struct WireFailure;
-
-#[derive(argx::Parser)]
-struct OverrideCommand;
-
-#[argx::contract(OverrideCommand, error = WireFailure)]
-fn override_handler() -> Result<Output, RuntimeFailure> {
-    Ok(Output)
-}
-
 #[derive(argx::Args)]
 struct ConditionalCommand;
 
@@ -69,5 +56,4 @@ fn main() {
     let _ = SyncCommand::contract(argx::ContractRequest::root());
     let _ = AsyncCommand::contract(argx::ContractRequest::root());
     let _ = ConstCommand::contract(argx::ContractRequest::root());
-    let _ = OverrideCommand::contract(argx::ContractRequest::root());
 }

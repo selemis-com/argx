@@ -3,7 +3,7 @@
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use syn::{
-    Attribute, Ident, ItemFn, Meta, ReturnType, Token, Type,
+    Attribute, ItemFn, Meta, ReturnType, Token, Type,
     parse::{Parse, ParseStream, Parser},
     punctuated::Punctuated,
 };
@@ -14,8 +14,6 @@ use crate::crate_name;
 struct ContractArguments {
     /// Invocable command identity receiving this contract.
     command_type: Type,
-    /// Optional machine-facing error type overriding the handler's runtime error type.
-    error_type: Option<Type>,
 }
 
 impl Parse for ContractArguments {
@@ -28,32 +26,16 @@ impl Parse for ContractArguments {
         }
 
         let command_type = input.parse()?;
-        if input.is_empty() {
-            return Ok(Self { command_type, error_type: None });
-        }
-
-        input.parse::<Token![,]>()?;
-        if input.is_empty() {
-            return Ok(Self { command_type, error_type: None });
-        }
-
-        let key: Ident = input.parse()?;
-        if key != "error" {
-            return Err(syn::Error::new_spanned(
-                key,
-                "unsupported Argx execution contract attribute; expected `error = Type`",
-            ));
-        }
-        input.parse::<Token![=]>()?;
-        let error_type = input.parse()?;
         if !input.is_empty() {
             input.parse::<Token![,]>()?;
         }
         if !input.is_empty() {
-            return Err(input.error("unexpected tokens in Argx execution contract attribute"));
+            return Err(input.error(
+                "unsupported Argx execution contract arguments; expected only #[argx::contract(CommandType)]",
+            ));
         }
 
-        Ok(Self { command_type, error_type: Some(error_type) })
+        Ok(Self { command_type })
     }
 }
 
@@ -87,25 +69,9 @@ pub(crate) fn contract(attribute: TokenStream, input: TokenStream) -> syn::Resul
 
     let facade = crate_name::facade_path();
     let command_type = arguments.command_type;
-    let resolution = arguments.error_type.map_or_else(
-        || {
-            quote! {
-                <#output as #facade::__private::ExecutionResult>::resolve_execution(resolver)
-            }
-        },
-        |error_type| {
-            quote! {
-                #facade::__private::CommandExecutionTypes {
-                    success: <#output as #facade::__private::ExecutionSuccess>::resolve_success(
-                        resolver,
-                    ),
-                    error: <#error_type as #facade::__private::TypeContractSource>::resolve_type(
-                        resolver,
-                    ),
-                }
-            }
-        },
-    );
+    let resolution = quote! {
+        <#output as #facade::__private::ExecutionResult>::resolve_execution(resolver)
+    };
     let conditional = function
         .attrs
         .iter()

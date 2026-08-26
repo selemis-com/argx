@@ -40,6 +40,18 @@ mod tests {
         selectors: Vec<String>,
     }
 
+    /// Successful result of retrieving one object.
+    #[derive(argx::Contract)]
+    struct GetOutput {
+        id: String,
+    }
+
+    /// Retrieval failure exposed by the command.
+    #[derive(argx::Contract)]
+    enum GetError {
+        NotFound,
+    }
+
     /// Arguments for the object command namespace.
     #[derive(argx::Args)]
     struct ObjectsArgs {
@@ -104,6 +116,18 @@ mod tests {
         )]
         output: String,
         value: String,
+    }
+
+    /// Successful result of echoing one value.
+    #[derive(argx::Contract)]
+    struct EchoOutput {
+        value: String,
+    }
+
+    /// Echo failure exposed by the command.
+    #[derive(argx::Contract)]
+    enum EchoError {
+        WriteFailed,
     }
 
     /// Small CLI used to lock down repeated named-option value semantics.
@@ -174,7 +198,7 @@ mod tests {
         format: OutputFormat,
     }
 
-    /// Empty nested command used to exercise unit execution results.
+    /// Empty nested command used to exercise explicit no-payload execution results.
     #[derive(argx::Args)]
     struct EmptyArgs {}
 
@@ -196,8 +220,8 @@ mod tests {
     }
 
     #[argx::contract(GetArgs)]
-    const fn get_contract() -> Result<(), ()> {
-        Ok(())
+    fn get_contract() -> Result<GetOutput, GetError> {
+        Err(GetError::NotFound)
     }
 
     #[argx::contract(ListArgs)]
@@ -211,8 +235,8 @@ mod tests {
     }
 
     #[argx::contract(JsonCli)]
-    const fn json_contract() -> Result<(), ()> {
-        Ok(())
+    fn json_contract() -> Result<EchoOutput, EchoError> {
+        Ok(EchoOutput { value: String::new() })
     }
 
     #[argx::contract(RepeatedOptionCli)]
@@ -273,14 +297,10 @@ mod tests {
     /// Runtime-only state deliberately excluded from machine contracts.
     struct RuntimeContext;
 
-    /// Runtime error deliberately replaced by the stable machine-facing error contract.
-    #[derive(Debug)]
-    struct RuntimeExecutionError;
-
-    #[argx::contract(ExecutionCli, error = ExecutionError)]
+    #[argx::contract(ExecutionCli)]
     const fn execute_contract(
         _context: &RuntimeContext,
-    ) -> Result<ExecutionOutput, RuntimeExecutionError> {
+    ) -> Result<ExecutionOutput, ExecutionError> {
         Ok(ExecutionOutput { accepted: true })
     }
 
@@ -438,13 +458,16 @@ mod tests {
         assert!(
             contract.types.definitions.iter().all(|definition| definition.name != "RuntimeContext")
         );
-        assert!(
-            contract
-                .types
-                .definitions
-                .iter()
-                .all(|definition| definition.name != "RuntimeExecutionError")
-        );
+    }
+
+    #[test]
+    fn unit_execution_contracts_explicitly_mean_no_semantic_payload() {
+        let contract = TypedNestedCli::contract(ContractRequest::new(["empty"]))
+            .expect("empty command contract should exist");
+        let execution = contract.command.execution.expect("empty command is invocable");
+
+        assert_eq!(execution.success, TypeContractValue::Unit);
+        assert_eq!(execution.error, TypeContractValue::Unit);
     }
 
     #[test]

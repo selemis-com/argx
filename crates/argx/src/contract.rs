@@ -125,9 +125,19 @@ impl Contract {
     ///     verbose: bool,
     /// }
     ///
+    /// #[derive(argx::Contract)]
+    /// struct RunOutput {
+    ///     verbose: bool,
+    /// }
+    ///
+    /// #[derive(argx::Contract)]
+    /// enum RunError {
+    ///     Failed,
+    /// }
+    ///
     /// #[argx::contract(Cli)]
-    /// fn run(_cli: Cli) -> Result<(), ()> {
-    ///     Ok(())
+    /// fn run(cli: Cli) -> Result<RunOutput, RunError> {
+    ///     Ok(RunOutput { verbose: cli.verbose })
     /// }
     ///
     /// let contract = Cli::contract(ContractRequest::root()).unwrap();
@@ -181,6 +191,10 @@ pub struct CommandContract {
 }
 
 /// Semantic execution result contract for one directly invocable command.
+///
+/// A [`TypeContractValue::Unit`] branch explicitly means that outcome carries no semantic payload;
+/// it is not an unknown or unspecified result. An absent [`CommandContract::execution`] instead
+/// means that execution detail was not included for that command node.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExecutionContract {

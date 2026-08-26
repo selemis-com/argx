@@ -199,8 +199,12 @@
 //! # enum Command { Get(GetArgs) }
 //! # #[derive(argx::Parser)]
 //! # struct Cli { #[argx(subcommand)] command: Command }
+//! # #[derive(argx::Contract)]
+//! # struct GetOutput { id: String }
+//! # #[derive(argx::Contract)]
+//! # enum GetError { NotFound }
 //! # #[argx::contract(GetArgs)]
-//! # fn get(_args: GetArgs) -> Result<(), ()> { Ok(()) }
+//! # fn get(args: GetArgs) -> Result<GetOutput, GetError> { Ok(GetOutput { id: args.id }) }
 //! let contract = Cli::contract(ContractRequest::new(["get"]).recursive())?;
 //! assert_eq!(contract.version, argx::CONTRACT_VERSION);
 //! assert_eq!(contract.command.path, ["get"]);
@@ -221,9 +225,10 @@
 //! whose current version is [`CONTRACT_VERSION`].
 //!
 //! Attached semantic types describe Rust values at the command boundary. For invocation values they
-//! do not define the lexical encoding accepted by an arbitrary [`std::str::FromStr`]; for execution
-//! results they describe the declared success/error values rather than how an application
-//! serializes or transports them at runtime.
+//! do not define the lexical encoding accepted by an arbitrary [`std::str::FromStr`]. For an
+//! execution binding, the handler's concrete `Result<Success, Error>` is the declared command
+//! contract; Argx describes both branches but does not prescribe how applications serialize or
+//! transport them. A unit branch explicitly means that outcome carries no semantic payload.
 //!
 //! # Failure model
 //!
@@ -465,11 +470,10 @@ pub trait Parser: Sized + __private::CommandArgs + __private::CommandContract {
     /// an empty `Args` payload instead. The payload type is the execution identity, so branches
     /// that need different execution contracts must use distinct payload types.
     ///
-    /// By default the handler's concrete `Result<T, E>` supplies both result contracts. Use
-    /// `#[argx::contract(CommandType, error = MachineError)]` when the runtime error type is opaque
-    /// infrastructure and a stable machine-facing error type should be exposed instead. These
-    /// requirements apply only when contract discovery is used and do not affect parsing support.
-    /// Contract discovery does not parse process arguments or evaluate environment fallbacks.
+    /// The handler's concrete `Result<T, E>` is the execution contract, so both `T` and `E` must
+    /// implement [`ContractType`]. These requirements apply only when contract discovery is used
+    /// and do not affect parsing support. Contract discovery does not parse process arguments or
+    /// evaluate environment fallbacks.
     ///
     /// # Examples
     ///
@@ -492,9 +496,19 @@ pub trait Parser: Sized + __private::CommandArgs + __private::CommandContract {
     ///     command: Command,
     /// }
     ///
+    /// #[derive(argx::Contract)]
+    /// struct GetOutput {
+    ///     id: String,
+    /// }
+    ///
+    /// #[derive(argx::Contract)]
+    /// enum GetError {
+    ///     NotFound,
+    /// }
+    ///
     /// #[argx::contract(GetArgs)]
-    /// fn get(_args: GetArgs) -> Result<(), ()> {
-    ///     Ok(())
+    /// fn get(args: GetArgs) -> Result<GetOutput, GetError> {
+    ///     Ok(GetOutput { id: args.id })
     /// }
     ///
     /// let contract = Cli::contract(ContractRequest::new(["get"]))?;
