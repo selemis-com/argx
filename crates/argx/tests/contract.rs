@@ -96,6 +96,16 @@ mod tests {
         tag: Vec<String>,
     }
 
+    /// Covers contract projections whose preferred names are not long flags.
+    #[derive(argx::Parser)]
+    #[argx(name = "projection")]
+    struct ProjectionCli {
+        #[argx(short = 't')]
+        token: String,
+        #[argx(requires = "token")]
+        input: Option<String>,
+    }
+
     #[test]
     fn representative_contract_fixture_remains_parseable() {
         let cli = Cli::try_parse_from([
@@ -155,13 +165,44 @@ mod tests {
 
         let contract = RepeatedOptionCli::contract(ContractRequest::root())
             .expect("repeated option contract should exist");
-        let invocation = contract.command.invocation.expect("root command should be detailed");
+        let invocation =
+            contract.command.invocation.as_ref().expect("root command should be detailed");
         let option = &invocation.contexts[0].options[0];
 
         assert_eq!(option.name, "--tag");
         assert!(option.repeatable);
         assert_eq!(option.value.expect("tag takes a value").min_values, 1);
         assert_eq!(option.value.expect("tag takes a value").max_values, Some(1));
+    }
+
+    #[test]
+    fn contract_projects_short_only_options_optional_positionals_and_positional_constraints() {
+        let parsed = ProjectionCli::try_parse_from(["projection", "-t", "secret"])
+            .expect("projection fixture should remain parseable");
+        assert_eq!(parsed.token, "secret");
+        assert_eq!(parsed.input, None);
+
+        let request = ContractRequest::root();
+        assert!(request.path().is_empty());
+        assert_eq!(request.depth(), ContractDepth::Shallow);
+
+        let contract = ProjectionCli::contract(request).expect("root contract should exist");
+        let invocation =
+            contract.command.invocation.as_ref().expect("root command should be detailed");
+        let context = &invocation.contexts[0];
+
+        assert_eq!(context.options[0].name, "-t");
+        assert!(context.options[0].required);
+        assert_eq!(context.arguments[0].name, "input");
+        assert!(!context.arguments[0].required);
+        assert_eq!(context.arguments[0].value.min_values, 0);
+        assert_eq!(context.arguments[0].value.max_values, Some(1));
+        assert_eq!(context.constraints[0].source, "input");
+        assert_eq!(context.constraints[0].target, "-t");
+
+        let json = contract.to_json().expect("compact contract JSON should serialize");
+        assert!(!json.contains('\n'));
+        assert!(json.contains(r#""name":"-t""#));
     }
 
     #[test]
@@ -451,6 +492,15 @@ mod tests {
             .expect_err("unknown command path should fail");
 
         assert_eq!(error.to_string(), "unknown contract command `missing` below `objects`");
+    }
+
+    #[test]
+    fn unknown_root_command_paths_report_without_a_parent_path() {
+        let request = ContractRequest::new(["missing"]);
+        assert!(request.path().iter().map(String::as_str).eq(["missing"]));
+
+        let error = Cli::contract(request).expect_err("unknown root command should fail");
+        assert_eq!(error.to_string(), "unknown contract command `missing`");
     }
 
     #[test]

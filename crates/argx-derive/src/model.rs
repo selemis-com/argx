@@ -1042,7 +1042,7 @@ fn validate_long(long: &str, span: Span) -> syn::Result<()> {
 mod tests {
     use syn::{DeriveInput, parse_quote};
 
-    use super::{ArgumentKind, Command, FieldSemantics, Shape, ValueConversion};
+    use super::{ArgumentKind, Command, FieldSemantics, Shape, Subcommand, ValueConversion};
 
     #[test]
     fn command_model_separates_cli_semantics_from_rust_binding() {
@@ -1093,5 +1093,87 @@ mod tests {
         assert!(command.fields[2].binding.value.is_none());
         assert!(matches!(&command.fields[3].semantics, FieldSemantics::Subcommand));
         assert!(command.fields[3].binding.value.is_none());
+    }
+
+    #[test]
+    fn composed_fields_reject_lifetime_and_const_dependencies() {
+        let lifetime_input: DeriveInput = parse_quote! {
+            struct Cli<'a> {
+                #[argx(flatten)]
+                shared: Shared<'a>,
+            }
+        };
+        let error = Command::from_input(&lifetime_input, true)
+            .err()
+            .expect("flattened type must not depend on the containing lifetime");
+        assert!(error.to_string().contains("`flatten` cannot depend"));
+
+        let const_input: DeriveInput = parse_quote! {
+            struct Cli<const N: usize> {
+                #[argx(flatten)]
+                shared: Shared<N>,
+            }
+        };
+        let error = Command::from_input(&const_input, true)
+            .err()
+            .expect("flattened type must not depend on the containing const parameter");
+        assert!(error.to_string().contains("`flatten` cannot depend"));
+
+        let subcommand_lifetime_input: DeriveInput = parse_quote! {
+            enum Commands<'a> {
+                Run(Shared<'a>),
+            }
+        };
+        let error = Subcommand::from_input(&subcommand_lifetime_input)
+            .err()
+            .expect("payload must not depend on the containing lifetime");
+        assert!(error.to_string().contains("subcommand payload cannot depend"));
+
+        let subcommand_const_input: DeriveInput = parse_quote! {
+            enum Commands<const N: usize> {
+                Run(Shared<N>),
+            }
+        };
+        let error = Subcommand::from_input(&subcommand_const_input)
+            .err()
+            .expect("payload must not depend on the containing const parameter");
+        assert!(error.to_string().contains("subcommand payload cannot depend"));
+    }
+
+    #[test]
+    fn command_and_subcommand_names_reject_ambiguous_token_spellings() {
+        let empty_command: DeriveInput = parse_quote! {
+            #[argx(name = "")]
+            struct Cli;
+        };
+        assert_eq!(
+            Command::from_input(&empty_command, true)
+                .err()
+                .expect("empty command name must fail")
+                .to_string(),
+            "command name cannot be empty",
+        );
+
+        let whitespace_subcommand: DeriveInput = parse_quote! {
+            enum Commands {
+                #[argx(name = "bad name")]
+                Run,
+            }
+        };
+        let error = Subcommand::from_input(&whitespace_subcommand)
+            .err()
+            .expect("whitespace in a subcommand name must fail");
+        assert!(error.to_string().contains("subcommand name must be non-empty"));
+
+        let equals_alias: DeriveInput = parse_quote! {
+            enum Commands {
+                #[argx(alias = "run=now")]
+                Run,
+            }
+        };
+        let error = Subcommand::from_input(&equals_alias)
+            .err()
+            .expect("equals signs in subcommand aliases must fail");
+        assert!(error.to_string().contains("subcommand name must be non-empty"));
     }
 }

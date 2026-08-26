@@ -385,3 +385,109 @@ const fn str_eq(left: &str, right: &str) -> bool {
     }
     true
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        action_flag_spellings_disjoint, argument_key_by_name, command_keys_unique, concat_args,
+        concat_constraints, concat_flags, flag_spellings_unique, positional_layout_valid,
+        table_len,
+    };
+    use crate::__private::{Arg, Constraint, ConstraintKind, Flag, HELP_ACTION};
+
+    static ALPHA: Flag<'static> = Flag {
+        key: 1,
+        name: "alpha",
+        longs: &["alpha"],
+        aliases: &["first"],
+        shorts: b"a",
+        ..Flag::BOOL
+    };
+    static BETA: Flag<'static> =
+        Flag { key: 2, name: "beta", longs: &["beta"], shorts: b"b", ..Flag::BOOL };
+    static INPUT: Arg<'static> = Arg { key: 3, name: "input", ..Arg::REQUIRED };
+
+    #[test]
+    fn table_composition_preserves_group_order() {
+        let flag_groups: &[&[&Flag<'static>]] = &[&[&ALPHA], &[], &[&BETA]];
+        assert_eq!(table_len(flag_groups), 2);
+        assert_eq!(concat_flags::<2>(flag_groups), [&ALPHA, &BETA]);
+
+        let arg_groups: &[&[&Arg<'static>]] = &[&[], &[&INPUT]];
+        assert_eq!(concat_args::<1>(arg_groups), [&INPUT]);
+
+        const REQUIRES: Constraint =
+            Constraint { kind: ConstraintKind::Requires, source: 1, target: 3 };
+        const CONFLICTS: Constraint =
+            Constraint { kind: ConstraintKind::Conflicts, source: 2, target: 3 };
+        assert_eq!(concat_constraints::<2>(&[&[REQUIRES], &[CONFLICTS]]), [REQUIRES, CONFLICTS],);
+    }
+
+    #[test]
+    fn argument_lookup_resolves_flags_and_positionals() {
+        assert_eq!(argument_key_by_name(&[&ALPHA], &[&INPUT], "alpha"), ALPHA.key);
+        assert_eq!(argument_key_by_name(&[&ALPHA], &[&INPUT], "input"), INPUT.key);
+    }
+
+    #[test]
+    #[should_panic(expected = "constraint target must name exactly one argument field")]
+    fn argument_lookup_rejects_an_unknown_name() {
+        let _ = argument_key_by_name(&[&ALPHA], &[&INPUT], "missing");
+    }
+
+    #[test]
+    #[should_panic(expected = "constraint target must name exactly one argument field")]
+    fn argument_lookup_rejects_an_ambiguous_name() {
+        static SAME: Arg<'static> = Arg { key: 4, name: "alpha", ..Arg::REQUIRED };
+        let _ = argument_key_by_name(&[&ALPHA], &[&SAME], "alpha");
+    }
+
+    #[test]
+    fn composed_keys_must_be_unique_across_every_argument_kind() {
+        assert!(command_keys_unique(&[&ALPHA, &BETA], &[&INPUT]));
+
+        static FLAG_DUPLICATE: Flag<'static> = Flag { key: 1, ..Flag::BOOL };
+        static ARG_DUPLICATE: Arg<'static> = Arg { key: 1, ..Arg::REQUIRED };
+        static OTHER_ARG_DUPLICATE: Arg<'static> = Arg { key: 3, ..Arg::REQUIRED };
+        assert!(!command_keys_unique(&[&ALPHA, &FLAG_DUPLICATE], &[]));
+        assert!(!command_keys_unique(&[&ALPHA], &[&ARG_DUPLICATE]));
+        assert!(!command_keys_unique(&[], &[&INPUT, &OTHER_ARG_DUPLICATE]));
+    }
+
+    #[test]
+    fn composed_flag_spellings_include_aliases_and_shorts() {
+        assert!(flag_spellings_unique(&[&ALPHA, &BETA]));
+
+        static LONG_COLLISION: Flag<'static> = Flag { longs: &["alpha"], ..Flag::BOOL };
+        static ALIAS_COLLISION: Flag<'static> = Flag { aliases: &["first"], ..Flag::BOOL };
+        static SHORT_COLLISION: Flag<'static> = Flag { shorts: b"a", ..Flag::BOOL };
+        assert!(!flag_spellings_unique(&[&ALPHA, &LONG_COLLISION]));
+        assert!(!flag_spellings_unique(&[&ALPHA, &ALIAS_COLLISION]));
+        assert!(!flag_spellings_unique(&[&ALPHA, &SHORT_COLLISION]));
+    }
+
+    #[test]
+    fn built_in_actions_must_not_collide_with_canonical_alias_or_short_spellings() {
+        assert!(action_flag_spellings_disjoint(&[&HELP_ACTION], &[&ALPHA]));
+
+        static LONG_COLLISION: Flag<'static> = Flag { longs: &["help"], ..Flag::BOOL };
+        static ALIAS_COLLISION: Flag<'static> = Flag { aliases: &["help"], ..Flag::BOOL };
+        static SHORT_COLLISION: Flag<'static> = Flag { shorts: b"h", ..Flag::BOOL };
+        assert!(!action_flag_spellings_disjoint(&[&HELP_ACTION], &[&LONG_COLLISION]));
+        assert!(!action_flag_spellings_disjoint(&[&HELP_ACTION], &[&ALIAS_COLLISION]));
+        assert!(!action_flag_spellings_disjoint(&[&HELP_ACTION], &[&SHORT_COLLISION]));
+    }
+
+    #[test]
+    fn positional_layout_rejects_required_or_anything_after_open_ended_values() {
+        static OPTIONAL: Arg<'static> =
+            Arg { key: 4, name: "optional", required: false, ..Arg::REQUIRED };
+        static REQUIRED: Arg<'static> = Arg { key: 5, name: "required", ..Arg::REQUIRED };
+        static VARIADIC: Arg<'static> =
+            Arg { key: 6, name: "variadic", required: false, variadic: true, ..Arg::REQUIRED };
+
+        assert!(positional_layout_valid(&[&REQUIRED, &OPTIONAL]));
+        assert!(!positional_layout_valid(&[&OPTIONAL, &REQUIRED]));
+        assert!(!positional_layout_valid(&[&VARIADIC, &OPTIONAL]));
+    }
+}

@@ -54,6 +54,12 @@ mod tests {
     }
 
     #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    struct ParsedMany {
+        #[argx(long)]
+        numbers: Vec<u16>,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
     struct NegativeValues {
         #[argx(long, allow_negative_numbers)]
         number: Option<i32>,
@@ -332,6 +338,45 @@ mod tests {
         output: GroupedOutputArgs,
         #[argx(subcommand)]
         command: GroupedHelpCommand,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Args)]
+    struct GroupedInputArgs {
+        /// Input file.
+        input: String,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    #[argx(name = "grouped-positional")]
+    struct GroupedPositionalCli {
+        /// Input
+        #[argx(flatten)]
+        input: GroupedInputArgs,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Args)]
+    struct ColorOutputArgs {
+        /// Enable colored output.
+        #[argx(long)]
+        color: bool,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Args)]
+    struct FormatOutputArgs {
+        /// Select the output format.
+        #[argx(long)]
+        format: Option<String>,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    #[argx(name = "merged-groups")]
+    struct MergedGroupCli {
+        /// Output
+        #[argx(flatten)]
+        color: ColorOutputArgs,
+        /// Output
+        #[argx(flatten)]
+        format: FormatOutputArgs,
     }
 
     #[derive(Debug, PartialEq, Eq, argx::Args)]
@@ -796,6 +841,30 @@ mod tests {
     }
 
     #[test]
+    fn repeated_parsed_values_convert_every_occurrence_and_report_the_first_failure() {
+        assert_eq!(
+            ParsedMany::try_parse_args(["--numbers", "10", "--numbers=20"]),
+            Ok(ParsedMany { numbers: vec![10, 20] }),
+        );
+
+        let error = ParsedMany::try_parse_args([
+            "--numbers",
+            "10",
+            "--numbers",
+            "not-a-number",
+            "--numbers",
+            "30",
+        ])
+        .expect_err("the first invalid repeated value must fail conversion");
+        let Error::InvalidValue(error) = error else {
+            panic!("unexpected error: {error:?}");
+        };
+        assert_eq!(error.name, "--numbers");
+        assert_eq!(error.value, "not-a-number");
+        assert!(!error.reason.is_empty());
+    }
+
+    #[test]
     fn flattened_args_compose_recursively_and_preserve_positional_order() {
         let parsed = FlattenedCli::try_parse_args([
             "--root",
@@ -1034,6 +1103,22 @@ Output:
     }
 
     #[test]
+    fn flattened_positional_arguments_move_into_their_documented_group() {
+        let help = GroupedPositionalCli::render_help();
+        assert!(help.contains("\nInput:\n  <INPUT>  Input file.\n"));
+        assert!(!help.contains("\nArguments:\n"));
+    }
+
+    #[test]
+    fn flattened_groups_with_the_same_heading_merge_into_one_section() {
+        let help = MergedGroupCli::render_help();
+        assert_eq!(help.matches("\nOutput:\n").count(), 1);
+        assert!(help.contains("  --color"));
+        assert!(help.contains("  --format <FORMAT>"));
+        assert!(!help.contains("Options:\n  --color"));
+    }
+
+    #[test]
     fn inherited_global_arguments_keep_their_documented_group_in_subcommand_help() {
         let error = GroupedHelpCli::try_parse_args(["status", "--help"])
             .expect_err("help should stop before constructing the command");
@@ -1175,6 +1260,8 @@ Output:
             "environment",
             "argv",
             "invalid-environment",
+            #[cfg(unix)]
+            "invalid-utf8-environment",
             "incomplete-argv",
             "required-missing",
             "required-environment",
@@ -1204,6 +1291,12 @@ Output:
                 }
                 "invalid-environment" => {
                     command.env("ARGX_TEST_PORT", "not-a-port");
+                }
+                #[cfg(unix)]
+                "invalid-utf8-environment" => {
+                    use std::os::unix::ffi::OsStringExt as _;
+
+                    command.env("ARGX_TEST_PROFILE", OsString::from_vec(b"bad-\xff".to_vec()));
                 }
                 "required-environment" => {
                     command.env("ARGX_TEST_REQUIRED_PORT", "5000");
@@ -1267,6 +1360,22 @@ Output:
                 assert_eq!(environment, "ARGX_TEST_PORT");
                 assert_eq!(value, OsString::from("not-a-port"));
                 assert!(!reason.is_empty());
+            }
+            #[cfg(unix)]
+            "invalid-utf8-environment" => {
+                use std::os::unix::ffi::{OsStrExt as _, OsStringExt as _};
+
+                let error = EnvironmentCli::try_parse_args(std::iter::empty::<&str>())
+                    .expect_err("non-UTF-8 text environment value must fail");
+                let Error::InvalidEnvironmentValue { name, environment, value, reason } = error
+                else {
+                    panic!("unexpected error: {error:?}");
+                };
+                assert_eq!(name, "--profile");
+                assert_eq!(environment, "ARGX_TEST_PROFILE");
+                assert_eq!(value.as_os_str().as_bytes(), b"bad-\xff");
+                assert_eq!(reason, "value is not valid UTF-8");
+                assert_eq!(value, OsString::from_vec(b"bad-\xff".to_vec()));
             }
             "incomplete-argv" => assert_eq!(
                 EnvironmentCli::try_parse_args(["--port"]),

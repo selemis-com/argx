@@ -220,7 +220,9 @@ fn display_bytes(value: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, display_bytes};
+    use std::ffi::OsString;
+
+    use super::{Error, InvalidValue, display_bytes};
 
     #[test]
     fn diagnostic_bytes_do_not_emit_control_characters() {
@@ -248,5 +250,84 @@ Usage: tool [OPTIONS]
 
         let failure = Error::UnknownFlag { token: b"--bad".to_vec() };
         assert_eq!(failure.exit_code(), 2);
+    }
+
+    #[test]
+    fn syntax_and_cardinality_errors_render_actionable_diagnostics() {
+        assert_eq!(
+            Error::UnknownFlag { token: b"--bad\nflag".to_vec() }.to_string(),
+            r"unknown flag `--bad\nflag`",
+        );
+        assert_eq!(
+            Error::MissingValue { name: "--output" }.to_string(),
+            "missing value for `--output`",
+        );
+        assert_eq!(
+            Error::UnexpectedValue { name: "--verbose" }.to_string(),
+            "`--verbose` does not accept a value",
+        );
+        assert_eq!(
+            Error::UnexpectedArgument { token: b"extra".to_vec() }.to_string(),
+            "unexpected argument `extra`",
+        );
+        assert_eq!(
+            Error::UnknownCommand { token: b"deploy".to_vec() }.to_string(),
+            "unknown command `deploy`",
+        );
+        assert_eq!(
+            Error::MissingSubcommand { name: "command" }.to_string(),
+            "required subcommand `command` was not provided",
+        );
+        assert_eq!(
+            Error::MissingRequired { name: "--output" }.to_string(),
+            "required argument `--output` was not provided",
+        );
+        assert_eq!(
+            Error::DuplicateArgument { name: "--verbose" }.to_string(),
+            "argument `--verbose` cannot be used more than once",
+        );
+    }
+
+    #[test]
+    fn relationship_errors_name_both_participating_arguments() {
+        assert_eq!(
+            Error::MissingRequirement { name: "--token", required_by: "--endpoint" }.to_string(),
+            "argument `--token` is required when `--endpoint` is used",
+        );
+        assert_eq!(
+            Error::ConflictingArguments { name: "--output", other: "--stdout" }.to_string(),
+            "argument `--output` cannot be used with `--stdout`",
+        );
+    }
+
+    #[test]
+    fn conversion_errors_escape_values_and_reasons() {
+        assert_eq!(
+            Error::InvalidUtf8 { name: "input", value: b"bad\nvalue".to_vec() }.to_string(),
+            r"value `bad\nvalue` for `input` is not valid UTF-8",
+        );
+        assert_eq!(
+            Error::InvalidValue(Box::new(InvalidValue {
+                name: "--port",
+                value: String::from("bad\nvalue"),
+                reason: String::from("invalid\nnumber"),
+            }))
+            .to_string(),
+            r"invalid value `bad\nvalue` for `--port`: invalid\nnumber",
+        );
+        assert_eq!(
+            Error::InvalidEnvironmentValue {
+                name: "--port",
+                environment: "TOOL_PORT",
+                value: OsString::from("bad\nvalue"),
+                reason: String::from("invalid\nnumber"),
+            }
+            .to_string(),
+            r"invalid value `bad\nvalue` from environment variable `TOOL_PORT` for `--port`: invalid\nnumber",
+        );
+        assert_eq!(
+            Error::InvalidOsValue { name: "path", value: b"bad\npath".to_vec() }.to_string(),
+            r"value `bad\npath` for `path` cannot be reconstructed as an operating-system string",
+        );
     }
 }
