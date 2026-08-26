@@ -6,6 +6,7 @@
 //! escapes control characters from caller-controlled bytes before writing them to a terminal.
 
 use std::{
+    borrow::Cow,
     fmt,
     io::{self, Write as _},
     process,
@@ -149,25 +150,63 @@ impl Error {
     /// Help and version requests are written to standard output and exit successfully. Parse and
     /// binding failures are written to standard error and exit with status 2.
     pub fn exit(&self) -> ! {
-        match self {
-            Self::DisplayHelp { help } => {
+        let output = self.exit_output();
+        match output.stream {
+            ExitStream::Stdout => {
                 let mut stdout = io::stdout().lock();
-                let _ = stdout.write_all(help.as_bytes());
+                let _ = stdout.write_all(output.text.as_bytes());
                 let _ = stdout.flush();
             }
-            Self::DisplayVersion { version } => {
-                let mut stdout = io::stdout().lock();
-                let _ = stdout.write_all(version.as_bytes());
-                let _ = stdout.flush();
-            }
-            _ => {
+            ExitStream::Stderr => {
                 let mut stderr = io::stderr().lock();
-                let _ = writeln!(stderr, "error: {self}\n\nFor more information, try '--help'.");
+                let _ = stderr.write_all(output.text.as_bytes());
                 let _ = stderr.flush();
             }
         }
-        process::exit(self.exit_code())
+        process::exit(output.code)
     }
+
+    /// Builds the exact terminal output used by [`Self::exit`].
+    ///
+    /// Keeping rendering separate from the process boundary lets unit tests pin diagnostic bytes
+    /// without spawning a child process or duplicating the production formatter.
+    fn exit_output(&self) -> ExitOutput<'_> {
+        match self {
+            Self::DisplayHelp { help: text } | Self::DisplayVersion { version: text } => {
+                ExitOutput {
+                    stream: ExitStream::Stdout,
+                    text: Cow::Borrowed(text.as_str()),
+                    code: self.exit_code(),
+                }
+            }
+            _ => ExitOutput {
+                stream: ExitStream::Stderr,
+                text: Cow::Owned(format!(
+                    "error: {self}\n\nFor more information, try '--help'.\n"
+                )),
+                code: self.exit_code(),
+            },
+        }
+    }
+}
+
+/// Terminal stream selected by the conventional CLI exit policy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ExitStream {
+    /// Successful terminal actions are written to standard output.
+    Stdout,
+    /// Parse and binding failures are written to standard error.
+    Stderr,
+}
+
+/// Fully rendered process-boundary output for one parser result.
+struct ExitOutput<'a> {
+    /// Destination stream.
+    stream: ExitStream,
+    /// Exact bytes represented as UTF-8 text.
+    text: Cow<'a, str>,
+    /// Process status to use after writing the output.
+    code: i32,
 }
 
 impl fmt::Display for Error {
@@ -241,7 +280,7 @@ fn display_bytes(value: &[u8]) -> String {
 mod tests {
     use std::ffi::OsString;
 
-    use super::{Error, InvalidValue, display_bytes};
+    use super::{Error, ExitStream, InvalidValue, display_bytes};
 
     #[test]
     fn diagnostic_bytes_do_not_emit_control_characters() {
@@ -249,6 +288,30 @@ mod tests {
         assert!(!rendered.contains('\n'));
         assert!(!rendered.contains('\x1b'));
         assert!(rendered.contains(r"\n"));
+    }
+
+    #[test]
+    fn exit_output_uses_the_same_renderer_for_success_and_failure_policy() {
+        let help = Error::DisplayHelp { help: "Usage: tool [OPTIONS]\n".to_owned() };
+        let output = help.exit_output();
+        assert_eq!(output.stream, ExitStream::Stdout);
+        assert_eq!(output.code, 0);
+        assert_eq!(output.text, "Usage: tool [OPTIONS]\n");
+
+        let version = Error::DisplayVersion { version: "tool 1.2.3\n".to_owned() };
+        let output = version.exit_output();
+        assert_eq!(output.stream, ExitStream::Stdout);
+        assert_eq!(output.code, 0);
+        assert_eq!(output.text, "tool 1.2.3\n");
+
+        let failure = Error::UnknownFlag { token: b"--bad\nflag".to_vec() };
+        let output = failure.exit_output();
+        assert_eq!(output.stream, ExitStream::Stderr);
+        assert_eq!(output.code, 2);
+        assert_eq!(
+            output.text,
+            "error: unknown flag `--bad\\nflag`\n\nFor more information, try '--help'.\n",
+        );
     }
 
     #[test]
