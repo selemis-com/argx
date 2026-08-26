@@ -7,8 +7,13 @@ use super::model::{Action, Command, Flag};
 pub(crate) enum Named<'a> {
     /// A built-in action declared on the current command.
     Action(&'a Action<'a>),
-    /// A local flag or inherited global flag.
-    Flag(&'a Flag<'a>),
+    /// A local flag or inherited global flag together with its command-path scope index.
+    Flag {
+        /// Static metadata for the resolved flag.
+        flag: &'a Flag<'a>,
+        /// Zero-based command-path index where the flag is mounted.
+        scope: usize,
+    },
 }
 
 /// Resolves one long spelling using the parser's lexical scope rules.
@@ -31,10 +36,10 @@ pub(crate) fn long<'a>(
                 .find(|flag| {
                     flag.longs.iter().chain(flag.aliases).any(|long| long.as_bytes() == name)
                 })
-                .map(Named::Flag)
+                .map(|flag| Named::Flag { flag, scope: ancestors.len() })
         })
         .or_else(|| {
-            ancestors.iter().rev().find_map(|command| {
+            ancestors.iter().enumerate().rev().find_map(|(scope, command)| {
                 command
                     .flags
                     .iter()
@@ -47,7 +52,7 @@ pub(crate) fn long<'a>(
                                 .chain(flag.aliases)
                                 .any(|long| long.as_bytes() == name)
                     })
-                    .map(Named::Flag)
+                    .map(|flag| Named::Flag { flag, scope })
             })
         })
 }
@@ -70,16 +75,16 @@ pub(crate) fn short<'a>(
                 .iter()
                 .copied()
                 .find(|flag| flag.shorts.contains(&spelling))
-                .map(Named::Flag)
+                .map(|flag| Named::Flag { flag, scope: ancestors.len() })
         })
         .or_else(|| {
-            ancestors.iter().rev().find_map(|command| {
+            ancestors.iter().enumerate().rev().find_map(|(scope, command)| {
                 command
                     .flags
                     .iter()
                     .copied()
                     .find(|flag| flag.global && flag.shorts.contains(&spelling))
-                    .map(Named::Flag)
+                    .map(|flag| Named::Flag { flag, scope })
             })
         })
 }

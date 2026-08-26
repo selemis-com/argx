@@ -820,7 +820,7 @@ Options:
             snapbox::str![[r#"
 Configure values.
 
-Usage: tool config [OPTIONS] <KEY>
+Usage: tool --output <OUTPUT> <WORKSPACE> config [OPTIONS] <KEY>
 
 Arguments:
   <KEY>  Configuration key.

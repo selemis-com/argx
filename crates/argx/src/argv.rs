@@ -158,7 +158,7 @@ impl<'t, 'a, 'v> ArgvParser<'t, 'a, 'v> {
         if short.is_ascii_digit()
             && matches!(
                 resolve_short(self.command, &self.ancestors, *short),
-                Some(Named::Flag(_))
+                Some(Named::Flag { .. })
             ));
         if !declared_numeric_short
             && is_negative_number(token)
@@ -198,7 +198,7 @@ impl<'t, 'a, 'v> ArgvParser<'t, 'a, 'v> {
                     Ok(Event::Action { action, long: true })
                 };
             }
-            Some(Named::Flag(flag)) => flag,
+            Some(Named::Flag { flag, .. }) => flag,
             None => return Err(Error::UnknownFlag { token }),
         };
 
@@ -223,8 +223,8 @@ impl<'t, 'a, 'v> ArgvParser<'t, 'a, 'v> {
         let mut remaining = &token[1..];
         while let Some((&short, tail)) = remaining.split_first() {
             match resolve_short(self.command, &self.ancestors, short) {
-                Some(Named::Flag(flag)) if flag.takes_value => return Ok(()),
-                Some(Named::Action(_) | Named::Flag(_)) => remaining = tail,
+                Some(Named::Flag { flag, .. }) if flag.takes_value => return Ok(()),
+                Some(Named::Action(_) | Named::Flag { .. }) => remaining = tail,
                 None => return Err(Error::UnknownFlag { token }),
             }
         }
@@ -241,7 +241,7 @@ impl<'t, 'a, 'v> ArgvParser<'t, 'a, 'v> {
                 self.bundle = &[];
                 return Ok(Event::Action { action, long: false });
             }
-            Some(Named::Flag(flag)) => flag,
+            Some(Named::Flag { flag, .. }) => flag,
             None => {
                 self.bundle = &[];
                 return Err(Error::UnknownFlag { token: self.bundle_token });
@@ -320,7 +320,16 @@ impl<'t, 'a, 'v> ArgvParser<'t, 'a, 'v> {
     }
 }
 
-/// Views an operating-system argument as its self-synchronizing encoded bytes.
+/// Views an operating-system argument as native bytes on supported Unix targets.
+#[cfg(unix)]
+fn bytes(value: &OsStr) -> &[u8] {
+    use std::os::unix::ffi::OsStrExt as _;
+
+    value.as_bytes()
+}
+
+/// Keeps unsupported non-Unix targets buildable without claiming native-string round trips.
+#[cfg(not(unix))]
 fn bytes(value: &OsStr) -> &[u8] {
     value.as_encoded_bytes()
 }

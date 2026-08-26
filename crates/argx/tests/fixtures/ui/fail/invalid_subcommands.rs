@@ -1,4 +1,7 @@
 #[derive(argx::Subcommand)]
+enum Empty {}
+
+#[derive(argx::Subcommand)]
 enum DuplicateNames {
     #[argx(name = "same")]
     First,

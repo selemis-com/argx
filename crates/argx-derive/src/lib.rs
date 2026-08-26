@@ -18,6 +18,11 @@ use proc_macro::TokenStream;
 use syn::{DeriveInput, parse_macro_input};
 
 /// Derives the root Argx parser facade for a struct.
+///
+/// Type-shape inference is syntactic. Special handling for `bool`, `Option`, `Vec`, `String`,
+/// `OsString`, and `PathBuf` requires a recognized standard spelling to appear directly in the
+/// field type. Type aliases around those types are treated as ordinary value types because a
+/// procedural macro cannot resolve aliases.
 #[proc_macro_derive(Parser, attributes(argx))]
 pub fn derive_parser(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -25,6 +30,11 @@ pub fn derive_parser(input: TokenStream) -> TokenStream {
 }
 
 /// Derives reusable command arguments for a struct.
+///
+/// Type-shape inference is syntactic. Special handling for `bool`, `Option`, `Vec`, `String`,
+/// `OsString`, and `PathBuf` requires a recognized standard spelling to appear directly in the
+/// field type. Type aliases around those types are treated as ordinary value types because a
+/// procedural macro cannot resolve aliases.
 #[proc_macro_derive(Args, attributes(argx))]
 pub fn derive_args(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);

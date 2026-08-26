@@ -55,6 +55,9 @@ jobs:
       - name: Check MSRV
         run: cargo +1.95 check --workspace --all-targets --all-features --locked
 
+      - name: Check facade without derive feature
+        run: cargo +1.95 check --package argx --no-default-features --locked
+
   test:
     strategy:
       fail-fast: false

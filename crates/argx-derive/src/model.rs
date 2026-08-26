@@ -263,6 +263,12 @@ impl Subcommand {
             ));
         };
         attrs::reject(&input.attrs, "subcommand")?;
+        if data.variants.is_empty() {
+            return Err(syn::Error::new_spanned(
+                &input.ident,
+                "Subcommand requires at least one variant",
+            ));
+        }
 
         let mut spellings = Vec::<String>::new();
         let mut variants = Vec::with_capacity(data.variants.len());

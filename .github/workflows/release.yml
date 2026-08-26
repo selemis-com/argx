@@ -93,7 +93,7 @@ jobs:
               jq -cer '
                 [
                   .packages[]
-                  | select(.name == "argx" or .name == "argx_derive")
+                  | select(.name == "argx" or .name == "argx-derive")
                   | .version
                 ]
                 | unique
@@ -102,7 +102,7 @@ jobs:
 
           count="$(jq 'length' <<< "$versions")"
           if [[ "$count" != "1" ]]; then
-            echo "::error::argx and argx_derive must have exactly the same version."
+            echo "::error::argx and argx-derive must have exactly the same version."
             exit 1
           fi
 
@@ -114,7 +114,7 @@ jobs:
           fi
 
           cargo package \
-            --package argx_derive \
+            --package argx-derive \
             --package argx \
             --locked
 
@@ -179,7 +179,7 @@ jobs:
           set -euo pipefail
 
           cargo publish \
-            --package argx_derive \
+            --package argx-derive \
             --package argx \
             --locked
 

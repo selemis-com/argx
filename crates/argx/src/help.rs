@@ -29,14 +29,22 @@ pub(crate) fn render(path: &[&Command<'_>]) -> String {
     }
 
     output.push_str("Usage:");
-    for command in path {
+    for (index, command) in path.iter().enumerate() {
         output.push(' ');
         output.push_str(command.name);
-    }
-    output.push_str(" [OPTIONS]");
-    for flag in visible_flags.iter().filter(|flag| flag.flag.required) {
-        output.push(' ');
-        output.push_str(&required_flag_usage(flag));
+        if index + 1 == path.len() {
+            output.push_str(" [OPTIONS]");
+        }
+        for flag in command.flags.iter().filter(|flag| flag.required) {
+            output.push(' ');
+            output.push_str(&required_flag_usage(flag));
+        }
+        if index + 1 != path.len() {
+            for arg in command.args.iter().filter(|arg| arg.required) {
+                output.push(' ');
+                output.push_str(&arg_usage(arg));
+            }
+        }
     }
     for arg in command.args {
         output.push(' ');
@@ -80,21 +88,27 @@ pub(crate) fn render(path: &[&Command<'_>]) -> String {
     output
 }
 
-/// Resolves flags visible from the selected command using the parser's name resolver.
+/// Resolves flags visible from the selected command using the parser's lexical scope rules.
+///
+/// The resolver retains the command-path scope of each match so repeated mounts of one reusable
+/// `Args` declaration remain distinguishable even though they share static metadata pointers.
 fn visible_flags<'a>(path: &[&'a Command<'a>]) -> Vec<VisibleFlag<'a>> {
     let Some((&command, ancestors)) = path.split_last() else {
         return Vec::new();
     };
+    let current = ancestors.len();
 
-    let candidates = command.flags.iter().copied().chain(
-        ancestors
-            .iter()
-            .rev()
-            .flat_map(|command| command.flags.iter().copied().filter(|flag| flag.global)),
-    );
+    let candidates = command
+        .flags
+        .iter()
+        .copied()
+        .map(|flag| (current, flag))
+        .chain(ancestors.iter().enumerate().rev().flat_map(|(scope, command)| {
+            command.flags.iter().copied().filter(|flag| flag.global).map(move |flag| (scope, flag))
+        }));
 
     candidates
-        .filter_map(|flag| {
+        .filter_map(|(scope, flag)| {
             let longs = flag
                 .longs
                 .iter()
@@ -102,7 +116,8 @@ fn visible_flags<'a>(path: &[&'a Command<'a>]) -> Vec<VisibleFlag<'a>> {
                 .filter(|long| {
                     matches!(
                         resolve_long(command, ancestors, long.as_bytes()),
-                        Some(Named::Flag(resolved)) if ::std::ptr::eq(resolved, flag)
+                        Some(Named::Flag { flag: resolved, scope: resolved_scope })
+                            if resolved_scope == scope && std::ptr::eq(resolved, flag)
                     )
                 })
                 .collect::<Vec<_>>();
@@ -113,7 +128,8 @@ fn visible_flags<'a>(path: &[&'a Command<'a>]) -> Vec<VisibleFlag<'a>> {
                 .filter(|short| {
                     matches!(
                         resolve_short(command, ancestors, *short),
-                        Some(Named::Flag(resolved)) if ::std::ptr::eq(resolved, flag)
+                        Some(Named::Flag { flag: resolved, scope: resolved_scope })
+                            if resolved_scope == scope && std::ptr::eq(resolved, flag)
                     )
                 })
                 .collect::<Vec<_>>();
@@ -188,11 +204,11 @@ fn spellings_label(shorts: &[u8], longs: &[&str], value_name: Option<&str>) -> S
 }
 
 /// Renders the canonical spelling of a required named flag for the usage line.
-fn required_flag_usage(flag: &VisibleFlag<'_>) -> String {
+fn required_flag_usage(flag: &Flag<'_>) -> String {
     let mut usage = flag.longs.first().map_or_else(
         || {
             flag.shorts.first().map_or_else(
-                || flag.flag.name.to_owned(),
+                || flag.name.to_owned(),
                 |short| {
                     let short = char::from(*short);
                     format!("-{short}")
@@ -201,9 +217,9 @@ fn required_flag_usage(flag: &VisibleFlag<'_>) -> String {
         },
         |long| format!("--{long}"),
     );
-    if flag.flag.takes_value {
+    if flag.takes_value {
         usage.push_str(" <");
-        usage.push_str(&metavar(flag.flag.name));
+        usage.push_str(&metavar(flag.name));
         usage.push('>');
     }
     usage
@@ -379,7 +395,7 @@ Options:
         snapbox::Assert::new().action_env("SNAPSHOTS").eq(
             render(&[&GLOBAL_ROOT, &MID, &LEAF]),
             snapbox::str![[r#"
-Usage: tool mid leaf [OPTIONS] --profile <PROFILE>
+Usage: tool --profile <PROFILE> mid leaf [OPTIONS]
 
 Options:
   -l, --scope              Leaf scope
@@ -389,6 +405,86 @@ Options:
   --root-version           Root version selector
   -h, --help               Print help
   -V, --version            Print version
+
+"#]],
+        );
+    }
+
+    #[test]
+    fn descendant_usage_keeps_required_ancestor_flags_at_their_declaring_scope() {
+        static ROOT_TOKEN: Flag<'static> = Flag {
+            key: 20,
+            name: "root-token",
+            help: Some("Root token"),
+            longs: &["token"],
+            global: true,
+            required: true,
+            ..Flag::VALUE
+        };
+        static ROOT_CONFIG: Flag<'static> = Flag {
+            key: 21,
+            name: "config",
+            help: Some("Root config"),
+            longs: &["config"],
+            required: true,
+            ..Flag::VALUE
+        };
+        static LOCAL_TOKEN: Flag<'static> = Flag {
+            key: 22,
+            name: "token",
+            help: Some("Leaf token"),
+            longs: &["token"],
+            ..Flag::VALUE
+        };
+        static LEAF: Command<'static> =
+            Command { name: "leaf", flags: &[&LOCAL_TOKEN], ..Command::EMPTY };
+        static ROOT: Command<'static> = Command {
+            name: "tool",
+            flags: &[&ROOT_TOKEN, &ROOT_CONFIG],
+            subcommands: &[&LEAF],
+            ..Command::EMPTY
+        };
+
+        snapbox::Assert::new().action_env("SNAPSHOTS").eq(
+            render(&[&ROOT, &LEAF]),
+            snapbox::str![[r#"
+Usage: tool --token <ROOT_TOKEN> --config <CONFIG> leaf [OPTIONS]
+
+Options:
+  --token <TOKEN>  Leaf token
+  -h, --help       Print help
+
+"#]],
+        );
+    }
+
+    #[test]
+    fn reused_global_mount_is_listed_only_for_the_nearest_scope() {
+        static SHARED: Flag<'static> = Flag {
+            key: 30,
+            name: "shared",
+            help: Some("Shared setting"),
+            longs: &["shared"],
+            global: true,
+            ..Flag::VALUE
+        };
+        static LEAF: Command<'static> =
+            Command { name: "leaf", flags: &[&SHARED], ..Command::EMPTY };
+        static ROOT: Command<'static> = Command {
+            name: "tool",
+            flags: &[&SHARED],
+            subcommands: &[&LEAF],
+            ..Command::EMPTY
+        };
+
+        snapbox::Assert::new().action_env("SNAPSHOTS").eq(
+            render(&[&ROOT, &LEAF]),
+            snapbox::str![[r#"
+Usage: tool leaf [OPTIONS]
+
+Options:
+  --shared <SHARED>  Shared setting
+  -h, --help         Print help
 
 "#]],
         );

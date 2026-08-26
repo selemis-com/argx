@@ -244,6 +244,7 @@ error: Parser and Args do not support tuple structs; use named fields
             "invalid_subcommands",
             "argx",
             snapbox::str![[r#"
+error: Subcommand requires at least one variant
 error: duplicate subcommand `same`
 error: subcommand name must be non-empty, must not start with `-`, and cannot contain `=`, whitespace, or controls
 error: subcommand variants support only unit variants or one unnamed Args payload
