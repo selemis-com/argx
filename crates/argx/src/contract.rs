@@ -72,7 +72,7 @@ impl ContractRequest {
 #[serde(rename_all = "camelCase")]
 pub struct Contract {
     /// Serialized protocol version.
-    pub contract_version: u32,
+    pub version: u32,
     /// Canonical root command name.
     pub root: String,
     /// Selected command and requested descendant discovery.
@@ -137,31 +137,57 @@ pub struct InvocationContract {
 pub struct CommandContextContract {
     /// Canonical child-command path relative to the root command.
     pub path: Vec<String>,
-    /// Arguments accepted in this command context.
+    /// Positional arguments accepted in this command context.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub arguments: Vec<ArgumentContract>,
-    /// Relationships between arguments in this command context.
+    /// Named options accepted in this command context.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub options: Vec<OptionContract>,
+    /// Relationships between arguments and options in this command context.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub constraints: Vec<ConstraintContract>,
 }
 
-/// One named or positional argument in a machine invocation contract.
+/// One positional argument in a machine invocation contract.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ArgumentContract {
-    /// Opaque identifier used by constraints within this command context.
-    pub id: String,
-    /// Human-readable semantic argument name.
+    /// Semantic positional name.
     pub name: String,
     /// One-line argument description.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub help: Option<String>,
-    /// Command-line syntax for this argument.
-    pub syntax: ArgumentSyntax,
-    /// Rust value cardinality represented by this argument.
-    pub cardinality: ArgumentCardinality,
-    /// Whether a value must resolve from argv or environment when no typed default exists.
+    /// One-based position within this command context's positional sequence.
+    pub position: usize,
+    /// Whether this positional must resolve at least one value.
     pub required: bool,
+    /// Number of positional values represented by this argument.
+    pub value: ValueContract,
+    /// Whether negative numbers may bind while ordinary flag parsing remains enabled.
+    pub allow_negative_numbers: bool,
+}
+
+/// One named option in a machine invocation contract.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OptionContract {
+    /// Preferred canonical command-line spelling, including its leading dashes.
+    pub name: String,
+    /// Other accepted spellings, including their leading dashes.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub aliases: Vec<String>,
+    /// One-line option description.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub help: Option<String>,
+    /// Whether this option remains in scope after entering descendants.
+    pub global: bool,
+    /// Whether this option must resolve from argv or environment when no typed default exists.
+    pub required: bool,
+    /// Value consumption for each occurrence, omitted for value-less switches.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value: Option<ValueContract>,
+    /// Whether the option may occur more than once.
+    pub repeatable: bool,
     /// Environment variable consulted after argv when configured.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub environment: Option<String>,
@@ -173,43 +199,15 @@ pub struct ArgumentContract {
     pub allow_negative_numbers: bool,
 }
 
-/// Command-line syntax for one argument.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
-pub enum ArgumentSyntax {
-    /// A named flag or option.
-    Named {
-        /// Canonical long spellings without the leading `--`.
-        #[serde(skip_serializing_if = "Vec::is_empty")]
-        longs: Vec<String>,
-        /// Hidden long aliases without the leading `--`.
-        #[serde(skip_serializing_if = "Vec::is_empty")]
-        aliases: Vec<String>,
-        /// ASCII short spellings without the leading `-`.
-        #[serde(skip_serializing_if = "Vec::is_empty")]
-        shorts: Vec<char>,
-        /// Whether this argument remains in scope after entering descendants.
-        global: bool,
-    },
-    /// A positional value.
-    Positional {
-        /// Zero-based position within this command context's positional sequence.
-        index: usize,
-    },
-}
-
-/// Rust value cardinality represented by one argument.
+/// Number of values represented by one positional or one option occurrence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub enum ArgumentCardinality {
-    /// A value-less named boolean switch.
-    Switch,
-    /// Exactly one resolved value.
-    One,
-    /// Zero or one value.
-    Optional,
-    /// Zero or more values.
-    Many,
+pub struct ValueContract {
+    /// Minimum number of values.
+    pub min_values: usize,
+    /// Maximum number of values, or no upper bound when omitted.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_values: Option<usize>,
 }
 
 /// One normalized relationship between arguments in the same command context.
@@ -218,9 +216,9 @@ pub enum ArgumentCardinality {
 pub struct ConstraintContract {
     /// Relationship behavior.
     pub kind: ConstraintContractKind,
-    /// Opaque argument identifier for the argument declaring the relationship.
+    /// Public argument or option name declaring the relationship.
     pub source: String,
-    /// Opaque argument identifier for the referenced argument.
+    /// Public argument or option name referenced by the relationship.
     pub target: String,
 }
 
@@ -288,7 +286,7 @@ pub(crate) fn discover(
     }
 
     Ok(Contract {
-        contract_version: CONTRACT_VERSION,
+        version: CONTRACT_VERSION,
         root: root.name.to_owned(),
         command: command_contract(selected, path, &contexts, request.depth, true),
     })
@@ -339,13 +337,15 @@ fn command_contract(
     }
 }
 
-/// Builds one command-context contract and resolves semantic constraint keys to protocol ids.
+/// Builds one command-context contract and resolves semantic constraint keys to public names.
 fn command_context(
     command: &'static CommandSpec<'static>,
     contexts: &[&'static CommandSpec<'static>],
 ) -> CommandContextContract {
     let path = contexts.iter().skip(1).map(|context| context.name.to_owned()).collect();
-    let arguments = command_arguments(command);
+    let arguments =
+        command.args.iter().enumerate().map(|(index, arg)| arg_contract(arg, index)).collect();
+    let options = command.flags.iter().copied().map(option_contract).collect();
     let constraints = command
         .constraints
         .iter()
@@ -354,40 +354,39 @@ fn command_context(
                 ConstraintKind::Requires => ConstraintContractKind::Requires,
                 ConstraintKind::Conflicts => ConstraintContractKind::Conflicts,
             },
-            source: argument_id(command, constraint.source),
-            target: argument_id(command, constraint.target),
+            source: argument_name(command, constraint.source),
+            target: argument_name(command, constraint.target),
         })
         .collect();
 
-    CommandContextContract { path, arguments, constraints }
+    CommandContextContract { path, arguments, options, constraints }
 }
 
-/// Builds public argument contracts for one command context.
-fn command_arguments(command: &CommandSpec<'_>) -> Vec<ArgumentContract> {
-    let mut arguments = Vec::with_capacity(command.flags.len() + command.args.len());
-    for flag in command.flags {
-        arguments.push(flag_contract(flag));
-    }
-    for (index, arg) in command.args.iter().enumerate() {
-        arguments.push(arg_contract(arg, index));
-    }
-    arguments
-}
+/// Builds one named public option contract.
+fn option_contract(flag: &FlagSpec<'_>) -> OptionContract {
+    let name = preferred_option_name(flag);
+    let mut aliases = Vec::with_capacity(flag.longs.len() + flag.aliases.len() + flag.shorts.len());
+    aliases.extend(
+        flag.longs.iter().map(|long| format!("--{long}")).filter(|spelling| spelling != &name),
+    );
+    aliases.extend(
+        flag.aliases.iter().map(|alias| format!("--{alias}")).filter(|spelling| spelling != &name),
+    );
+    aliases.extend(
+        flag.shorts
+            .iter()
+            .map(|short| format!("-{}", char::from(*short)))
+            .filter(|spelling| spelling != &name),
+    );
 
-/// Builds one named public argument contract.
-fn flag_contract(flag: &FlagSpec<'_>) -> ArgumentContract {
-    ArgumentContract {
-        id: flag_id(flag),
-        name: flag.name.to_owned(),
+    OptionContract {
+        name,
+        aliases,
         help: flag.help.map(str::to_owned),
-        syntax: ArgumentSyntax::Named {
-            longs: flag.longs.iter().copied().map(str::to_owned).collect(),
-            aliases: flag.aliases.iter().copied().map(str::to_owned).collect(),
-            shorts: flag.shorts.iter().copied().map(char::from).collect(),
-            global: flag.global,
-        },
-        cardinality: cardinality(flag.cardinality),
+        global: flag.global,
         required: flag.required,
+        value: option_value(flag.cardinality),
+        repeatable: flag.cardinality == StaticCardinality::Many,
         environment: flag.env.map(str::to_owned),
         has_default: flag.has_default,
         allow_hyphen_values: flag.allow_hyphen_values,
@@ -398,52 +397,57 @@ fn flag_contract(flag: &FlagSpec<'_>) -> ArgumentContract {
 /// Builds one positional public argument contract.
 fn arg_contract(arg: &ArgSpec<'_>, index: usize) -> ArgumentContract {
     ArgumentContract {
-        id: positional_id(index),
         name: arg.name.to_owned(),
         help: arg.help.map(str::to_owned),
-        syntax: ArgumentSyntax::Positional { index },
-        cardinality: cardinality(arg.cardinality),
+        position: index + 1,
         required: arg.required,
-        environment: None,
-        has_default: arg.has_default,
-        allow_hyphen_values: false,
+        value: positional_value(arg.cardinality, arg.required),
         allow_negative_numbers: arg.allow_negative_numbers,
     }
 }
 
-/// Converts one private cardinality into the stable public protocol vocabulary.
-const fn cardinality(value: StaticCardinality) -> ArgumentCardinality {
+/// Returns value consumption for one named option occurrence.
+const fn option_value(value: StaticCardinality) -> Option<ValueContract> {
     match value {
-        StaticCardinality::Switch => ArgumentCardinality::Switch,
-        StaticCardinality::One => ArgumentCardinality::One,
-        StaticCardinality::Optional => ArgumentCardinality::Optional,
-        StaticCardinality::Many => ArgumentCardinality::Many,
+        StaticCardinality::Switch => None,
+        StaticCardinality::One | StaticCardinality::Optional | StaticCardinality::Many => {
+            Some(ValueContract { min_values: 1, max_values: Some(1) })
+        }
     }
 }
 
-/// Resolves one private semantic argument key to its public context-local identifier.
-fn argument_id(command: &CommandSpec<'_>, key: Key) -> String {
-    if let Some(flag) = command.flags.iter().copied().find(|flag| flag.key == key) {
-        return flag_id(flag);
+/// Returns total positional value multiplicity for one positional binding.
+fn positional_value(value: StaticCardinality, required: bool) -> ValueContract {
+    match value {
+        StaticCardinality::One => ValueContract { min_values: 1, max_values: Some(1) },
+        StaticCardinality::Optional => ValueContract { min_values: 0, max_values: Some(1) },
+        StaticCardinality::Many => {
+            ValueContract { min_values: if required { 1 } else { 0 }, max_values: None }
+        }
+        StaticCardinality::Switch => {
+            unreachable!("generated positional arguments cannot be value-less switches")
+        }
     }
-    if let Some(index) = command.args.iter().position(|arg| arg.key == key) {
-        return positional_id(index);
+}
+
+/// Resolves one private semantic argument key to its public context-local name.
+fn argument_name(command: &CommandSpec<'_>, key: Key) -> String {
+    if let Some(flag) = command.flags.iter().copied().find(|flag| flag.key == key) {
+        return preferred_option_name(flag);
+    }
+    if let Some(arg) = command.args.iter().find(|arg| arg.key == key) {
+        return arg.name.to_owned();
     }
     unreachable!("generated contract constraint key must belong to its command context")
 }
 
-/// Returns the opaque public identifier for one named argument.
-fn flag_id(flag: &FlagSpec<'_>) -> String {
+/// Returns the preferred canonical command-line spelling for one named option.
+fn preferred_option_name(flag: &FlagSpec<'_>) -> String {
     if let Some(long) = flag.longs.first() {
-        return format!("flag:--{long}");
+        return format!("--{long}");
     }
     if let Some(short) = flag.shorts.first() {
-        return format!("flag:-{}", char::from(*short));
+        return format!("-{}", char::from(*short));
     }
     unreachable!("generated named argument must have at least one canonical spelling")
-}
-
-/// Returns the opaque public identifier for one positional argument index.
-fn positional_id(index: usize) -> String {
-    format!("positional:{index}")
 }

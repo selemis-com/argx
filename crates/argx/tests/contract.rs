@@ -3,10 +3,7 @@
 #[cfg(test)]
 #[cfg(feature = "derive")]
 mod tests {
-    use argx::{
-        ArgumentCardinality, ArgumentSyntax, ConstraintContractKind, ContractDepth,
-        ContractRequest, Parser as _,
-    };
+    use argx::{ConstraintContractKind, ContractDepth, ContractRequest, Parser as _};
 
     /// Reusable authentication arguments.
     #[derive(argx::Args)]
@@ -91,6 +88,14 @@ mod tests {
         value: String,
     }
 
+    /// Small CLI used to lock down repeated named-option value semantics.
+    #[derive(argx::Parser)]
+    #[argx(name = "repeat")]
+    struct RepeatedOptionCli {
+        #[argx(long)]
+        tag: Vec<String>,
+    }
+
     #[test]
     fn representative_contract_fixture_remains_parseable() {
         let cli = Cli::try_parse_from([
@@ -143,10 +148,27 @@ mod tests {
     }
 
     #[test]
+    fn repeated_named_options_describe_occurrence_and_value_multiplicity_separately() {
+        let cli = RepeatedOptionCli::try_parse_from(["repeat", "--tag", "one", "--tag", "two"])
+            .expect("repeated option fixture should parse");
+        assert_eq!(cli.tag, ["one", "two"]);
+
+        let contract = RepeatedOptionCli::contract(ContractRequest::root())
+            .expect("repeated option contract should exist");
+        let invocation = contract.command.invocation.expect("root command should be detailed");
+        let option = &invocation.contexts[0].options[0];
+
+        assert_eq!(option.name, "--tag");
+        assert!(option.repeatable);
+        assert_eq!(option.value.expect("tag takes a value").min_values, 1);
+        assert_eq!(option.value.expect("tag takes a value").max_values, Some(1));
+    }
+
+    #[test]
     fn shallow_discovery_returns_selected_detail_and_direct_child_summaries() {
         let contract = Cli::contract(ContractRequest::root()).expect("root contract should exist");
 
-        assert_eq!(contract.contract_version, argx::CONTRACT_VERSION);
+        assert_eq!(contract.version, argx::CONTRACT_VERSION);
         assert_eq!(contract.root, "tool");
         assert_eq!(contract.command.path, Vec::<String>::new());
         assert_eq!(contract.command.name, "tool");
@@ -184,48 +206,54 @@ mod tests {
         assert!(invocation.contexts[1].path.iter().map(String::as_str).eq(["objects"]));
         assert!(invocation.contexts[2].path.iter().map(String::as_str).eq(["objects", "get"]));
 
-        let root_arguments = &invocation.contexts[0].arguments;
-        assert_eq!(root_arguments.len(), 3);
-        assert_eq!(root_arguments[0].id, "flag:--config");
-        assert_eq!(root_arguments[0].name, "config");
-        assert!(matches!(
-            &root_arguments[0].syntax,
-            ArgumentSyntax::Named { aliases, global: true, .. }
-                if aliases.iter().map(String::as_str).eq(["cfg"])
-        ));
-        assert_eq!(root_arguments[0].cardinality, ArgumentCardinality::Optional);
-        assert!(!root_arguments[0].required);
+        let root = &invocation.contexts[0];
+        assert!(root.arguments.is_empty());
+        assert_eq!(root.options.len(), 3);
+        assert_eq!(root.options[0].name, "--config");
+        assert!(root.options[0].aliases.iter().map(String::as_str).eq(["--cfg"]));
+        assert!(root.options[0].global);
+        assert!(!root.options[0].required);
+        assert_eq!(root.options[0].value.expect("config takes a value").min_values, 1);
+        assert_eq!(root.options[0].value.expect("config takes a value").max_values, Some(1));
+        assert!(!root.options[0].repeatable);
 
-        assert_eq!(root_arguments[1].id, "flag:--profile");
-        assert_eq!(root_arguments[1].environment.as_deref(), Some("TOOL_PROFILE"));
-        assert!(root_arguments[1].has_default);
-        assert!(!root_arguments[1].required);
+        assert_eq!(root.options[1].name, "--profile");
+        assert_eq!(root.options[1].environment.as_deref(), Some("TOOL_PROFILE"));
+        assert!(root.options[1].has_default);
+        assert!(!root.options[1].required);
+
+        assert_eq!(root.options[2].name, "--verbose");
+        assert!(root.options[2].aliases.iter().map(String::as_str).eq(["-v"]));
+        assert!(root.options[2].value.is_none());
 
         let leaf = &invocation.contexts[2];
-        assert_eq!(leaf.arguments.len(), 5);
-        assert_eq!(leaf.arguments[0].id, "flag:--endpoint");
-        assert_eq!(leaf.arguments[1].id, "flag:--auth-token");
-        assert_eq!(leaf.arguments[1].environment.as_deref(), Some("TOOL_TOKEN"));
-        assert!(leaf.arguments[1].required);
-        assert!(matches!(
-            &leaf.arguments[1].syntax,
-            ArgumentSyntax::Named { aliases, .. }
-                if aliases.iter().map(String::as_str).eq(["token"])
-        ));
-        assert_eq!(leaf.arguments[3].id, "positional:0");
-        assert_eq!(leaf.arguments[3].name, "id");
-        assert_eq!(leaf.arguments[3].cardinality, ArgumentCardinality::One);
-        assert!(leaf.arguments[3].required);
-        assert_eq!(leaf.arguments[4].id, "positional:1");
-        assert_eq!(leaf.arguments[4].cardinality, ArgumentCardinality::Many);
+        assert_eq!(leaf.options.len(), 3);
+        assert_eq!(leaf.options[0].name, "--endpoint");
+        assert_eq!(leaf.options[1].name, "--auth-token");
+        assert_eq!(leaf.options[1].environment.as_deref(), Some("TOOL_TOKEN"));
+        assert!(leaf.options[1].required);
+        assert!(leaf.options[1].aliases.iter().map(String::as_str).eq(["--token"]));
+        assert_eq!(leaf.options[2].name, "--stdout");
+        assert!(leaf.options[2].value.is_none());
+
+        assert_eq!(leaf.arguments.len(), 2);
+        assert_eq!(leaf.arguments[0].name, "id");
+        assert_eq!(leaf.arguments[0].position, 1);
+        assert_eq!(leaf.arguments[0].value.min_values, 1);
+        assert_eq!(leaf.arguments[0].value.max_values, Some(1));
+        assert!(leaf.arguments[0].required);
+        assert_eq!(leaf.arguments[1].name, "selectors");
+        assert_eq!(leaf.arguments[1].position, 2);
+        assert_eq!(leaf.arguments[1].value.min_values, 0);
+        assert!(leaf.arguments[1].value.max_values.is_none());
 
         assert_eq!(leaf.constraints.len(), 2);
         assert_eq!(leaf.constraints[0].kind, ConstraintContractKind::Requires);
-        assert_eq!(leaf.constraints[0].source, "flag:--endpoint");
-        assert_eq!(leaf.constraints[0].target, "flag:--auth-token");
+        assert_eq!(leaf.constraints[0].source, "--endpoint");
+        assert_eq!(leaf.constraints[0].target, "--auth-token");
         assert_eq!(leaf.constraints[1].kind, ConstraintContractKind::Conflicts);
-        assert_eq!(leaf.constraints[1].source, "flag:--endpoint");
-        assert_eq!(leaf.constraints[1].target, "flag:--stdout");
+        assert_eq!(leaf.constraints[1].source, "--endpoint");
+        assert_eq!(leaf.constraints[1].target, "--stdout");
     }
 
     #[test]
@@ -261,7 +289,7 @@ mod tests {
             json,
             snapbox::str![[r#"
 {
-  "contractVersion": 1,
+  "version": 1,
   "root": "echo",
   "command": {
     "path": [],
@@ -274,35 +302,31 @@ mod tests {
           "path": [],
           "arguments": [
             {
-              "id": "flag:--output",
-              "name": "output",
-              "syntax": {
-                "kind": "named",
-                "longs": [
-                  "output"
-                ],
-                "aliases": [
-                  "out"
-                ],
-                "global": false
+              "name": "value",
+              "position": 1,
+              "required": true,
+              "value": {
+                "minValues": 1,
+                "maxValues": 1
               },
-              "cardinality": "one",
+              "allowNegativeNumbers": false
+            }
+          ],
+          "options": [
+            {
+              "name": "--output",
+              "aliases": [
+                "--out"
+              ],
+              "global": false,
               "required": false,
+              "value": {
+                "minValues": 1,
+                "maxValues": 1
+              },
+              "repeatable": false,
               "environment": "ECHO_OUTPUT",
               "hasDefault": true,
-              "allowHyphenValues": false,
-              "allowNegativeNumbers": false
-            },
-            {
-              "id": "positional:0",
-              "name": "value",
-              "syntax": {
-                "kind": "positional",
-                "index": 0
-              },
-              "cardinality": "one",
-              "required": true,
-              "hasDefault": false,
               "allowHyphenValues": false,
               "allowNegativeNumbers": false
             }
