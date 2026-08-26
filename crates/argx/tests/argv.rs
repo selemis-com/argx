@@ -1,4 +1,9 @@
 //! Raw argv parser contract tests.
+//!
+//! This layer owns lexical behavior only: token classification, short bundles, attached and
+//! detached values, separators, command selection, built-in actions, and lexical scope. It works
+//! directly with static runtime metadata and intentionally does not exercise derive-generated typed
+//! binding, environment/default resolution, or rendered public diagnostics.
 
 #[cfg(test)]
 mod tests {

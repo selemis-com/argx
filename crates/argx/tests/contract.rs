@@ -1,4 +1,9 @@
-//! Native machine-contract discovery tests.
+//! Native machine-contract discovery and wire-protocol tests.
+//!
+//! This layer owns the public projection produced by `Parser::contract`: canonical paths, aliases,
+//! invocation contexts, cardinality, value sources, relationships, discovery depth, and serialized
+//! protocol spelling. Parsing the representative fixture is useful only as a cross-check that the
+//! declaration backing the contract remains invocable; detailed parser semantics live elsewhere.
 
 #[cfg(test)]
 #[cfg(feature = "derive")]
@@ -319,170 +324,10 @@ mod tests {
         let json =
             contract.to_json_pretty().expect("nested Argx contract should serialize as JSON");
 
-        snapbox::Assert::new().action_env("SNAPSHOTS").eq(
+        assert_eq!(
             json,
-            snapbox::str![[r#"
-{
-  "version": 1,
-  "root": "tool",
-  "command": {
-    "path": [
-      "objects",
-      "get"
-    ],
-    "name": "get",
-    "about": "Retrieve one object.",
-    "aliases": [
-      "show"
-    ],
-    "invocable": true,
-    "invocation": {
-      "contexts": [
-        {
-          "path": [],
-          "options": [
-            {
-              "name": "--config",
-              "aliases": [
-                "--cfg"
-              ],
-              "help": "Configuration file.",
-              "global": true,
-              "required": false,
-              "value": {
-                "minValues": 1,
-                "maxValues": 1
-              },
-              "repeatable": false,
-              "hasDefault": false,
-              "allowHyphenValues": false,
-              "allowNegativeNumbers": false
-            },
-            {
-              "name": "--profile",
-              "help": "Execution profile.",
-              "global": false,
-              "required": false,
-              "value": {
-                "minValues": 1,
-                "maxValues": 1
-              },
-              "repeatable": false,
-              "environment": "TOOL_PROFILE",
-              "hasDefault": true,
-              "allowHyphenValues": false,
-              "allowNegativeNumbers": false
-            },
-            {
-              "name": "--verbose",
-              "aliases": [
-                "-v"
-              ],
-              "help": "Enable verbose output.",
-              "global": false,
-              "required": false,
-              "repeatable": false,
-              "hasDefault": false,
-              "allowHyphenValues": false,
-              "allowNegativeNumbers": false
-            }
-          ]
-        },
-        {
-          "path": [
-            "objects"
-          ]
-        },
-        {
-          "path": [
-            "objects",
-            "get"
-          ],
-          "arguments": [
-            {
-              "name": "id",
-              "help": "Object identifier.",
-              "position": 1,
-              "required": true,
-              "value": {
-                "minValues": 1,
-                "maxValues": 1
-              },
-              "allowNegativeNumbers": false
-            },
-            {
-              "name": "selectors",
-              "help": "Additional selectors.",
-              "position": 2,
-              "required": false,
-              "value": {
-                "minValues": 0
-              },
-              "allowNegativeNumbers": false
-            }
-          ],
-          "options": [
-            {
-              "name": "--endpoint",
-              "help": "Optional remote endpoint.",
-              "global": false,
-              "required": false,
-              "value": {
-                "minValues": 1,
-                "maxValues": 1
-              },
-              "repeatable": false,
-              "hasDefault": false,
-              "allowHyphenValues": false,
-              "allowNegativeNumbers": false
-            },
-            {
-              "name": "--auth-token",
-              "aliases": [
-                "--token"
-              ],
-              "help": "Authentication token.",
-              "global": false,
-              "required": true,
-              "value": {
-                "minValues": 1,
-                "maxValues": 1
-              },
-              "repeatable": false,
-              "environment": "TOOL_TOKEN",
-              "hasDefault": false,
-              "allowHyphenValues": false,
-              "allowNegativeNumbers": false
-            },
-            {
-              "name": "--stdout",
-              "help": "Write the result to standard output.",
-              "global": false,
-              "required": false,
-              "repeatable": false,
-              "hasDefault": false,
-              "allowHyphenValues": false,
-              "allowNegativeNumbers": false
-            }
-          ],
-          "constraints": [
-            {
-              "kind": "requires",
-              "source": "--endpoint",
-              "target": "--auth-token"
-            },
-            {
-              "kind": "conflicts",
-              "source": "--endpoint",
-              "target": "--stdout"
-            }
-          ]
-        }
-      ]
-    }
-  }
-}
-"#]],
+            include_str!("fixtures/contracts/v1/nested.json"),
+            "contract v1 wire fixture changed",
         );
     }
 
@@ -509,58 +354,10 @@ mod tests {
             JsonCli::contract(ContractRequest::root()).expect("root contract should exist");
         let json = contract.to_json_pretty().expect("Argx contract should serialize as JSON");
 
-        snapbox::Assert::new().action_env("SNAPSHOTS").eq(
+        assert_eq!(
             json,
-            snapbox::str![[r#"
-{
-  "version": 1,
-  "root": "echo",
-  "command": {
-    "path": [],
-    "name": "echo",
-    "about": "Echo values",
-    "invocable": true,
-    "invocation": {
-      "contexts": [
-        {
-          "path": [],
-          "arguments": [
-            {
-              "name": "value",
-              "position": 1,
-              "required": true,
-              "value": {
-                "minValues": 1,
-                "maxValues": 1
-              },
-              "allowNegativeNumbers": false
-            }
-          ],
-          "options": [
-            {
-              "name": "--output",
-              "aliases": [
-                "--out"
-              ],
-              "global": false,
-              "required": false,
-              "value": {
-                "minValues": 1,
-                "maxValues": 1
-              },
-              "repeatable": false,
-              "environment": "ECHO_OUTPUT",
-              "hasDefault": true,
-              "allowHyphenValues": false,
-              "allowNegativeNumbers": false
-            }
-          ]
-        }
-      ]
-    }
-  }
-}
-"#]],
+            include_str!("fixtures/contracts/v1/root.json"),
+            "contract v1 wire fixture changed",
         );
     }
 }
