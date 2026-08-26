@@ -1,4 +1,10 @@
 //! Deterministic help rendering from static command metadata.
+//!
+//! Help is a projection of the same command tables used for parsing. In particular, named options
+//! are resolved with the parser's lexical scoping rules before they are rendered, so descendant
+//! help cannot advertise an ancestor spelling that would actually be shadowed at that scope.
+//! Flattened help groups retain semantic identities to avoid duplicating arguments when the same
+//! reusable declaration is mounted more than once.
 
 use std::fmt::Write as _;
 
@@ -24,7 +30,10 @@ struct VisibleFlag<'a> {
     shorts: Vec<u8>,
 }
 
-/// Renders short help for one selected command path.
+/// Renders help for one selected command path.
+///
+/// Required ancestor arguments remain attached to the scope where they must appear, while only the
+/// selected command contributes positional rows and child-command listings.
 pub(crate) fn render(path: &[&Command<'_>]) -> String {
     let Some(&command) = path.last() else {
         return String::new();

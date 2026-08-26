@@ -1,4 +1,8 @@
 //! Code generation from the validated Argx semantic model.
+//!
+//! Emitters in this module are projections, not semantic interpreters. Any rule that can affect
+//! accepted `argv`, help, diagnostics, or contracts should first be represented and validated in
+//! `model`; generation should only translate that model into runtime structures and binding code.
 
 mod command;
 mod subcommand;

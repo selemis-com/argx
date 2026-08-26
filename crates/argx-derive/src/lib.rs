@@ -1,4 +1,9 @@
 //! Procedural macros for Argx.
+//!
+//! The derive crate is intentionally a compile-time frontend. It parses attributes and Rust
+//! documentation into one normalized semantic model, validates every invariant visible to the
+//! current expansion, and emits static runtime/contract tables plus typed binding code. Runtime
+//! parsing policy lives in the `argx` facade crate rather than in generated token-matching logic.
 
 #![doc(
     html_logo_url = "https://raw.githubusercontent.com/selemis-com/argx/master/.github/assets/logo.jpg",
@@ -19,6 +24,10 @@ use syn::{DeriveInput, parse_macro_input};
 
 /// Derives the root Argx parser facade for a struct.
 ///
+/// `Parser` accepts unit structs and structs with named fields. The resulting type owns the root
+/// command metadata and receives the public `argx::Parser` implementation. Tuple structs and enum
+/// declarations are rejected.
+///
 /// Type-shape inference is syntactic. Special handling for `bool`, `Option`, `Vec`, `String`,
 /// `OsString`, and `PathBuf` requires a recognized standard spelling to appear directly in the
 /// field type. Type aliases around those types are treated as ordinary value types because a
@@ -31,6 +40,10 @@ pub fn derive_parser(input: TokenStream) -> TokenStream {
 
 /// Derives reusable command arguments for a struct.
 ///
+/// `Args` accepts the same struct shapes as `Parser`, but the generated declaration has no process
+/// entry-point semantics of its own. It can be mounted through `#[argx(flatten)]` or used as the
+/// direct payload of a `Subcommand` variant.
+///
 /// Type-shape inference is syntactic. Special handling for `bool`, `Option`, `Vec`, `String`,
 /// `OsString`, and `PathBuf` requires a recognized standard spelling to appear directly in the
 /// field type. Type aliases around those types are treated as ordinary value types because a
@@ -42,6 +55,11 @@ pub fn derive_args(input: TokenStream) -> TokenStream {
 }
 
 /// Derives a subcommand set for an enum.
+///
+/// Every variant becomes one exact child-command spelling. Variants may be unit variants or contain
+/// exactly one unnamed direct `Args` payload; named fields, multiple tuple fields, and collection or
+/// optional wrappers around a payload are rejected. Canonical names and aliases share one sibling
+/// namespace so command lookup is never order-dependent.
 #[proc_macro_derive(Subcommand, attributes(argx))]
 pub fn derive_subcommand(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);

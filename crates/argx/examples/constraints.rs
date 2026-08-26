@@ -1,10 +1,24 @@
-//! Argument relationship example.
+//! Relationships between otherwise independent arguments.
+//!
+//! `requires` makes one argument conditionally require other fields, while `conflicts` rejects
+//! combinations that cannot be meaningful together. References use Rust field names and are
+//! validated when the command model is derived.
+//!
+//! A valid remote invocation supplies every field required by `endpoint`:
+//!
+//! ```text
+//! cargo run --example constraints -- \
+//!   --endpoint https://example.invalid --token secret --workspace demo
+//! ```
+//!
+//! Omitting `--token`, or combining `--output result.json` with `--stdout`, demonstrates the
+//! corresponding generated diagnostic.
 
 use std::path::PathBuf;
 
 use argx::Parser;
 
-/// Command with a small set of argument relationships.
+/// Command with conditional requirements and mutually exclusive output modes.
 #[derive(Debug, Parser)]
 struct Cli {
     /// Remote endpoint to call.

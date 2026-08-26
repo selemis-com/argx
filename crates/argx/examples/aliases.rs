@@ -1,4 +1,18 @@
-//! Hidden flag and subcommand aliases example.
+//! Hidden compatibility aliases for options and subcommands.
+//!
+//! Aliases are accepted by the parser but intentionally omitted from generated help, keeping one
+//! canonical interface visible to people. Machine contracts retain aliases explicitly so tooling
+//! can still discover every accepted spelling.
+//!
+//! Both of these invocations select the same canonical command and option:
+//!
+//! ```text
+//! cargo run --example aliases -- --color always remove
+//! cargo run --example aliases -- --colour always rm
+//! ```
+//!
+//! Run `cargo run --example aliases -- --help` to see that only `--color` and `remove` are
+//! advertised.
 
 use argx::{Parser, Subcommand};
 
@@ -12,7 +26,7 @@ enum Command {
     Status,
 }
 
-/// Command with compatibility aliases.
+/// Command with compatibility aliases for one option and one child command.
 #[derive(Debug, Parser)]
 struct Cli {
     /// Optional output color.

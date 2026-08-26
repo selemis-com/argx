@@ -295,9 +295,35 @@ pub use argx_derive::{Args, Parser, Subcommand};
 ///
 /// This trait distinguishes reusable argument groups from root [`Parser`] declarations. It is
 /// implemented by the `Args` derive and is not intended for manual implementation.
+///
+/// # Examples
+///
+/// ```
+/// use argx::Parser as _;
+///
+/// #[derive(argx::Args)]
+/// struct Output {
+///     #[argx(long)]
+///     json: bool,
+/// }
+///
+/// #[derive(argx::Parser)]
+/// struct Cli {
+///     #[argx(flatten)]
+///     output: Output,
+/// }
+///
+/// let cli = Cli::try_parse_from(["tool", "--json"])?;
+/// assert!(cli.output.json);
+/// # Ok::<(), argx::Error>(())
+/// ```
 pub trait Args: Sized + __private::CommandArgs + __private::CommandContract {}
 
 /// Parses command-line arguments into a typed value.
+///
+/// The derive generates one static command model and the hidden binding implementation required by
+/// these entry points. Prefer the `try_parse*` methods when the caller owns process policy; the
+/// corresponding `parse*` methods are convenience entry points for ordinary CLI binaries.
 pub trait Parser: Sized + __private::CommandArgs + __private::CommandContract {
     /// Parses the current process arguments, excluding the program name.
     ///
@@ -335,6 +361,22 @@ pub trait Parser: Sized + __private::CommandArgs + __private::CommandContract {
     /// The program name is ignored. An empty sequence is therefore equivalent to a program name
     /// followed by no command-line arguments.
     ///
+    /// # Examples
+    ///
+    /// ```
+    /// use argx::Parser as _;
+    ///
+    /// #[derive(argx::Parser)]
+    /// struct Cli {
+    ///     #[argx(long)]
+    ///     port: u16,
+    /// }
+    ///
+    /// let cli = Cli::try_parse_from(["server", "--port", "8080"])?;
+    /// assert_eq!(cli.port, 8080);
+    /// # Ok::<(), argx::Error>(())
+    /// ```
+    ///
     /// # Errors
     ///
     /// Returns [`Error::DisplayHelp`] or [`Error::DisplayVersion`] when the corresponding built-in
@@ -364,8 +406,24 @@ pub trait Parser: Sized + __private::CommandArgs + __private::CommandContract {
 
     /// Parses arguments that do not include a program name.
     ///
-    /// This entry point is useful when argv is already separated from the executable name, such as
-    /// in tests, embedded command dispatch, or an agent invoking a command directly.
+    /// This entry point is useful when `argv` is already separated from the executable name, such
+    /// as in tests, embedded command dispatch, or an agent invoking a command directly. Unlike
+    /// [`Self::try_parse_from`], the first item is a real argument and is not discarded.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use argx::Parser as _;
+    ///
+    /// #[derive(argx::Parser)]
+    /// struct Cli {
+    ///     value: String,
+    /// }
+    ///
+    /// let cli = Cli::try_parse_args(["payload"])?;
+    /// assert_eq!(cli.value, "payload");
+    /// # Ok::<(), argx::Error>(())
+    /// ```
     ///
     /// # Errors
     ///
@@ -385,7 +443,36 @@ pub trait Parser: Sized + __private::CommandArgs + __private::CommandContract {
     /// Discovers the machine-readable invocation contract for this CLI.
     ///
     /// Command paths are relative to the root command and may use canonical names or aliases.
-    /// Returned paths always use canonical command names.
+    /// Returned paths always use canonical command names. Contract discovery does not parse
+    /// process arguments or evaluate environment fallbacks.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use argx::{ContractRequest, Parser as _};
+    ///
+    /// #[derive(argx::Args)]
+    /// struct GetArgs {
+    ///     id: String,
+    /// }
+    ///
+    /// #[derive(argx::Subcommand)]
+    /// enum Command {
+    ///     Get(GetArgs),
+    /// }
+    ///
+    /// #[derive(argx::Parser)]
+    /// struct Cli {
+    ///     #[argx(subcommand)]
+    ///     command: Command,
+    /// }
+    ///
+    /// let contract = Cli::contract(ContractRequest::new(["get"]))?;
+    /// assert_eq!(contract.command.path.len(), 1);
+    /// assert_eq!(contract.command.path[0], "get");
+    /// assert!(contract.command.invocation.is_some());
+    /// # Ok::<(), argx::ContractError>(())
+    /// ```
     ///
     /// # Errors
     ///
@@ -395,6 +482,26 @@ pub trait Parser: Sized + __private::CommandArgs + __private::CommandContract {
     }
 
     /// Renders generated help for this root command.
+    ///
+    /// This renders only the root scope. Help selected while parsing a child command is returned as
+    /// [`Error::DisplayHelp`] by the `try_parse*` methods.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use argx::Parser as _;
+    ///
+    /// /// Inspect one input file.
+    /// #[derive(argx::Parser)]
+    /// struct Cli {
+    ///     /// Input path.
+    ///     input: String,
+    /// }
+    ///
+    /// let help = Cli::render_help();
+    /// assert!(help.contains("Usage:"));
+    /// assert!(help.contains("<INPUT>"));
+    /// ```
     #[must_use]
     fn render_help() -> String {
         help::render(&[Self::COMMAND])

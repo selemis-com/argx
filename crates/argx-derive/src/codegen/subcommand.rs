@@ -1,4 +1,9 @@
 //! Code generation for `Subcommand` enums.
+//!
+//! Subcommand generation keeps sibling selection separate from command payload binding. Exactly one
+//! variant can become active, so generated partial state is an enum rather than a tuple containing
+//! every sibling. Once selected, events are delegated only to that branch, with unclaimed events
+//! left available to containing commands for inherited global options.
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
@@ -19,6 +24,8 @@ pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
         subcommand.variants.len(),
     );
 
+    // Each variant gets independent runtime and contract command projections. A payload command is
+    // composed beneath the variant metadata without creating an extra visible command segment.
     let command_tables = subcommand.variants.iter().enumerate().map(|(index, variant)| {
         let table = format_ident!("ARGX_SUBCOMMAND_{index}");
         let contract_table = format_ident!("ARGX_SUBCOMMAND_CONTRACT_{index}");
@@ -176,6 +183,8 @@ pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
         )
     });
 
+    // Once a sibling is selected, only that branch may consume descendant events. Returning false
+    // for unclaimed events is what lets a containing command bind inherited global options.
     let selected_apply_arms = subcommand.variants.iter().enumerate().map(|(index, variant)| {
         let partial_variant = format_ident!("V{index}");
         variant.binding.payload.as_ref().map_or_else(
@@ -189,6 +198,8 @@ pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
             },
         )
     });
+    // Selection is driven by semantic command keys emitted into raw `Command` events, not by
+    // re-matching user-facing names in generated typed binding.
     let select_branches = subcommand.variants.iter().enumerate().map(|(index, variant)| {
         let table = format_ident!("ARGX_SUBCOMMAND_{index}");
         let partial_variant = format_ident!("V{index}");
@@ -214,6 +225,8 @@ pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
         )
     });
 
+    // Every post-parse validation stage delegates only into the selected payload branch. Unit
+    // variants need no generated arm because they have no nested binding state.
     let env_arms = subcommand
         .variants
         .iter()

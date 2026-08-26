@@ -1,4 +1,9 @@
 //! Binding contracts implemented by generated parser, argument, and subcommand declarations.
+//!
+//! These traits are the narrow ABI between `argx-derive` and the runtime crate. Generated code owns
+//! partial-state layout and typed construction; the runtime owns lexical parsing and orchestration.
+//! Keep ordering semantics here explicit because changing the default [`CommandArgs::check`] flow
+//! changes public error precedence for every derived parser.
 
 use super::{
     contract::CommandSpec,

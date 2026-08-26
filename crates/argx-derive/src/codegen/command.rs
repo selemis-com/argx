@@ -1,4 +1,10 @@
 //! Code generation for `Parser` and `Args` structs.
+//!
+//! One normalized command produces three coordinated artifacts: static runtime parse/help tables,
+//! static machine-contract tables, and typed partial-state binding code. Flattened `Args` children
+//! are composed into the first two at compile time while retaining nested Rust values in the typed
+//! state. This is intentionally verbose generation: semantics should be decided in `model`, not
+//! rediscovered from emitted tables.
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
@@ -42,6 +48,8 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
     let binding_generics = binding_generics(command, &facade);
     let (impl_generics, ty_generics, where_clause) = binding_generics.split_for_impl();
 
+    // Preserve source field indices while partitioning CLI arguments. Generated partial state is
+    // still one tuple in Rust declaration order, whereas static tables are grouped by CLI kind.
     let flags = command
         .fields
         .iter()
@@ -78,6 +86,8 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
     let keys = key::constants(&facade, &command.binding.fingerprint, flags.len(), args.len());
     let command_key = key::ident("COMMAND", None);
 
+    // Runtime and contract tables are generated side by side from the same normalized argument.
+    // They intentionally differ in shape but must never reinterpret attributes independently.
     let flag_tables = flags.iter().enumerate().map(|(index, (_, field))| {
         let table = format_ident!("ARGX_FLAG_{index}");
         let key = key::ident("FLAG", Some(index));
@@ -229,6 +239,8 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
     let contract_constraints = &contract_tables.constraints;
     let constraint_tables = constraint_tables(command, &facade, command_flags, command_args);
 
+    // Partial state mirrors Rust field order. Direct arguments accumulate raw bytes, flattened
+    // declarations retain their own partial state, and subcommands retain branch-selection state.
     let partial_types = command.fields.iter().map(|field| match &field.semantics {
         model::FieldSemantics::Flatten => {
             let ty = &field.binding.ty;
@@ -263,6 +275,8 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
     let partial_value =
         if command.fields.is_empty() { TokenStream::new() } else { quote!((#(#partial_start,)*)) };
 
+    // Event ownership is key-based rather than spelling-based. Spelling resolution already happened
+    // in the raw parser, which keeps aliases and lexical shadowing out of typed binding.
     let flag_apply = flags.iter().enumerate().map(|(index, (field_index, field))| {
         let table = format_ident!("ARGX_FLAG_{index}");
         let key = key::ident("FLAG", Some(index));
@@ -314,6 +328,8 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
         }
     });
 
+    // Environment fallbacks are generated only for eligible direct scalar flags. Flattened and
+    // selected subcommand states recurse into their own independently generated fallback logic.
     let own_env_apply = command.fields.iter().enumerate().filter_map(|(field_index, field)| {
         let argument = field.argument()?;
         let env = argument.env.as_deref()?;
@@ -392,6 +408,8 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
         }
     });
 
+    // Validation is emitted in the same staged order used by `CommandArgs::check`: occurrence
+    // policy first, then source fallback, requiredness, relationships, and finally conversion.
     let occurrence_checks = command
         .fields
         .iter()
@@ -495,6 +513,8 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
     let built =
         if command.binding.unit { quote!(Self) } else { quote!(Self { #(#built_fields),* }) };
 
+    // These invariants can only be checked after child `Args` tables have been composed. Keep them
+    // as const assertions so invalid flattening fails during compilation rather than at runtime.
     let flattened_checks = command.fields.iter().any(model::Field::is_flatten).then(|| {
         quote! {
             const _: () = ::core::assert!(
@@ -578,6 +598,8 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
         }
     });
 
+    // A private const namespace keeps all generated statics and assertions local to the derived
+    // declaration while still allowing trait associated constants to point at `'static` tables.
     quote! {
         #[doc(hidden)]
         const _: () = {

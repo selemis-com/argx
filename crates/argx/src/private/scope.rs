@@ -1,4 +1,9 @@
 //! Shared lexical name resolution for one selected command scope.
+//!
+//! Runtime parsing and help rendering both call these resolvers. The lookup order is therefore a
+//! single invariant rather than duplicated policy: current-scope actions, current-scope flags, then
+//! inherited global flags from the nearest ancestor outward. A local spelling always shadows the
+//! same spelling inherited from an ancestor.
 
 use super::model::{Action, Command, Flag};
 

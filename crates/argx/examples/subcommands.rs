@@ -1,14 +1,27 @@
-//! Nested subcommand example.
+//! Typed child-command selection with reusable payload arguments.
+//!
+//! A derived `Subcommand` enum defines the commands selectable at one scope. Unit variants need no
+//! further values, while a variant with one direct `Args` payload delegates that command's fields
+//! to the payload type.
+//!
+//! ```text
+//! cargo run --example subcommands -- add hello
+//! cargo run --example subcommands -- add hello --force
+//! cargo run --example subcommands -- status
+//! ```
+//!
+//! The `Remove(Add)` variant intentionally reuses the same `Args` declaration to demonstrate that
+//! argument groups can back more than one command without introducing runtime reflection.
 
 use argx::{Args, Parser, Subcommand};
 
-/// Arguments accepted by the `add` command.
+/// Arguments accepted by the `add` and `remove` commands.
 #[derive(Debug, Args)]
 struct Add {
     /// Forces the operation.
     #[argx(long)]
     force: bool,
-    /// Value to add.
+    /// Value to add or remove.
     value: String,
 }
 
@@ -23,7 +36,7 @@ enum Command {
     Status,
 }
 
-/// Root command.
+/// Root command that requires one child command selection.
 #[derive(Debug, Parser)]
 struct Cli {
     /// Selects one operation.

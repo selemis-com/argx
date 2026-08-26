@@ -61,7 +61,7 @@ For more information, try '--help'.
             .assert()
             .success()
             .stdout_eq(snapbox::str![[r#"
-Minimal command with no declared arguments.
+Minimal command with no application-defined arguments.
 
 Usage: cli [OPTIONS]
 
@@ -79,7 +79,7 @@ Options:
             .assert()
             .success()
             .stdout_eq(snapbox::str![[r#"
-Root command.
+Root command that requires one child command selection.
 
 Usage: cli [OPTIONS] <COMMAND>
 
@@ -103,7 +103,7 @@ Adds one value.
 Usage: cli add [OPTIONS] <VALUE>
 
 Arguments:
-  <VALUE>  Value to add.
+  <VALUE>  Value to add or remove.
 
 Options:
   --force     Forces the operation.
@@ -138,7 +138,7 @@ Examples:
     structured-help --json
 
 Machine-readable usage:
-Use the application's schema command when a structured command contract is needed.
+Embedding and discovery code can inspect the same command model through `Parser::contract`.
 
 "#]])
             .stderr_eq("");
@@ -196,7 +196,7 @@ For more information, try '--help'.
             .assert()
             .success()
             .stdout_eq(snapbox::str![[r#"
-Version metadata example.
+Root command with independently configured version metadata.
 
 Usage: cli [OPTIONS] <COMMAND>
 

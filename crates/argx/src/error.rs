@@ -1,4 +1,9 @@
 //! Public parse and typed-binding errors.
+//!
+//! [`Error`] carries both genuine failures and successful terminal parser actions. The `try_parse*`
+//! APIs return help and version requests as values so embedding code can choose its own output and
+//! process policy; [`Error::exit`] applies Argx's conventional CLI policy. Diagnostic rendering
+//! escapes control characters from caller-controlled bytes before writing them to a terminal.
 
 use std::{
     fmt,
@@ -19,6 +24,10 @@ pub struct InvalidValue {
 }
 
 /// A control-flow or failure result while parsing command-line arguments.
+///
+/// Help and version are represented explicitly rather than printed by the parser core. All other
+/// variants describe the first syntax, cardinality, relationship, or conversion failure selected
+/// by the binding pipeline.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Error {
@@ -117,6 +126,16 @@ pub enum Error {
 
 impl Error {
     /// Returns the process status used by [`Self::exit`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let help = argx::Error::DisplayHelp { help: String::new() };
+    /// let failure = argx::Error::UnknownFlag { token: b"--bad".to_vec() };
+    ///
+    /// assert_eq!(help.exit_code(), 0);
+    /// assert_eq!(failure.exit_code(), 2);
+    /// ```
     #[must_use]
     pub const fn exit_code(&self) -> i32 {
         match self {

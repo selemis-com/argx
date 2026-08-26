@@ -1,4 +1,10 @@
 //! Const-time composition and validation of independently derived command tables.
+//!
+//! A parent derive cannot inspect the fields of an independently expanded flattened `Args` type.
+//! Generated code therefore composes child tables through this const API and immediately validates
+//! invariants that span declaration boundaries: semantic key uniqueness, flag spelling collisions,
+//! positional layout, built-in action collisions, and relationship target resolution. Invalid
+//! composition becomes a compile-time const-evaluation failure rather than a runtime parser state.
 
 use super::{
     contract::{ArgSpec, FlagSpec},

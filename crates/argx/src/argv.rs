@@ -1,4 +1,13 @@
 //! Raw command-line token binding against static command metadata.
+//!
+//! This layer implements only lexical command-line grammar: scope selection, option spellings,
+//! short bundles, attached versus detached values, positional routing, and `--`. It deliberately
+//! does not enforce typed occurrence counts, consult environment variables, apply defaults, or
+//! convert values. Keeping those concerns out of the raw parser gives syntax errors deterministic
+//! precedence over later binding failures.
+//!
+//! Events borrow both the generated static command tables and the caller's `argv`; owned values are
+//! created only by the typed binding layer once the lexical parse has succeeded.
 
 use std::ffi::OsStr;
 
@@ -72,6 +81,10 @@ pub enum Error<'t, 'v> {
 }
 
 /// Single-pass parser over command-line arguments that exclude the program name.
+///
+/// The parser maintains the selected command path so local options can shadow inherited global
+/// options. A terminal action or error stops iteration; callers must not treat earlier events as a
+/// committed parse result until the complete token stream succeeds.
 #[derive(Debug)]
 pub struct ArgvParser<'t, 'a, 'v> {
     /// Static command definition used for token matching.

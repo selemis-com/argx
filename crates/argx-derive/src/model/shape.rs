@@ -1,4 +1,8 @@
 //! Rust value-shape recognition for generated binding.
+//!
+//! Procedural macros cannot resolve aliases or trait semantics, so Argx recognizes only direct
+//! standard-path spellings of `bool`, `Option`, and `Vec`. This module keeps that syntactic rule in
+//! one place; conversion strategy is selected later after the outer cardinality wrappers are peeled.
 
 use proc_macro2::Span;
 use quote::ToTokens as _;

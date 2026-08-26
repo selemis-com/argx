@@ -1,4 +1,10 @@
 //! Private static projection used to build public machine contracts.
+//!
+//! This projection intentionally does not reuse the runtime `Flag` and `Arg` tables. Runtime tables
+//! contain parser-oriented details, while this table is
+//! limited to stable invocation semantics that may be exposed publicly. Both projections are
+//! generated from the same derive-time semantic model so they cannot drift through independent
+//! attribute interpretation.
 
 use super::model::{Constraint, Key};
 

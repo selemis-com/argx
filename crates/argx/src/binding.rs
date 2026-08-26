@@ -1,4 +1,10 @@
 //! Typed binding over raw parser events.
+//!
+//! Binding is intentionally staged. The raw parser first consumes the complete token stream, then
+//! generated code checks scalar occurrence counts, applies environment fallbacks, checks required
+//! values and relationships, and finally converts raw values into destination Rust types. This
+//! ordering is part of the public diagnostic contract: an earlier syntax error is not masked by a
+//! later duplicate, missing value, or conversion failure.
 
 use std::{ffi::OsString, fmt, str::FromStr};
 
@@ -13,7 +19,8 @@ use crate::{
 ///
 /// # Errors
 ///
-/// Returns the first raw syntax, typed cardinality, requiredness, or conversion error.
+/// Returns the first raw syntax, typed cardinality, requiredness, relationship, or conversion
+/// error according to the binding pipeline's precedence.
 ///
 /// # Panics
 ///

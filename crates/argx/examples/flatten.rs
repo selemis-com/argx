@@ -1,4 +1,16 @@
-//! Reusable flattened argument-group example.
+//! Reusable argument groups composed into a command with `flatten`.
+//!
+//! `#[derive(Args)]` defines a reusable argument declaration. A `#[argx(flatten)]` field mounts
+//! those arguments directly into the containing command: no extra command scope appears in `argv`.
+//! The flatten field's documentation also becomes a generated help-group heading.
+//!
+//! ```text
+//! cargo run --example flatten -- --verbose --config ./argx.toml
+//! cargo run --example flatten -- --help
+//! ```
+//!
+//! Flattening is most useful for policy or output options shared by several independently derived
+//! commands.
 
 use std::path::PathBuf;
 

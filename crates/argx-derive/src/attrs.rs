@@ -1,8 +1,16 @@
 //! Parsing for Argx container and field attributes.
+//!
+//! This module answers only syntactic questions: which `#[argx(...)]` keys were written and what
+//! literal or expression values they contain. Cross-field meaning is validated later in `model`,
+//! after Rust documentation and inferred spellings have been normalized. Keeping parsing and
+//! semantic validation separate avoids making code generation depend on raw attribute syntax.
 
 use syn::{Attribute, Expr, Lit, LitChar, LitStr, Meta, Token};
 
 /// Structured help extracted from Rust doc comments on a command declaration.
+///
+/// Rustdoc attributes are normalized into one summary, one pre-heading description, and ordered
+/// level-one sections. Lower-level Markdown headings remain part of the surrounding section body.
 pub(crate) struct DocHelp {
     /// First prose paragraph, collapsed to one line for command listings.
     pub summary: Option<String>,

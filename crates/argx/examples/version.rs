@@ -1,4 +1,16 @@
-//! Command version metadata example.
+//! Short and long version metadata on root and child commands.
+//!
+//! A command with `version` and/or `long_version` receives built-in `-V` and `--version` actions.
+//! Version actions are lexical: the selected command must declare version metadata itself.
+//!
+//! ```text
+//! cargo run --example version -- -V
+//! cargo run --example version -- --version
+//! cargo run --example version -- run --version
+//! ```
+//!
+//! `internal` deliberately has no version metadata, so `internal --version` is rejected instead of
+//! silently falling back to the root command's version action.
 
 use argx::{Parser, Subcommand};
 
@@ -17,7 +29,7 @@ enum Command {
     Internal,
 }
 
-/// Version metadata example.
+/// Root command with independently configured version metadata.
 #[derive(Debug, Parser)]
 #[argx(version = VERSION, long_version = LONG_VERSION)]
 struct Cli {

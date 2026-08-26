@@ -1,4 +1,10 @@
 //! Stable semantic identity generation for commands and arguments.
+//!
+//! Keys let flattened runtime tables refer to semantic arguments without depending on pointer
+//! identity or generated symbol names. The high 32 bits are derived from `module_path!()` plus the
+//! declaration fingerprint; the low bits encode the declaration-local kind and index. Generated
+//! const assertions reject collisions inside a composed command before those keys are used for
+//! relationships or help grouping.
 
 use proc_macro2::{Ident, TokenStream};
 use quote::{format_ident, quote};

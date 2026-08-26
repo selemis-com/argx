@@ -4,6 +4,10 @@
 //! private runtime command tables while Rust-specific construction and value conversion remain in
 //! separate binding data. Future help, contract, and completion projections should extend this
 //! model rather than reinterpret attributes or runtime parser tables.
+//!
+//! Validation is split between declaration-local checks that the proc macro can resolve directly
+//! and composition checks emitted into generated constants. The latter are necessary for flattened
+//! `Args` declarations because one macro expansion cannot introspect another expansion's fields.
 
 use proc_macro2::Span;
 use quote::ToTokens as _;
@@ -212,6 +216,8 @@ impl Command {
             }
         };
 
+        // Normalize every field before validating relationships between fields. This guarantees
+        // later validation and code generation never need to inspect raw `syn::Field` attributes.
         let unit = matches!(&data.fields, Fields::Unit);
         let fields = match &data.fields {
             Fields::Named(fields) => {
@@ -226,6 +232,8 @@ impl Command {
             }
         };
 
+        // Command-level syntax is normalized independently from field syntax. Root-only and
+        // subcommand-only policy is enforced here so the canonical model cannot represent it.
         let attributes = attrs::command(&input.attrs)?;
         if !attributes.aliases.is_empty() {
             return Err(syn::Error::new_spanned(
@@ -239,11 +247,15 @@ impl Command {
                 "version metadata is only valid on Parser declarations and Subcommand variants",
             ));
         }
+        // Validate every invariant the current macro expansion can see. Cross-flatten invariants
+        // are emitted later as const assertions over the composed child tables.
         let has_version = attributes.version.is_some() || attributes.long_version.is_some();
         validate_fields(&fields, has_version)?;
         validate_constraints(&fields)?;
         validate_composed_generics(&fields, &input.generics)?;
 
+        // Only after validation do we derive human-facing metadata. This keeps inferred names and
+        // doc-derived help in the same semantic representation as explicit attribute overrides.
         let rust_name = ident_name(&input.ident);
         let name = attributes.name.unwrap_or_else(|| case::to_kebab(&rust_name));
         if name.is_empty() {
@@ -299,6 +311,8 @@ impl Subcommand {
             ));
         }
 
+        // Canonical names and aliases share one sibling namespace. Keeping a single spelling set
+        // here prevents lookup order from deciding an otherwise ambiguous subcommand.
         let mut spellings = Vec::<String>::new();
         let mut variants = Vec::with_capacity(data.variants.len());
         for variant in &data.variants {
@@ -422,6 +436,8 @@ impl Field {
             ));
         }
 
+        // Structural fields never bind CLI values themselves. Reject value metadata before any
+        // type-shape inference so unsupported combinations cannot leak into later projections.
         if attributes.subcommand {
             if attributes.long.is_some()
                 || attributes.short.is_some()
@@ -489,6 +505,8 @@ impl Field {
             });
         }
 
+        // Ordinary fields are classified once into cardinality, command-line kind, and conversion
+        // strategy. Code generation consumes these facts directly rather than repeating type tests.
         let shape = Shape::from_type(&binding.ty);
         validate_value_shape(&binding.ty, shape, binding.span)?;
 

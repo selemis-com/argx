@@ -1,4 +1,13 @@
 //! Stable machine-readable invocation contracts.
+//!
+//! The derive emits a contract projection alongside the runtime parser tables. Discovery walks that
+//! static projection directly; it does not instantiate the destination Rust types, parse `argv`, or
+//! inspect environment values. Public contract values are owned so callers can serialize or retain
+//! a discovery result without depending on the generated static tables.
+//!
+//! The serialized representation is a versioned protocol. Additive Rust API changes therefore do
+//! not implicitly permit wire-format changes: consumers should use [`CONTRACT_VERSION`] when
+//! negotiating persisted or remote contract data.
 
 use std::{error, fmt};
 
@@ -22,6 +31,21 @@ pub enum ContractDepth {
 }
 
 /// One contract discovery request.
+///
+/// A request selects a command path relative to the root and controls how deeply child commands
+/// are expanded. Path segments may use canonical command names or declared aliases.
+///
+/// # Examples
+///
+/// ```
+/// use argx::{ContractDepth, ContractRequest};
+///
+/// let request = ContractRequest::new(["admin", "users"]).recursive();
+/// assert_eq!(request.path().len(), 2);
+/// assert_eq!(request.path()[0], "admin");
+/// assert_eq!(request.path()[1], "users");
+/// assert_eq!(request.depth(), ContractDepth::Recursive);
+/// ```
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct ContractRequest {
     /// Child-command path relative to the root command.
@@ -81,6 +105,23 @@ pub struct Contract {
 
 impl Contract {
     /// Serializes this contract as compact JSON.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use argx::{ContractRequest, Parser as _};
+    ///
+    /// #[derive(argx::Parser)]
+    /// struct Cli {
+    ///     #[argx(long)]
+    ///     verbose: bool,
+    /// }
+    ///
+    /// let contract = Cli::contract(ContractRequest::root()).unwrap();
+    /// let json = contract.to_json().unwrap();
+    /// assert!(json.contains(r#""version":1"#));
+    /// assert!(json.contains(r#""options""#));
+    /// ```
     ///
     /// # Errors
     ///
@@ -266,6 +307,10 @@ impl fmt::Display for ContractError {
 impl error::Error for ContractError {}
 
 /// Builds one public discovery response from the generated private contract projection.
+///
+/// Alias resolution happens only while walking the requested path. Once selected, every path in
+/// the returned value is rebuilt from canonical command names so aliases cannot leak into the wire
+/// representation.
 pub(crate) fn discover(
     root: &'static CommandSpec<'static>,
     request: ContractRequest,

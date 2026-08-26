@@ -1,4 +1,19 @@
-//! Typed default value example.
+//! Typed Rust defaults for scalar named options.
+//!
+//! Defaults are evaluated as Rust expressions by generated binding code. They therefore satisfy an
+//! omitted option without converting a textual default through the command-line parser.
+//!
+//! With no arguments, this example resolves `port` to `3000` and `profile` to `development`:
+//!
+//! ```text
+//! cargo run --example defaults --
+//! ```
+//!
+//! Explicit `argv` values take precedence:
+//!
+//! ```text
+//! cargo run --example defaults -- --port 8080 --profile production
+//! ```
 
 use argx::Parser;
 

@@ -1,4 +1,17 @@
 //! Structured help authored directly through Rust documentation.
+//!
+//! Argx treats documentation as command metadata rather than maintaining separate help strings.
+//! The first paragraph supplies the short summary, prose before the first level-one heading becomes
+//! the command description, and level-one headings become appended help sections.
+//!
+//! The most useful way to inspect this example is:
+//!
+//! ```text
+//! cargo run --example structured_help -- --help
+//! ```
+//!
+//! Notice that the `Output` documentation on the flattened field creates a dedicated argument
+//! group and that the authored sections are rendered after Argx's generated sections.
 
 use argx::{Args, Parser};
 
@@ -24,7 +37,7 @@ struct Output {
 ///
 /// # Machine-readable usage
 ///
-/// Use the application's schema command when a structured command contract is needed.
+/// Embedding and discovery code can inspect the same command model through `Parser::contract`.
 #[derive(Debug, Parser)]
 #[argx(name = "structured-help")]
 struct Cli {

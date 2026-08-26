@@ -54,6 +54,21 @@ make pr
 
 This runs the repository's formatting, linting, tests, examples, doctests, documentation checks, and other verification steps.
 
+## Documentation
+
+Documentation is part of the public contract. When behavior or APIs change, update the
+crate-level documentation, API documentation, README, or examples wherever that change
+is visible to users.
+
+Prefer comments that explain invariants, ordering requirements, generated-code boundaries,
+or why an implementation is structured a particular way. Avoid comments that merely
+restate straightforward Rust.
+
+Public APIs should include doctests when a small, deterministic example can exercise the
+stable behavior directly. Runnable examples should begin with module-level documentation
+that explains what the example demonstrates, how to invoke it, and any semantics that are
+not obvious from the code alone.
+
 ## Pull requests
 
 Keep pull requests focused on a single logical change.

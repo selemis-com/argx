@@ -1,4 +1,8 @@
 //! Value-conversion entry points used by generated binding code.
+//!
+//! The public facade keeps these functions hidden, but generated downstream code needs stable paths
+//! to them. They preserve the source of a value long enough for diagnostics to distinguish `argv`
+//! conversion failures from environment conversion failures.
 
 /// One unconverted value supplied by argv or an external fallback source.
 #[derive(Debug)]

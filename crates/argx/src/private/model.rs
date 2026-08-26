@@ -1,4 +1,9 @@
 //! Private runtime projection of normalized command semantics.
+//!
+//! These types are immutable tables generated once per derive. The raw parser and help renderer
+//! borrow them directly, while typed binding refers back to arguments through stable [`Key`] values.
+//! Keeping this projection free of destination Rust types lets the runtime parse without reflection
+//! or per-invocation command construction.
 
 /// Stable semantic identity assigned to one command or argument declaration.
 pub type Key = u64;

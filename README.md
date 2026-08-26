@@ -247,22 +247,26 @@ concrete Rust value types stored in its fields.
 
 ## Examples
 
-The repository contains small runnable examples built only from Argx's public API:
+The repository examples are deliberately small and each isolates one public behavior. Every file
+starts with runnable commands and notes about the invariant it demonstrates, so the examples also
+serve as focused reference documentation.
 
-| Example | Demonstrates |
-| --- | --- |
-| [`basic`](crates/argx/examples/basic.rs) | Minimal derived root parser |
-| [`subcommands`](crates/argx/examples/subcommands.rs) | Nested typed command trees |
-| [`flatten`](crates/argx/examples/flatten.rs) | Reusable argument groups |
-| [`environment`](crates/argx/examples/environment.rs) | Environment-backed options |
-| [`defaults`](crates/argx/examples/defaults.rs) | Typed Rust defaults |
-| [`constraints`](crates/argx/examples/constraints.rs) | `requires` and `conflicts` relationships |
-| [`aliases`](crates/argx/examples/aliases.rs) | Hidden compatibility spellings |
-| [`structured_help`](crates/argx/examples/structured_help.rs) | Documentation-driven help sections |
-| [`version`](crates/argx/examples/version.rs) | Short and long version metadata |
+| Example | Focus | Try it |
+| --- | --- | --- |
+| [`basic`](crates/argx/examples/basic.rs) | Smallest complete parser and built-in help | `cargo run --example basic -- --help` |
+| [`subcommands`](crates/argx/examples/subcommands.rs) | Typed command selection and reusable payloads | `cargo run --example subcommands -- add hello --force` |
+| [`flatten`](crates/argx/examples/flatten.rs) | Reusable argument groups and help grouping | `cargo run --example flatten -- --help` |
+| [`environment`](crates/argx/examples/environment.rs) | `argv` → environment → default precedence | `ARGX_PORT=8080 cargo run --example environment --` |
+| [`defaults`](crates/argx/examples/defaults.rs) | Typed Rust defaults without text round-tripping | `cargo run --example defaults --` |
+| [`constraints`](crates/argx/examples/constraints.rs) | `requires` and `conflicts` relationships | `cargo run --example constraints -- --endpoint https://example.invalid --token secret --workspace demo` |
+| [`aliases`](crates/argx/examples/aliases.rs) | Hidden compatibility spellings and canonical help | `cargo run --example aliases -- --colour always rm` |
+| [`structured_help`](crates/argx/examples/structured_help.rs) | Documentation-derived descriptions, groups, and sections | `cargo run --example structured_help -- --help` |
+| [`version`](crates/argx/examples/version.rs) | Lexically scoped short and long version actions | `cargo run --example version -- run --version` |
 
-For the full parsing model, derive restrictions, failure behavior, and machine-contract semantics,
-see the [crate documentation](https://docs.rs/argx).
+`structured_help` is the best example to inspect when designing the user-facing CLI, while
+`subcommands`, `flatten`, and `constraints` show the main composition rules. For the precise parsing
+model, derive restrictions, failure precedence, and machine-contract semantics, see the
+[crate documentation](https://docs.rs/argx).
 
 ## Support
 
