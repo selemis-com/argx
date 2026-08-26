@@ -1,14 +1,20 @@
-//! Stable machine-readable invocation and execution contracts.
+//! Machine-readable invocation and execution contracts.
 //!
 //! The derives emit contract projections alongside the runtime parser tables, and explicit
 //! execution bindings attach semantic success/error types to invocable command identities.
 //! Discovery walks those projections directly; it does not instantiate destination Rust types,
-//! parse `argv`, or inspect environment values. Public contract values are owned so callers can
-//! serialize or retain a discovery result without depending on generated static tables.
+//! parse `argv`, inspect environment values, or infer an application's serialization format.
+//! Public contract values are owned so callers can serialize or retain a discovery result without
+//! depending on generated static tables.
 //!
-//! The serialized representation is a versioned protocol. Additive Rust API changes therefore do
-//! not implicitly permit wire-format changes: consumers should use [`CONTRACT_VERSION`] when
-//! negotiating persisted or remote contract data.
+//! Shallow discovery includes the selected command in full and direct children as summaries. A
+//! summary still exposes command identity, aliases, and invocability, but omits invocation and
+//! execution detail. Recursive discovery expands the complete selected subtree. The shared type
+//! definition table contains only definitions referenced by detailed nodes returned in that result.
+//!
+//! The serialized representation carries [`CONTRACT_VERSION`] so consumers can identify the wire
+//! format they received. Compatibility guarantees are release-policy concerns rather than inferred
+//! from Rust API compatibility.
 
 use std::{error, fmt};
 
@@ -20,6 +26,7 @@ use crate::{
         CommandExecutionTypes, CommandSpec, CommandValueTypes, ConstraintKind, FlagSpec, Key,
         ResolveCommandTypeContract as SemanticCommandContract, TypeResolver,
     },
+    error::display_bytes,
     type_contract::{TYPE_CONTRACT_VERSION, TypeContractDefinitions, TypeContractValue},
 };
 
@@ -106,6 +113,9 @@ pub struct Contract {
     /// Canonical root command name.
     pub root: String,
     /// Shared semantic Rust type definitions referenced by invocation and execution contracts.
+    ///
+    /// References resolve by document-local definition ID. Definition names are descriptive and
+    /// are not required to be unique.
     pub types: TypeContractDefinitions,
     /// Selected command and requested descendant discovery.
     pub command: CommandContract,
@@ -192,9 +202,12 @@ pub struct CommandContract {
 
 /// Semantic execution result contract for one directly invocable command.
 ///
-/// A [`TypeContractValue::Unit`] branch explicitly means that outcome carries no semantic payload;
-/// it is not an unknown or unspecified result. An absent [`CommandContract::execution`] instead
-/// means that execution detail was not included for that command node.
+/// The success and error values describe the Rust types in the bound handler's concrete
+/// `Result<Success, Error>`. They do not describe a transport encoding or inspect `serde`
+/// attributes. A [`TypeContractValue::Unit`] branch explicitly means that outcome carries no
+/// semantic payload; it is not an unknown or unspecified result. An absent
+/// [`CommandContract::execution`] instead means that execution detail was not included for that
+/// command node.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExecutionContract {
@@ -319,6 +332,9 @@ pub enum ConstraintContractKind {
 }
 
 /// Failure to resolve one dynamic contract discovery request.
+///
+/// Requested path segments are preserved in the error value. [`std::fmt::Display`] escapes control
+/// characters before rendering caller-provided segments for diagnostics.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ContractError {
@@ -336,11 +352,16 @@ impl fmt::Display for ContractError {
         match self {
             Self::UnknownCommand { path, segment } => {
                 if path.is_empty() {
-                    write!(formatter, "unknown contract command `{segment}`")
+                    write!(
+                        formatter,
+                        "unknown contract command `{}`",
+                        display_bytes(segment.as_bytes()),
+                    )
                 } else {
                     write!(
                         formatter,
-                        "unknown contract command `{segment}` below `{}`",
+                        "unknown contract command `{}` below `{}`",
+                        display_bytes(segment.as_bytes()),
                         path.join(" "),
                     )
                 }

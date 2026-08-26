@@ -270,7 +270,7 @@ macro_rules! sequence_contract {
             T: TypeContractSource,
         {
             fn resolve_type(resolver: &mut TypeResolver) -> TypeContractValue {
-                TypeContractValue::Sequence { value: Box::new(T::resolve_type(resolver)) }
+                TypeContractValue::Sequence { element: Box::new(T::resolve_type(resolver)) }
             }
 
             fn type_key() -> TypeKey {
@@ -289,7 +289,7 @@ where
     T: TypeContractSource,
 {
     fn resolve_type(resolver: &mut TypeResolver) -> TypeContractValue {
-        TypeContractValue::Sequence { value: Box::new(T::resolve_type(resolver)) }
+        TypeContractValue::Sequence { element: Box::new(T::resolve_type(resolver)) }
     }
 
     fn type_key() -> TypeKey {
@@ -302,7 +302,7 @@ where
     T: TypeContractSource,
 {
     fn resolve_type(resolver: &mut TypeResolver) -> TypeContractValue {
-        TypeContractValue::Array { value: Box::new(T::resolve_type(resolver)), length: N }
+        TypeContractValue::Array { element: Box::new(T::resolve_type(resolver)), length: N }
     }
 
     fn type_key() -> TypeKey {
@@ -315,7 +315,7 @@ where
     T: TypeContractSource,
 {
     fn resolve_type(resolver: &mut TypeResolver) -> TypeContractValue {
-        TypeContractValue::Set { value: Box::new(T::resolve_type(resolver)) }
+        TypeContractValue::Set { element: Box::new(T::resolve_type(resolver)) }
     }
 
     fn type_key() -> TypeKey {
@@ -328,7 +328,7 @@ where
     T: TypeContractSource,
 {
     fn resolve_type(resolver: &mut TypeResolver) -> TypeContractValue {
-        TypeContractValue::Set { value: Box::new(T::resolve_type(resolver)) }
+        TypeContractValue::Set { element: Box::new(T::resolve_type(resolver)) }
     }
 
     fn type_key() -> TypeKey {
@@ -427,7 +427,7 @@ macro_rules! tuple_contract {
         {
             fn resolve_type(resolver: &mut TypeResolver) -> TypeContractValue {
                 TypeContractValue::Tuple {
-                    values: vec![$($type::resolve_type(resolver)),+],
+                    elements: vec![$($type::resolve_type(resolver)),+],
                 }
             }
 

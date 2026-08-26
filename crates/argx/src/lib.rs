@@ -573,9 +573,12 @@ pub trait Parser: Sized + __private::CommandArgs + __private::CommandContract {
     /// that need different execution contracts must use distinct payload types.
     ///
     /// The handler's concrete `Result<T, E>` is the execution contract, so both `T` and `E` must
-    /// implement [`ContractType`]. These requirements apply only when contract discovery is used
-    /// and do not affect parsing support. Contract discovery does not parse process arguments or
-    /// evaluate environment fallbacks.
+    /// implement [`ContractType`]. Semantic contracts describe Rust-level shapes; they do not infer
+    /// an application's `serde` representation or a custom [`std::str::FromStr`] lexical grammar.
+    /// Named definitions are referenced by document-local IDs; their short Rust names are
+    /// descriptive and need not be unique. These requirements apply only when contract discovery
+    /// is used and do not affect parsing support. Contract discovery does not parse process
+    /// arguments or evaluate environment fallbacks.
     ///
     /// # Examples
     ///

@@ -130,14 +130,14 @@ mod tests {
         assert_eq!(fields[0].name.as_deref(), Some("children"));
         assert_eq!(fields[0].description.as_deref(), Some("Child nodes."));
         assert_eq!(
-            fields[0].value,
+            fields[0].value_type,
             TypeContractValue::Sequence {
-                value: Box::new(TypeContractValue::Reference { definition: "type-0".to_owned() }),
+                element: Box::new(TypeContractValue::Reference { definition: "type-0".to_owned() }),
             },
         );
         assert_eq!(fields[1].name.as_deref(), Some("identity"));
         assert_eq!(
-            fields[1].value,
+            fields[1].value_type,
             TypeContractValue::Optional {
                 value: Box::new(TypeContractValue::Reference { definition: "type-1".to_owned() }),
             },
@@ -219,11 +219,86 @@ mod tests {
     }
 
     #[test]
+    fn definition_ids_disambiguate_equal_short_rust_names() {
+        mod first {
+            #[derive(argx::Contract)]
+            pub(super) struct Duplicate {
+                pub(super) value: String,
+            }
+        }
+
+        mod second {
+            #[derive(argx::Contract)]
+            pub(super) struct Duplicate {
+                pub(super) value: u32,
+            }
+        }
+
+        #[expect(dead_code, reason = "shape is exercised through the generated contract")]
+        #[derive(argx::Contract)]
+        struct Root {
+            first: first::Duplicate,
+            second: second::Duplicate,
+        }
+
+        let first_value = first::Duplicate { value: String::new() };
+        let second_value = second::Duplicate { value: 0 };
+        assert!(first_value.value.is_empty());
+        assert_eq!(second_value.value, 0);
+
+        let contract = Root::type_contract();
+        let duplicates = contract
+            .definitions
+            .iter()
+            .filter(|definition| definition.name == "Duplicate")
+            .collect::<Vec<_>>();
+
+        assert_eq!(duplicates.len(), 2);
+        assert_ne!(duplicates[0].id, duplicates[1].id);
+        assert!(matches!(
+            &duplicates[0].kind,
+            TypeDefinitionKind::Struct { fields } if fields[0].value_type == TypeContractValue::String
+        ));
+        assert!(matches!(
+            &duplicates[1].kind,
+            TypeDefinitionKind::Struct { fields }
+                if fields[0].value_type
+                    == TypeContractValue::Primitive { primitive: PrimitiveType::U32 }
+        ));
+    }
+
+    #[test]
+    fn cli_and_serde_names_do_not_change_rust_semantic_contract_names() {
+        #[derive(argx::Contract, argx::Parser, serde::Serialize)]
+        struct Payload {
+            #[argx(long = "cli-name")]
+            #[serde(rename = "wireName")]
+            rust_name: String,
+        }
+
+        let payload = Payload { rust_name: String::from("value") };
+        let serialized = serde_json::to_value(&payload).expect("serde fixture must serialize");
+        assert!(serialized.get("wireName").is_some());
+
+        let contract = Payload::type_contract();
+        assert_eq!(contract.definitions[0].name, "Payload");
+        let TypeDefinitionKind::Struct { fields } = &contract.definitions[0].kind else {
+            panic!("Payload must resolve to a struct definition");
+        };
+        assert_eq!(fields[0].name.as_deref(), Some("rust_name"));
+    }
+
+    #[test]
     fn ownership_wrappers_do_not_change_semantic_type_shape() {
         assert_eq!(<&'static str>::type_contract().root, String::type_contract().root);
         assert_eq!(Box::<String>::type_contract().root, String::type_contract().root);
         assert_eq!(std::rc::Rc::<String>::type_contract().root, String::type_contract().root);
         assert_eq!(std::sync::Arc::<String>::type_contract().root, String::type_contract().root);
+    }
+
+    #[test]
+    fn repeated_type_discovery_is_deterministic() {
+        assert_eq!(Node::type_contract(), Node::type_contract());
     }
 
     #[test]
@@ -233,6 +308,8 @@ mod tests {
         struct Payload {
             name: String,
             count: Option<u32>,
+            tags: Vec<String>,
+            pair: (String, u8),
         }
 
         let json = Payload::type_contract().to_json_pretty().expect("type contract must serialize");
@@ -253,18 +330,42 @@ mod tests {
       "fields": [
         {
           "name": "name",
-          "value": {
+          "type": {
             "kind": "string"
           }
         },
         {
           "name": "count",
-          "value": {
+          "type": {
             "kind": "optional",
             "value": {
               "kind": "primitive",
               "primitive": "u32"
             }
+          }
+        },
+        {
+          "name": "tags",
+          "type": {
+            "kind": "sequence",
+            "element": {
+              "kind": "string"
+            }
+          }
+        },
+        {
+          "name": "pair",
+          "type": {
+            "kind": "tuple",
+            "elements": [
+              {
+                "kind": "string"
+              },
+              {
+                "kind": "primitive",
+                "primitive": "u8"
+              }
+            ]
           }
         }
       ]

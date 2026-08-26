@@ -191,6 +191,13 @@ mod tests {
         value: T,
     }
 
+    /// Generic execution result used to verify concrete command monomorphizations stay distinct.
+    #[expect(dead_code, reason = "shape is exercised through generated contract metadata")]
+    #[derive(argx::Contract)]
+    struct GenericOutput<T> {
+        value: T,
+    }
+
     /// Nested command used to verify type definitions follow discovery detail.
     #[expect(dead_code, reason = "shape is exercised through generated contract metadata")]
     #[derive(argx::Args)]
@@ -255,8 +262,13 @@ mod tests {
     }
 
     #[argx::contract(GenericContractCli<u16>)]
-    const fn generic_u16_contract() -> Result<(), ()> {
-        Ok(())
+    const fn generic_u16_contract() -> Result<GenericOutput<u16>, ()> {
+        Ok(GenericOutput { value: 0 })
+    }
+
+    #[argx::contract(GenericContractCli<u32>)]
+    const fn generic_u32_contract() -> Result<GenericOutput<u32>, ()> {
+        Ok(GenericOutput { value: 0 })
     }
 
     /// Successful output for the nested typed leaf.
@@ -471,14 +483,38 @@ mod tests {
     }
 
     #[test]
-    fn generic_parser_contracts_resolve_the_monomorphized_value_type() {
-        let contract = GenericContractCli::<u16>::contract(ContractRequest::root())
-            .expect("generic parser contract should exist");
-        let invocation = contract.command.invocation.expect("root command should be detailed");
-        let value_type = &invocation.contexts[0].arguments[0].value.value_type;
+    fn generic_parser_and_execution_contracts_resolve_the_concrete_monomorphization() {
+        for (contract, primitive) in [
+            (
+                GenericContractCli::<u16>::contract(ContractRequest::root())
+                    .expect("u16 generic parser contract should exist"),
+                PrimitiveType::U16,
+            ),
+            (
+                GenericContractCli::<u32>::contract(ContractRequest::root())
+                    .expect("u32 generic parser contract should exist"),
+                PrimitiveType::U32,
+            ),
+        ] {
+            let execution = contract.command.execution.as_ref().expect("root command is invocable");
+            assert_eq!(
+                execution.success,
+                TypeContractValue::Reference { definition: "type-0".to_owned() },
+            );
+            assert_eq!(contract.types.definitions.len(), 1);
+            assert_eq!(contract.types.definitions[0].name, "GenericOutput");
+            let TypeDefinitionKind::Struct { fields } = &contract.types.definitions[0].kind else {
+                panic!("GenericOutput must resolve to a struct definition");
+            };
+            assert_eq!(fields[0].value_type, TypeContractValue::Primitive { primitive },);
 
-        assert_eq!(value_type, &TypeContractValue::Primitive { primitive: PrimitiveType::U16 },);
-        assert!(contract.types.definitions.is_empty());
+            let invocation =
+                contract.command.invocation.as_ref().expect("root command is detailed");
+            assert_eq!(
+                invocation.contexts[0].arguments[0].value.value_type,
+                TypeContractValue::Primitive { primitive },
+            );
+        }
     }
 
     #[test]
@@ -652,12 +688,33 @@ mod tests {
     }
 
     #[test]
+    fn unknown_contract_paths_escape_control_characters_in_diagnostics() {
+        let error = Cli::contract(ContractRequest::new(["missing\n\u{1b}[31m"]))
+            .expect_err("unknown command path should fail");
+        let rendered = error.to_string();
+
+        assert!(!rendered.contains('\n'));
+        assert!(!rendered.contains('\u{1b}'));
+        assert!(rendered.contains(r"\n"));
+    }
+
+    #[test]
     fn unknown_root_command_paths_report_without_a_parent_path() {
         let request = ContractRequest::new(["missing"]);
         assert!(request.path().iter().map(String::as_str).eq(["missing"]));
 
         let error = Cli::contract(request).expect_err("unknown root command should fail");
         assert_eq!(error.to_string(), "unknown contract command `missing`");
+    }
+
+    #[test]
+    fn repeated_discovery_is_deterministic_and_self_contained() {
+        let first = TypedNestedCli::contract(ContractRequest::root().recursive())
+            .expect("first recursive contract should exist");
+        let second = TypedNestedCli::contract(ContractRequest::root().recursive())
+            .expect("second recursive contract should exist");
+
+        assert_eq!(first, second);
     }
 
     #[test]

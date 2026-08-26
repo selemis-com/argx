@@ -56,8 +56,14 @@ pub fn derive_args(input: TokenStream) -> TokenStream {
     expand_command(&input, false).unwrap_or_else(syn::Error::into_compile_error).into()
 }
 
-/// Derives a standalone machine-readable contract for a Rust struct or enum.
-#[proc_macro_derive(Contract, attributes(argx))]
+/// Derives a standalone machine-readable semantic contract for a Rust struct or enum.
+///
+/// The generated contract preserves Rust declaration, field, and variant names. It is independent
+/// of serialization frameworks and does not interpret attributes such as `serde(rename = ...)`.
+/// When `Contract` is co-derived with `Parser` or `Args`, their CLI helper attributes remain
+/// available but do not rename semantic type-contract fields. `Contract` by itself does not
+/// register `#[argx(...)]` as meaningful type-contract metadata.
+#[proc_macro_derive(Contract)]
 pub fn derive_contract(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     type_contract::contract(&input).unwrap_or_else(syn::Error::into_compile_error).into()

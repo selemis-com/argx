@@ -38,6 +38,26 @@ const fn const_handler() -> Result<(), ()> {
     Ok(())
 }
 
+#[derive(argx::Contract)]
+struct GenericOutput<T> {
+    value: T,
+}
+
+#[derive(argx::Parser)]
+struct GenericCommand<T> {
+    value: T,
+}
+
+#[argx::contract(GenericCommand<u16>)]
+fn generic_u16_handler(_command: GenericCommand<u16>) -> Result<GenericOutput<u16>, ()> {
+    Ok(GenericOutput { value: 0 })
+}
+
+#[argx::contract(GenericCommand<u32>)]
+fn generic_u32_handler(_command: GenericCommand<u32>) -> Result<GenericOutput<u32>, ()> {
+    Ok(GenericOutput { value: 0 })
+}
+
 #[derive(argx::Args)]
 struct ConditionalCommand;
 
@@ -56,4 +76,6 @@ fn main() {
     let _ = SyncCommand::contract(argx::ContractRequest::root());
     let _ = AsyncCommand::contract(argx::ContractRequest::root());
     let _ = ConstCommand::contract(argx::ContractRequest::root());
+    let _ = GenericCommand::<u16>::contract(argx::ContractRequest::root());
+    let _ = GenericCommand::<u32>::contract(argx::ContractRequest::root());
 }

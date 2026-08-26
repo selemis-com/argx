@@ -1,4 +1,15 @@
-//! Stable machine-readable contracts for Rust value types.
+//! Machine-readable semantic contracts for Rust value types.
+//!
+//! Primitive and container shapes are represented inline. Named structs and enums are represented
+//! by [`TypeContractValue::Reference`] values into a document-local definition table. This gives
+//! repeated and recursive declarations one uniform representation. Definition IDs are deterministic
+//! within one discovery result but have no identity outside that document; short Rust declaration
+//! names are descriptive metadata and may repeat.
+//!
+//! Ownership-only wrappers such as references, `Box`, `Rc`, and `Arc` are semantically transparent.
+//! Standard sequence, set, and map implementations collapse to their common semantic container
+//! shapes. `#[derive(argx::Contract)]` preserves Rust declaration, field, and variant names and
+//! does not interpret serialization-framework attributes.
 
 use serde::Serialize;
 
@@ -7,8 +18,10 @@ pub const TYPE_CONTRACT_VERSION: u32 = 1;
 
 /// One versioned machine-readable contract for a Rust value type.
 ///
-/// Definition identifiers are local to this document. Consumers must not persist or compare them
-/// across independently generated contracts.
+/// This describes Rust-level semantic shape, not an application's serialization format. In
+/// particular, Argx does not inspect `serde` attributes or infer JSON Schema. Definition
+/// identifiers are local to this document. Consumers must not persist or compare them across
+/// independently generated contracts.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TypeContract {
@@ -23,8 +36,10 @@ pub struct TypeContract {
 
 /// Shared named definitions referenced by type values embedded in another Argx contract.
 ///
-/// Definition identifiers are local to the containing contract document. The version identifies
-/// the type-contract vocabulary used by both the embedded values and these definitions.
+/// Definition identifiers are local to the containing contract document and are the only identity
+/// used by [`TypeContractValue::Reference`]. Definition names are descriptive and need not be
+/// unique. The version identifies the type-contract vocabulary used by both the embedded values
+/// and these definitions.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TypeContractDefinitions {
@@ -80,12 +95,12 @@ pub enum TypeContractValue {
     /// An ordered variable-length sequence.
     Sequence {
         /// Element type.
-        value: Box<Self>,
+        element: Box<Self>,
     },
     /// An unordered or key-ordered collection of unique values.
     Set {
         /// Element type.
-        value: Box<Self>,
+        element: Box<Self>,
     },
     /// A key-value collection.
     Map {
@@ -97,14 +112,14 @@ pub enum TypeContractValue {
     /// A fixed-length homogeneous array.
     Array {
         /// Element type.
-        value: Box<Self>,
+        element: Box<Self>,
         /// Number of elements.
         length: usize,
     },
     /// A fixed-length heterogeneous tuple.
     Tuple {
         /// Tuple elements in declaration order.
-        values: Vec<Self>,
+        elements: Vec<Self>,
     },
     /// A reference to one named definition in this contract document.
     Reference {
@@ -173,6 +188,8 @@ pub struct TypeDefinition {
     /// Identifier used by [`TypeContractValue::Reference`] within this document.
     pub id: String,
     /// Rust declaration name without module or generic-argument qualification.
+    ///
+    /// This is descriptive metadata, not a unique identifier. Resolve references through `id`.
     pub name: String,
     /// First paragraph of Rust documentation attached to this declaration.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -216,7 +233,8 @@ pub struct TypeFieldContract {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     /// Semantic field type.
-    pub value: TypeContractValue,
+    #[serde(rename = "type")]
+    pub value_type: TypeContractValue,
 }
 
 /// One enum variant in a named type definition.
@@ -254,8 +272,9 @@ pub enum TypeVariantKind {
 /// Marks a Rust type that can produce an Argx machine-readable type contract.
 ///
 /// Implementations are provided for supported standard-library types and by
-/// `#[derive(argx::Contract)]`. Manual implementations are not part of Argx's stable extension
-/// surface.
+/// `#[derive(argx::Contract)]`. Contracts describe Rust semantic shape: derive output preserves
+/// Rust declaration, field, and variant names and does not interpret serialization-framework
+/// metadata. Manual implementations are not part of Argx's stable extension surface.
 pub trait ContractType: crate::__private::TypeContractSource {
     /// Discovers the complete semantic contract for this Rust type.
     #[must_use]

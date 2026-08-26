@@ -147,7 +147,7 @@ fn field_contract(
         #facade::TypeFieldContract {
             name: #name.map(::std::string::String::from),
             description: #description.map(::std::string::String::from),
-            value: <#ty as #facade::__private::TypeContractSource>::resolve_type(resolver),
+            value_type: <#ty as #facade::__private::TypeContractSource>::resolve_type(resolver),
         }
     }
 }

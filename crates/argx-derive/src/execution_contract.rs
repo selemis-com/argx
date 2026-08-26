@@ -137,7 +137,7 @@ fn meta_controls_presence(meta: &Meta) -> syn::Result<bool> {
     Ok(false)
 }
 
-/// Rejects handler signatures that cannot name one stable execution result contract.
+/// Rejects handler signatures that cannot name one concrete execution result contract.
 fn validate_signature(function: &ItemFn) -> syn::Result<()> {
     if !function.sig.generics.params.is_empty() || function.sig.generics.where_clause.is_some() {
         return Err(syn::Error::new_spanned(

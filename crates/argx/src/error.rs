@@ -270,7 +270,7 @@ impl fmt::Display for Error {
 impl std::error::Error for Error {}
 
 /// Lossily renders encoded argument bytes while escaping terminal control characters.
-fn display_bytes(value: &[u8]) -> String {
+pub(crate) fn display_bytes(value: &[u8]) -> String {
     String::from_utf8_lossy(value).escape_debug().to_string()
 }
 

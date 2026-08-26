@@ -16,26 +16,15 @@
 </p>
 
 Argx is a derive-first command-line argument parser for Rust. Rust structs and enums define the
-command tree while generated static metadata drives argv parsing, typed binding, help and version
-output, diagnostics, and machine-readable contracts.
-
-The model is deliberately small:
-
-- [`Parser`](https://docs.rs/argx/latest/argx/trait.Parser.html) defines the root command;
-- [`Args`](https://docs.rs/argx/latest/argx/trait.Args.html) defines reusable argument groups;
-- `#[derive(Subcommand)]` defines exact, typed child-command selection;
-- Rust field shapes define argument cardinality and conversion;
-- Rust documentation and `#[argx(...)]` metadata define the human-facing CLI;
-- [`Parser::contract`](https://docs.rs/argx/latest/argx/trait.Parser.html#method.contract) exposes invocation and execution semantics to tools and agents.
-
-## Installation
+command tree while generated static metadata drives parsing, typed binding, help, diagnostics, and
+machine-readable contracts.
 
 ```sh
 cargo add argx
 ```
 
-The default `derive` feature exports the `Parser`, `Args`, `Subcommand`, and `Contract` derive
-macros together with the `#[argx::contract(...)]` execution-contract attribute.
+Full API documentation and behavioral details are available on
+[docs.rs/argx](https://docs.rs/argx/latest/argx/).
 
 ## Quick start
 
@@ -89,93 +78,24 @@ Usage: acme [OPTIONS] <COMMAND>
 ...
 ```
 
-Argx supports positional and named arguments, short bundles, exact nested subcommands, reusable
-flattened argument groups, lexical globals, hidden aliases, typed defaults, environment fallbacks,
-argument relationships, documentation-derived structured help, version actions, and versioned
-machine-readable invocation contracts.
+[`Parser`](https://docs.rs/argx/latest/argx/trait.Parser.html) defines a root command,
+[`Args`](https://docs.rs/argx/latest/argx/trait.Args.html) defines reusable argument groups, and
+[`Subcommand`](https://docs.rs/argx/latest/argx/derive.Subcommand.html) defines exact typed
+child-command selection. Rust field shapes determine cardinality and conversion; Rust documentation
+and `#[argx(...)]` metadata define the human-facing CLI.
 
-A `Subcommand` enum creates command scopes. Variants may be unit variants or carry one direct
-`Args` payload:
-
-```rust
-#[derive(argx::Subcommand)]
-enum Command {
-    Status,
-    Add(AddArgs),
-}
-```
-
-Variant names default to kebab-case and can be changed with `name`. `alias` and `aliases` add hidden
-accepted spellings without changing the canonical name shown in help or contracts. Command matching
-is exact; Argx does not perform prefix matching.
-
-Named options normally belong only to the command that declares them. `global` keeps an option in
-scope in descendants. A child declaration may reuse a spelling from an ancestor; the nearest active
-command scope wins.
-
-## Value sources and constraints
-
-Scalar value-taking options can fall back to an environment variable or a typed Rust default:
-
-```rust
-#[derive(argx::Parser)]
-struct Cli {
-    #[argx(long, env = "ACME_TOKEN")]
-    token: String,
-
-    #[argx(long, default = 3)]
-    retries: u8,
-}
-```
-
-Argv has precedence over the configured environment fallback. A typed default satisfies absence
-without turning the default expression into command-line text.
-
-Arguments can also declare relationships by Rust field name:
-
-```rust
-#[derive(argx::Parser)]
-struct Cli {
-    #[argx(long, requires = "token")]
-    remote: bool,
-
-    #[argx(long)]
-    token: Option<String>,
-
-    #[argx(long, conflicts = "remote")]
-    offline: bool,
-}
-```
-
-`requires` means that supplying the source requires the target to resolve a value. `conflicts`
-rejects supplying both arguments. References are validated against the composed command model.
-
-## Help and version output
-
-Every command scope has built-in `-h` and `--help`. A root command or subcommand with `version` or
-`long_version` metadata also receives `-V` and `--version`.
-
-Rust documentation is part of the CLI definition:
-
-- the first prose paragraph becomes the one-line command or argument summary;
-- command prose is rendered before generated sections;
-- level-one Markdown headings on a command become additional help sections;
-- documentation on a flattened field becomes a named argument group;
-- `about` and `help` provide explicit overrides when Rust documentation should differ from CLI text.
-
-Aliases are intentionally hidden from generated help so one canonical interface is presented even
-when compatibility spellings are accepted.
-
-`Parser::parse` handles built-in help/version actions and parse failures as a normal CLI entrypoint:
-help and version go to stdout with status 0, while failures go to stderr with status 2. The
-`try_parse*` methods return the corresponding [`Error`](https://docs.rs/argx/latest/argx/enum.Error.html)
-instead, which is useful for tests, embedding, and custom process policy.
+Argx supports positional and named arguments, short bundles, nested subcommands, flattened argument
+groups, lexical globals, aliases, typed defaults, environment fallbacks, argument relationships,
+structured help, and version actions. See the [crate documentation](https://docs.rs/argx/latest/argx/)
+for the complete grammar, precedence rules, derive restrictions, and error behavior.
 
 ## Machine-readable contracts
 
-Argx can discover a versioned description of the CLI without maintaining a second reflection or
-schema registry. Invocable commands attach one explicit execution contract to their Rust command
-identity:
+Argx can expose the same command model to tools and agents without maintaining a second schema
+registry. [`#[derive(argx::Contract)]`](https://docs.rs/argx/latest/argx/derive.Contract.html)
+describes semantic Rust value types, while
+[`#[argx::contract(CommandType)]`](https://docs.rs/argx/latest/argx/attr.contract.html) binds an
+invocable command to the success and error types returned by its handler.
 
 ```rust
 use argx::{ContractRequest, Parser as _};
@@ -186,14 +106,14 @@ struct GetArgs {
 }
 
 #[derive(argx::Subcommand)]
-enum ContractCommand {
+enum Command {
     Get(GetArgs),
 }
 
 #[derive(argx::Parser)]
-struct ContractCli {
+struct Cli {
     #[argx(subcommand)]
-    command: ContractCommand,
+    command: Command,
 }
 
 #[derive(argx::Contract)]
@@ -211,35 +131,25 @@ fn get(args: GetArgs) -> Result<GetOutput, GetError> {
     Ok(GetOutput { id: args.id })
 }
 
-let contract = ContractCli::contract(ContractRequest::new(["get"]).recursive())
+let contract = Cli::contract(ContractRequest::new(["get"]))
     .expect("get command must exist");
-println!(
-    "{}",
-    contract.to_json_pretty().expect("contract must serialize")
-);
+assert!(contract.command.execution.is_some());
 ```
 
-A contract describes canonical command paths, accepted aliases, whether a command is directly
-invocable, positional and named arguments, value cardinality, semantic Rust value types, global
-scope, environment/default sources, `requires` / `conflicts` relationships, and semantic
-success/error types for invocable commands. Named semantic types share one definition table across
-the returned document. Shallow discovery returns the selected command in full plus direct child
-summaries; recursive discovery expands the complete descendant subtree. Lookup accepts command
-aliases, while returned paths remain canonical.
+Contracts describe invocation semantics and semantic Rust input/output types. They are not JSON
+Schema, do not interpret `serde` attributes, and do not describe the lexical grammar of custom
+`FromStr` implementations. Named types use document-local references so repeated and recursive
+shapes have one consistent representation.
 
-The wire format is explicitly versioned by
-[`CONTRACT_VERSION`](https://docs.rs/argx/latest/argx/constant.CONTRACT_VERSION.html). Attached
-semantic types describe Rust values at the command boundary. Invocation types do not define the
-lexical encoding accepted by arbitrary custom parsers. For an execution binding, the handler's
-`Result<Success, Error>` is the command contract: both branches are described directly, while Argx
-does not prescribe how an application serializes or transports those values. A
-`{"kind":"unit"}` branch means that outcome intentionally carries no semantic payload; it is not
-an unknown result.
+See [`Parser::contract`](https://docs.rs/argx/latest/argx/trait.Parser.html#method.contract), the
+[`contract` module](https://docs.rs/argx/latest/argx/contract/), and the
+[`type_contract` module](https://docs.rs/argx/latest/argx/type_contract/) for discovery depth,
+execution requirements, wire fields, and type-contract semantics.
 
 ## Examples
 
-The examples are executable documentation. Each focuses on one public behavior and includes
-runnable invocations in its module documentation.
+The examples are executable documentation. Detailed behavior is documented on
+[docs.rs/argx](https://docs.rs/argx/latest/argx/).
 
 | Example | Focus | Try it |
 | --- | --- | --- |

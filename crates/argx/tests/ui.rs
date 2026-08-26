@@ -108,6 +108,18 @@ error[E0277]: the trait bound `__ArgxUnitCommandCommandsStatusRequiresArgsPayloa
     }
 
     #[test]
+    fn contract_only_types_reject_cli_helper_attributes() {
+        support::assert_ui_failure(
+            "contract_only_argx_attribute",
+            "argx",
+            snapbox::str![[r#"
+error: cannot find attribute `argx` in this scope
+
+"#]],
+        );
+    }
+
+    #[test]
     fn invalid_type_contract_declarations_are_rejected_deterministically() {
         support::assert_ui_failure(
             "invalid_contract",

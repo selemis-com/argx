@@ -12,7 +12,7 @@
         "fields": [
           {
             "name": "value",
-            "value": {
+            "type": {
               "kind": "string"
             }
           }
