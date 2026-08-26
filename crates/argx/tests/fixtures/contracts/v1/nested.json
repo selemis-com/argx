@@ -1,0 +1,160 @@
+{
+  "version": 1,
+  "root": "tool",
+  "command": {
+    "path": [
+      "objects",
+      "get"
+    ],
+    "name": "get",
+    "about": "Retrieve one object.",
+    "aliases": [
+      "show"
+    ],
+    "invocable": true,
+    "invocation": {
+      "contexts": [
+        {
+          "path": [],
+          "options": [
+            {
+              "name": "--config",
+              "aliases": [
+                "--cfg"
+              ],
+              "help": "Configuration file.",
+              "global": true,
+              "required": false,
+              "value": {
+                "minValues": 1,
+                "maxValues": 1
+              },
+              "repeatable": false,
+              "hasDefault": false,
+              "allowHyphenValues": false,
+              "allowNegativeNumbers": false
+            },
+            {
+              "name": "--profile",
+              "help": "Execution profile.",
+              "global": false,
+              "required": false,
+              "value": {
+                "minValues": 1,
+                "maxValues": 1
+              },
+              "repeatable": false,
+              "environment": "TOOL_PROFILE",
+              "hasDefault": true,
+              "allowHyphenValues": false,
+              "allowNegativeNumbers": false
+            },
+            {
+              "name": "--verbose",
+              "aliases": [
+                "-v"
+              ],
+              "help": "Enable verbose output.",
+              "global": false,
+              "required": false,
+              "repeatable": false,
+              "hasDefault": false,
+              "allowHyphenValues": false,
+              "allowNegativeNumbers": false
+            }
+          ]
+        },
+        {
+          "path": [
+            "objects"
+          ]
+        },
+        {
+          "path": [
+            "objects",
+            "get"
+          ],
+          "arguments": [
+            {
+              "name": "id",
+              "help": "Object identifier.",
+              "position": 1,
+              "required": true,
+              "value": {
+                "minValues": 1,
+                "maxValues": 1
+              },
+              "allowNegativeNumbers": false
+            },
+            {
+              "name": "selectors",
+              "help": "Additional selectors.",
+              "position": 2,
+              "required": false,
+              "value": {
+                "minValues": 0
+              },
+              "allowNegativeNumbers": false
+            }
+          ],
+          "options": [
+            {
+              "name": "--endpoint",
+              "help": "Optional remote endpoint.",
+              "global": false,
+              "required": false,
+              "value": {
+                "minValues": 1,
+                "maxValues": 1
+              },
+              "repeatable": false,
+              "hasDefault": false,
+              "allowHyphenValues": false,
+              "allowNegativeNumbers": false
+            },
+            {
+              "name": "--auth-token",
+              "aliases": [
+                "--token"
+              ],
+              "help": "Authentication token.",
+              "global": false,
+              "required": true,
+              "value": {
+                "minValues": 1,
+                "maxValues": 1
+              },
+              "repeatable": false,
+              "environment": "TOOL_TOKEN",
+              "hasDefault": false,
+              "allowHyphenValues": false,
+              "allowNegativeNumbers": false
+            },
+            {
+              "name": "--stdout",
+              "help": "Write the result to standard output.",
+              "global": false,
+              "required": false,
+              "repeatable": false,
+              "hasDefault": false,
+              "allowHyphenValues": false,
+              "allowNegativeNumbers": false
+            }
+          ],
+          "constraints": [
+            {
+              "kind": "requires",
+              "source": "--endpoint",
+              "target": "--auth-token"
+            },
+            {
+              "kind": "conflicts",
+              "source": "--endpoint",
+              "target": "--stdout"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
