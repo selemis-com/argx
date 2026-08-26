@@ -58,6 +58,8 @@ version = "0.1.0"
 dependencies = [
  "argx-derive",
  "proptest",
+ "serde",
+ "serde_json",
  "snapbox",
 ]
 

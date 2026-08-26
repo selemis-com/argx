@@ -28,6 +28,10 @@ default = ["derive"]
 derive = ["dep:argx-derive"]
 
 [dependencies]
+# Vendor
+serde.workspace = true
+serde_json.workspace = true
+
 # Crates
 argx-derive = { workspace = true, optional = true }
 

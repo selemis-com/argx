@@ -9,11 +9,17 @@
 
 mod argv;
 mod binding;
+pub mod contract;
 mod error;
 mod help;
 
 use std::ffi::{OsStr, OsString};
 
+pub use contract::{
+    ArgumentCardinality, ArgumentContract, ArgumentSyntax, CONTRACT_VERSION,
+    CommandContextContract, CommandContract, ConstraintContract, ConstraintContractKind, Contract,
+    ContractDepth, ContractError, ContractRequest, InvocationContract,
+};
 pub use error::{Error, InvalidValue};
 
 // Generated absolute paths must also work when a derive is used inside this crate. Integration
@@ -31,10 +37,10 @@ pub use argx_derive::{Args, Parser, Subcommand};
 ///
 /// This trait distinguishes reusable argument groups from root [`Parser`] declarations. It is
 /// implemented by the `Args` derive and is not intended for manual implementation.
-pub trait Args: Sized + __private::CommandArgs {}
+pub trait Args: Sized + __private::CommandArgs + __private::CommandContract {}
 
 /// Parses command-line arguments into a typed value.
-pub trait Parser: Sized + __private::CommandArgs {
+pub trait Parser: Sized + __private::CommandArgs + __private::CommandContract {
     /// Parses the current process arguments, excluding the program name.
     ///
     /// Help and version requests are printed to standard output and terminate successfully. Parse
@@ -116,6 +122,18 @@ pub trait Parser: Sized + __private::CommandArgs {
         let owned: Vec<OsString> = argv.into_iter().map(Into::into).collect();
         let refs: Vec<&OsStr> = owned.iter().map(OsString::as_os_str).collect();
         binding::parse_refs::<Self>(&refs)
+    }
+
+    /// Discovers the machine-readable invocation contract for this CLI.
+    ///
+    /// Command paths are relative to the root command and may use canonical names or aliases.
+    /// Returned paths always use canonical command names.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ContractError::UnknownCommand`] when one requested path segment does not resolve.
+    fn contract(request: ContractRequest) -> Result<Contract, ContractError> {
+        contract::discover(Self::CONTRACT, request)
     }
 
     /// Renders generated help for this root command.

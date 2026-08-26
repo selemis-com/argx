@@ -1,7 +1,16 @@
 //! Binding contracts implemented by generated parser, argument, and subcommand declarations.
 
-use super::model::{ArgumentState, Command, Key};
+use super::{
+    contract::CommandSpec,
+    model::{ArgumentState, Command, Key},
+};
 use crate::argv::Event;
+
+/// Generated machine-contract projection for one derived command declaration.
+pub trait CommandContract {
+    /// Private static command semantics used to build public machine contracts.
+    const CONTRACT: &'static CommandSpec<'static>;
+}
 
 /// Generated runtime projections of one normalized command declaration.
 pub trait CommandArgs: Sized {
@@ -75,6 +84,9 @@ pub trait Subcommands: Sized {
 
     /// Private runtime command semantics for the enum's named subcommands.
     const COMMANDS: &'static [&'static Command<'static>];
+
+    /// Private machine-contract semantics for the enum's named subcommands.
+    const CONTRACTS: &'static [&'static CommandSpec<'static>];
 
     /// Creates empty selection and binding state.
     fn start() -> Self::Partial;

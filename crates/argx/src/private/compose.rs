@@ -1,6 +1,9 @@
 //! Const-time composition and validation of independently derived command tables.
 
-use super::model::{Action, Arg, Constraint, ConstraintKind, Flag, HelpGroup, Key};
+use super::{
+    contract::{ArgSpec, FlagSpec},
+    model::{Action, Arg, Constraint, ConstraintKind, Flag, HelpGroup, Key},
+};
 
 /// Returns the total number of entries across several static table slices.
 pub const fn table_len<T>(groups: &[&[T]]) -> usize {
@@ -62,6 +65,80 @@ pub const fn concat_args<const N: usize>(
         group += 1;
     }
     assert!(at == N, "concatenated positional-table length must match table_len");
+    joined
+}
+
+/// Concatenates machine-contract flag groups into one static array while preserving group order.
+///
+/// # Panics
+///
+/// Panics during const evaluation if `N` is not [`table_len`] of `groups`.
+pub const fn concat_contract_flags<const N: usize>(
+    groups: &[&[&'static FlagSpec<'static>]],
+) -> [&'static FlagSpec<'static>; N] {
+    static PLACEHOLDER: FlagSpec<'static> = FlagSpec {
+        key: 0,
+        name: "",
+        help: None,
+        longs: &[],
+        aliases: &[],
+        shorts: &[],
+        global: false,
+        env: None,
+        cardinality: super::contract::Cardinality::Switch,
+        required: false,
+        has_default: false,
+        allow_hyphen_values: false,
+        allow_negative_numbers: false,
+    };
+    let mut joined = [&PLACEHOLDER; N];
+    let mut at = 0;
+    let mut group = 0;
+    while group < groups.len() {
+        let entries = groups[group];
+        let mut index = 0;
+        while index < entries.len() {
+            joined[at] = entries[index];
+            at += 1;
+            index += 1;
+        }
+        group += 1;
+    }
+    assert!(at == N, "concatenated contract flag-table length must match table_len");
+    joined
+}
+
+/// Concatenates machine-contract positional groups into one static array while preserving order.
+///
+/// # Panics
+///
+/// Panics during const evaluation if `N` is not [`table_len`] of `groups`.
+pub const fn concat_contract_args<const N: usize>(
+    groups: &[&[&'static ArgSpec<'static>]],
+) -> [&'static ArgSpec<'static>; N] {
+    static PLACEHOLDER: ArgSpec<'static> = ArgSpec {
+        key: 0,
+        name: "",
+        help: None,
+        cardinality: super::contract::Cardinality::One,
+        required: true,
+        has_default: false,
+        allow_negative_numbers: false,
+    };
+    let mut joined = [&PLACEHOLDER; N];
+    let mut at = 0;
+    let mut group = 0;
+    while group < groups.len() {
+        let entries = groups[group];
+        let mut index = 0;
+        while index < entries.len() {
+            joined[at] = entries[index];
+            at += 1;
+            index += 1;
+        }
+        group += 1;
+    }
+    assert!(at == N, "concatenated contract arg-table length must match table_len");
     joined
 }
 
