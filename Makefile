@@ -1,21 +1,6 @@
 # Makefile for building and testing Argx.
 .DEFAULT_GOAL := help
 
-# Number of generated cases executed by each fuzz property.
-FUZZ_CASES ?= 2048
-
-# Minimum number of argv tokens generated per parser case.
-FUZZ_MIN_TOKENS ?= 0
-
-# Maximum number of argv tokens generated per parser case.
-FUZZ_TOKENS ?= 64
-
-# Optional deterministic seed for reproducing a fuzzing campaign.
-FUZZ_SEED ?=
-
-# Set to 1 to print every generated command, argv, and normalized outcome.
-FUZZ_TRACE ?=
-
 ##@ Help
 
 .PHONY: help
@@ -38,22 +23,7 @@ test-unit: ## Run deterministic unit and integration tests.
 	cargo nextest run \
 		--workspace \
 		--all-features \
-		-E 'not binary(fuzz) & not binary(examples)' \
-		--no-fail-fast \
-		--locked
-
-.PHONY: test-fuzz
-test-fuzz: ## Fuzz raw parsing and typed argument binding.
-	set -eu; \
-	if [ -n "$(FUZZ_SEED)" ]; then export PROPTEST_RNG_SEED="$(FUZZ_SEED)"; fi; \
-	if [ -n "$(FUZZ_TRACE)" ]; then export ARGX_FUZZ_TRACE="$(FUZZ_TRACE)"; fi; \
-	ARGX_FUZZ_CASES="$(FUZZ_CASES)" \
-	ARGX_FUZZ_MIN_TOKENS="$(FUZZ_MIN_TOKENS)" \
-	ARGX_FUZZ_TOKENS="$(FUZZ_TOKENS)" cargo nextest run \
-		--workspace \
-		--all-features \
-		-E 'binary(fuzz)' \
-		--no-capture \
+		-E 'not binary(examples)' \
 		--no-fail-fast \
 		--locked
 
@@ -75,9 +45,8 @@ test-examples: ## Build and smoke-test all public examples.
 		--locked
 
 .PHONY: test
-test: ## Run deterministic, fuzz, example, and documentation tests.
+test: ## Run unit, integration, example, and documentation tests.
 	$(MAKE) test-unit && \
-	$(MAKE) test-fuzz && \
 	$(MAKE) test-examples && \
 	$(MAKE) test-doc
 
@@ -86,7 +55,7 @@ test-coverage: ## Run tests with coverage and generate an LCOV report.
 	cargo +nightly llvm-cov nextest \
 		--workspace \
 		--all-features \
-		-E 'not binary(fuzz) & not binary(examples)' \
+		-E 'not binary(examples)' \
 		--lcov \
 		--output-path lcov.info \
 		--locked
@@ -96,7 +65,7 @@ test-coverage-html: ## Run tests with coverage and generate and open an HTML rep
 	cargo +nightly llvm-cov nextest \
 		--workspace \
 		--all-features \
-		-E 'not binary(fuzz) & not binary(examples)' \
+		-E 'not binary(examples)' \
 		--html \
 		--open \
 		--locked

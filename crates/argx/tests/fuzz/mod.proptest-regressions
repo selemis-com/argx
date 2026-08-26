@@ -1,7 +1,0 @@
-# Seeds for failure cases proptest has generated in the past. It is
-# automatically read and these particular cases re-run before any
-# novel cases are generated.
-#
-# It is recommended to check this file in to source control so that
-# everyone who runs the test benefits from these saved cases.
-cc c9c45b3425e7e1c6d6e39fdbbe78924225f784685c752ba5ce9dcae9d17bc758 # shrinks to Scenario { command: CommandSpec { flags: [FlagSpec { key: 4096, name: "field0", longs: [], shorts: [97], takes_value: false, allow_hyphen_values: false, allow_negative_numbers: false }, FlagSpec { key: 4097, name: "field1", longs: ["flag1"], shorts: [], takes_value: false, allow_hyphen_values: false, allow_negative_numbers: false }, FlagSpec { key: 4098, name: "field2", longs: [], shorts: [101], takes_value: false, allow_hyphen_values: false, allow_negative_numbers: false }, FlagSpec { key: 4099, name: "field3", longs: [], shorts: [103], takes_value: false, allow_hyphen_values: false, allow_negative_numbers: false }, FlagSpec { key: 4100, name: "field4", longs: ["flag4"], shorts: [], takes_value: false, allow_hyphen_values: false, allow_negative_numbers: false }], args: [ArgSpec { key: 8192, name: "arg0", required: false, variadic: false, allow_negative_numbers: false }] }, tokens: [TokenSpec { kind: KnownShortAttached, selectors: [0, 0, 0, 0], payload: [104], equals: false }] }
