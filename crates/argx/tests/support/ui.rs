@@ -45,16 +45,25 @@ impl UiProject {
         });
 
         let facade = facade_root().to_string_lossy().replace('\\', "/");
+        let package = format!("argx-ui-{group}-{fixture}");
         let dependency = if dependency == "argx" {
             format!("argx = {{ path = \"{facade}\" }}")
         } else {
             format!("{dependency} = {{ package = \"argx\", path = \"{facade}\" }}")
         };
         let manifest = format!(
-            "[package]\nname = \"argx-ui-{group}-{fixture}\"\nversion = \"0.0.0\"\nedition = \"2024\"\npublish = false\n\n[dependencies]\n{dependency}\n"
+            "[package]\nname = \"{package}\"\nversion = \"0.0.0\"\nedition = \"2024\"\npublish = false\n\n[dependencies]\n{dependency}\n"
         );
         fs::write(root.join("Cargo.toml"), manifest).unwrap_or_else(|error| {
             panic!("failed to write temporary UI manifest `{}`: {error}", root.display())
+        });
+        let lockfile = facade_root().join("tests/fixtures/ui/template/Cargo.lock");
+        let locked = fs::read_to_string(&lockfile).unwrap_or_else(|error| {
+            panic!("failed to read UI lockfile `{}`: {error}", lockfile.display())
+        });
+        let locked = locked.replacen("name = \"argx-ui\"", &format!("name = \"{package}\""), 1);
+        fs::write(root.join("Cargo.lock"), locked).unwrap_or_else(|error| {
+            panic!("failed to write temporary UI lockfile `{}`: {error}", root.display())
         });
 
         let source =
@@ -69,10 +78,14 @@ impl UiProject {
     /// Builds the Cargo command used for this downstream project.
     fn command(&self) -> Command {
         let cargo = env::var_os("CARGO").unwrap_or_else(|| OsString::from("cargo"));
-        Command::new(cargo)
-            .current_dir(&self.root)
-            .env("CARGO_TARGET_DIR", ui_target_dir())
-            .args(["check", "--quiet", "--color", "never"])
+        Command::new(cargo).current_dir(&self.root).env("CARGO_TARGET_DIR", ui_target_dir()).args([
+            "check",
+            "--quiet",
+            "--color",
+            "never",
+            "--locked",
+            "--offline",
+        ])
     }
 }
 
