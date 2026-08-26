@@ -607,15 +607,9 @@ fn arg_contract(
 }
 
 /// Returns value consumption for one named option occurrence.
-fn option_value(
-    takes_value: bool,
-    value_type: Option<TypeContractValue>,
-) -> Option<ValueContract> {
+fn option_value(takes_value: bool, value_type: Option<TypeContractValue>) -> Option<ValueContract> {
     if !takes_value {
-        assert!(
-            value_type.is_none(),
-            "generated switches must not expose a consumed value type",
-        );
+        assert!(value_type.is_none(), "generated switches must not expose a consumed value type",);
         return None;
     }
 
@@ -628,7 +622,7 @@ fn option_value(
 }
 
 /// Returns total positional value multiplicity for one positional binding.
-fn positional_value(
+const fn positional_value(
     variadic: bool,
     required: bool,
     value_type: TypeContractValue,
@@ -641,11 +635,7 @@ fn positional_value(
         };
     }
 
-    ValueContract {
-        min_values: if required { 1 } else { 0 },
-        max_values: Some(1),
-        value_type,
-    }
+    ValueContract { min_values: if required { 1 } else { 0 }, max_values: Some(1), value_type }
 }
 
 /// Resolves one private semantic argument key to its public context-local name.
