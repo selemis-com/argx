@@ -52,6 +52,38 @@
 //! parser without process exit behavior and are useful for tests, embedding, and custom error
 //! handling.
 //!
+//! # Entry points and embedding
+//!
+//! All parser entry points use the same generated command model; they differ only in where argv
+//! comes from and who owns terminal/process policy:
+//!
+//! | Entry point | Input | Process policy |
+//! | --- | --- | --- |
+//! | [`Parser::parse`] | current process, excluding program name | Argx prints and exits |
+//! | [`Parser::try_parse`] | current process, excluding program name | caller receives [`Error`] |
+//! | [`Parser::parse_from`] | complete argv including program name | Argx prints and exits |
+//! | [`Parser::try_parse_from`] | complete argv including program name | caller receives [`Error`] |
+//! | [`Parser::parse_args`] | arguments only | Argx prints and exits |
+//! | [`Parser::try_parse_args`] | arguments only | caller receives [`Error`] |
+//!
+//! The `try_parse*` methods represent built-in help and version requests as terminal actions in the
+//! error type. Embedding code can therefore preserve Argx's parser semantics while choosing its
+//! own transport, logging, or exit policy:
+//!
+//! ```
+//! use argx::{Error, Parser as _};
+//!
+//! #[derive(argx::Parser)]
+//! struct Cli {
+//!     input: String,
+//! }
+//!
+//! match Cli::try_parse_args(["--help"]) {
+//!     Err(Error::DisplayHelp { help }) => assert!(help.contains("Usage:")),
+//!     _ => panic!("expected the built-in help action"),
+//! }
+//! ```
+//!
 //! # Command model
 //!
 //! Argx has three derive roles:
@@ -77,6 +109,76 @@
 //! Named options are local to their declaring command unless marked `#[argx(global)]`. Global
 //! options remain visible in descendant scopes. If an ancestor and descendant use the same
 //! spelling, the nearest active command scope wins.
+//!
+//! # `#[argx(...)]` attribute reference
+//!
+//! Rust documentation is the preferred source for user-facing descriptions. `#[argx(...)]`
+//! metadata controls command-line semantics or provides an explicit override where Rust docs are
+//! not the desired CLI text.
+//!
+//! ## `Parser` and `Args` declarations
+//!
+//! Struct declarations accept `name = "..."` and `about = "..."`. `name` replaces the inferred
+//! kebab-case command name; `about` replaces documentation-derived descriptive text. A `Parser`
+//! declaration may additionally use `version = expression` and `long_version = expression`. If
+//! only one version expression is supplied, Argx uses it for both `-V` and `--version`. Version
+//! metadata is not valid on `Args`.
+//!
+//! Command aliases are intentionally not accepted on structs: aliases belong to selectable
+//! `Subcommand` variants. An `Args` declaration has no standalone process entry point. Flattening
+//! it does not create a command scope, and using it as a subcommand payload keeps the enum variant
+//! as the visible command.
+//!
+//! ## `Subcommand` variants
+//!
+//! The enum itself accepts no `#[argx(...)]` metadata. Individual variants accept:
+//!
+//! - `name = "..."` to replace the inferred kebab-case command spelling;
+//! - `about = "..."` to override documentation-derived descriptive text;
+//! - `alias = "..."` for one hidden accepted command spelling;
+//! - `aliases = ["...", "..."]` for multiple hidden accepted spellings;
+//! - `version = expression` and `long_version = expression` for version actions local to that
+//!   command scope.
+//!
+//! Canonical names and aliases share one sibling namespace. Aliases are accepted by parsing and
+//! contract lookup but omitted from human help.
+//!
+//! ## Argument fields
+//!
+//! Ordinary fields are positional unless `long` or `short` is present. The supported field
+//! metadata is:
+//!
+//! | Attribute | Meaning |
+//! | --- | --- |
+//! | `long` / `long = "name"` | infer or explicitly set a long option spelling |
+//! | `short` / `short = 'x'` | infer or explicitly set a short option spelling |
+//! | `alias = "name"` | add one hidden long spelling to a named option |
+//! | `aliases = ["a", "b"]` | add multiple hidden long spellings to a named option |
+//! | `global` | keep a named option visible in descendant command scopes |
+//! | `env = "NAME"` | use an environment fallback for a scalar value-taking named option |
+//! | `default = expression` | use a typed Rust default for a scalar value-taking named option |
+//! | `requires = "field"` | require another argument when this argument is supplied |
+//! | `requires = ["a", "b"]` | require multiple arguments |
+//! | `conflicts = "field"` | reject use with another argument |
+//! | `conflicts = ["a", "b"]` | reject use with multiple arguments |
+//! | `allow_hyphen_values` | allow arbitrary flag-like detached values for a named value option |
+//! | `allow_negative_numbers` | accept negative-number values without accepting other flags |
+//! | `help = "..."` | override the field's documentation-derived one-line help text |
+//! | `flatten` | compose one direct [`Args`] field into the current command |
+//! | `subcommand` | select one direct derived `Subcommand` enum |
+//!
+//! Long and alias spellings are written without leading dashes. A short spelling is one visible
+//! ASCII character other than `-` or `=`.
+//!
+//! `alias` / `aliases` and `global` require a named option. `env` and `default` are restricted to
+//! scalar value-taking named options, so they cannot be used on switches or collections.
+//! `allow_hyphen_values` is named-option only; `allow_negative_numbers` may also be used on a
+//! positional value. Value policies do not apply to `bool` switches.
+//!
+//! `requires` and `conflicts` refer to Rust field names in the composed command context, including
+//! fields contributed by `flatten`. Structural `flatten` and `subcommand` fields cannot also carry
+//! ordinary flag, value-source, relationship, or `help` metadata. Their types must be held directly
+//! rather than through `Option` or collection wrappers.
 //!
 //! # Arguments and cardinality
 //!

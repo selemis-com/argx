@@ -181,9 +181,7 @@ impl Error {
             }
             _ => ExitOutput {
                 stream: ExitStream::Stderr,
-                text: Cow::Owned(format!(
-                    "error: {self}\n\nFor more information, try '--help'.\n"
-                )),
+                text: Cow::Owned(format!("error: {self}\n\nFor more information, try '--help'.\n")),
                 code: self.exit_code(),
             },
         }
