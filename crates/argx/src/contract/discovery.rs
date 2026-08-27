@@ -8,7 +8,7 @@ use super::{
 use crate::{
     __private::{
         Arg as StaticArg, Command as StaticCommand, CommandArgs as StaticCommandArgs,
-        CommandValueTypes, ConstraintKind, Flag as StaticFlag, Key,
+        CommandExecutionTypes, CommandValueTypes, ConstraintKind, Flag as StaticFlag, Key,
         ResolveCommandTypeContract as SemanticCommandContract, TypeResolver,
     },
     type_contract::TypeContractValue,
@@ -61,6 +61,10 @@ where
 {
     let (invocation, execution) = if detailed {
         let (invocation, execution) = invocation_contract::<T>(contexts, resolver);
+        let execution = execution.map(|execution| ExecutionContract {
+            success: execution.success,
+            error: execution.error,
+        });
         assert_eq!(
             command.subcommands.is_empty(),
             execution.is_some(),
@@ -112,7 +116,7 @@ where
 fn invocation_contract<T>(
     contexts: &[&'static StaticCommand<'static>],
     resolver: &mut TypeResolver,
-) -> (Vec<CommandContextContract>, Option<ExecutionContract>)
+) -> (Vec<CommandContextContract>, Option<CommandExecutionTypes>)
 where
     T: StaticCommandArgs + SemanticCommandContract,
 {

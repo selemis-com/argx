@@ -8,7 +8,6 @@
 use crate::{
     argv::Event,
     command::model::{ArgumentState, Command, Key},
-    contract::ExecutionContract,
     type_contract::{TypeContractValue, resolve::TypeResolver},
 };
 
@@ -21,13 +20,22 @@ pub struct CommandValueTypes {
     pub args: Vec<TypeContractValue>,
 }
 
+/// Resolved semantic success and error types for one executable command.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommandExecutionTypes {
+    /// Semantic type returned on successful execution.
+    pub success: TypeContractValue,
+    /// Semantic type returned on failed execution.
+    pub error: TypeContractValue,
+}
+
 /// Complete generated semantic projection for one command context.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommandTypes {
     /// Semantic types of values consumed by this command context.
     pub values: CommandValueTypes,
     /// Execution result types when this command is directly invocable.
-    pub execution: Option<ExecutionContract>,
+    pub execution: Option<CommandExecutionTypes>,
 }
 
 /// Empty generated semantic contract projection.
@@ -59,7 +67,7 @@ pub trait SubcommandTypeContract {
 /// Resolves a concrete handler return type into semantic success and error types.
 pub trait ExecutionResult {
     /// Resolves this result type into the shared type-definition scope.
-    fn resolve_execution(resolver: &mut TypeResolver) -> ExecutionContract;
+    fn resolve_execution(resolver: &mut TypeResolver) -> CommandExecutionTypes;
 }
 
 impl<T, E> ExecutionResult for Result<T, E>
@@ -67,8 +75,11 @@ where
     T: crate::type_contract::resolve::TypeContractSource,
     E: crate::type_contract::resolve::TypeContractSource,
 {
-    fn resolve_execution(resolver: &mut TypeResolver) -> ExecutionContract {
-        ExecutionContract { success: T::resolve_type(resolver), error: E::resolve_type(resolver) }
+    fn resolve_execution(resolver: &mut TypeResolver) -> CommandExecutionTypes {
+        CommandExecutionTypes {
+            success: T::resolve_type(resolver),
+            error: E::resolve_type(resolver),
+        }
     }
 }
 
@@ -78,27 +89,18 @@ where
 /// implement this trait directly.
 pub trait ExecutionContractSource: InvocableCommandContract {
     /// Resolves this command's declared success and error types.
-    fn resolve_execution(resolver: &mut TypeResolver) -> ExecutionContract;
+    fn resolve_execution(resolver: &mut TypeResolver) -> CommandExecutionTypes;
 }
 
 /// Resolves whether one generated command declaration has an execution contract.
 pub trait ResolveExecutionContract {
     /// Resolves the execution contract, or returns `None` for a non-invocable command group.
-    fn resolve(resolver: &mut TypeResolver) -> Option<ExecutionContract>;
+    fn resolve(resolver: &mut TypeResolver) -> Option<CommandExecutionTypes>;
 }
 
 impl ResolveExecutionContract for NoTypeProjection {
-    fn resolve(_resolver: &mut TypeResolver) -> Option<ExecutionContract> {
+    fn resolve(_resolver: &mut TypeResolver) -> Option<CommandExecutionTypes> {
         None
-    }
-}
-
-impl<T> ResolveExecutionContract for T
-where
-    T: ExecutionContractSource,
-{
-    fn resolve(resolver: &mut TypeResolver) -> Option<ExecutionContract> {
-        Some(T::resolve_execution(resolver))
     }
 }
 

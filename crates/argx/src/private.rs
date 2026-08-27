@@ -20,7 +20,8 @@ pub use crate::{
     },
     derive_support::{
         traits::{
-            CommandArgs, CommandTypeContract, CommandTypes, CommandValueTypes,
+            CommandArgs, CommandExecutionTypes, CommandTypeContract, CommandTypes,
+            CommandValueTypes,
             ExecutionContractSource, ExecutionResult, InvocableCommandContract, NoTypeProjection,
             ResolveCommandTypeContract, ResolveExecutionContract, ResolveSubcommandTree,
             ResolveSubcommands, ResolveValueFields, SubcommandTypeContract, Subcommands,

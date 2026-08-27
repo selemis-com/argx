@@ -18,52 +18,23 @@ use crate::type_contract::{
 
 /// Semantic identity used only while deduplicating named definitions in one discovery run.
 ///
-/// Built-in Rust forms use structural variants so equivalent standard-library containers share
-/// one canonical semantic identity. Derived declarations retain nominal [`TypeId`] identity, with
-/// generic type and const arguments included so distinct monomorphizations cannot alias one
-/// another accidentally. None of this identity is serialized into the public protocol.
+/// The declaration identity never appears in the serialized protocol. Generic type and const
+/// arguments are included so distinct monomorphizations cannot alias one another accidentally.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum TypeKey {
-    /// Unit type.
-    Unit,
-    /// Exact Rust primitive.
-    Primitive(PrimitiveType),
-    /// UTF-8 string shape.
-    String,
-    /// Operating-system-native string shape.
-    OsString,
-    /// Filesystem path shape.
-    Path,
-    /// Standard-library uninhabited error type.
-    Infallible,
-    /// Optional value shape.
-    Optional(Box<Self>),
-    /// Variable-length sequence shape.
-    Sequence(Box<Self>),
-    /// Set shape.
-    Set(Box<Self>),
-    /// Map shape.
-    Map(Box<Self>, Box<Self>),
-    /// Fixed-length homogeneous array shape.
-    Array(Box<Self>, usize),
-    /// Fixed-length heterogeneous tuple shape.
-    Tuple(Vec<Self>),
-    /// One nominal derived Rust declaration.
-    Named {
-        /// Nominal declaration identity.
-        declaration: TypeId,
-        /// Canonical contract identities of generic type arguments.
-        arguments: Vec<Self>,
-        /// Values of const-generic arguments in declaration order.
-        const_arguments: Vec<String>,
-    },
+pub struct TypeKey {
+    /// Nominal identity of the declaration or built-in shape.
+    declaration: TypeId,
+    /// Canonical contract identities of generic type arguments.
+    arguments: Vec<Self>,
+    /// Values of const-generic arguments in declaration order.
+    const_arguments: Vec<String>,
 }
 
 impl TypeKey {
-    /// Creates one nominal private type identity from a declaration marker and generic arguments.
+    /// Creates one private type identity from a declaration marker and generic arguments.
     #[must_use]
-    pub const fn named<M: 'static>(arguments: Vec<Self>, const_arguments: Vec<String>) -> Self {
-        Self::Named { declaration: TypeId::of::<M>(), arguments, const_arguments }
+    pub const fn new<M: 'static>(arguments: Vec<Self>, const_arguments: Vec<String>) -> Self {
+        Self { declaration: TypeId::of::<M>(), arguments, const_arguments }
     }
 }
 
@@ -162,37 +133,77 @@ fn definition_id(index: usize) -> String {
     format!("type-{index}")
 }
 
+/// Declares private markers for canonical built-in semantic shapes.
+macro_rules! key_markers {
+    ($($name:ident),+ $(,)?) => {
+        $(
+            #[doc = "Private canonical type-contract key marker."]
+            struct $name;
+        )+
+    };
+}
+
+key_markers!(
+    UnitKey,
+    InfallibleKey,
+    BoolKey,
+    CharKey,
+    I8Key,
+    I16Key,
+    I32Key,
+    I64Key,
+    I128Key,
+    IsizeKey,
+    U8Key,
+    U16Key,
+    U32Key,
+    U64Key,
+    U128Key,
+    UsizeKey,
+    F32Key,
+    F64Key,
+    StringKey,
+    OsStringKey,
+    PathKey,
+    OptionalKey,
+    SequenceKey,
+    SetKey,
+    MapKey,
+    ArrayKey,
+    TupleKey,
+);
+
 /// Implements an exact primitive contract with a canonical semantic key.
 macro_rules! primitive_contract {
-    ($ty:ty, $primitive:ident) => {
+    ($ty:ty, $primitive:ident, $key:ty) => {
         impl TypeContractSource for $ty {
             fn resolve_type(_resolver: &mut TypeResolver) -> TypeContractValue {
                 TypeContractValue::Primitive { primitive: PrimitiveType::$primitive }
             }
 
             fn type_key() -> TypeKey {
-                TypeKey::Primitive(PrimitiveType::$primitive)
+                TypeKey::new::<$key>(Vec::new(), Vec::new())
             }
         }
     };
 }
 
-primitive_contract!(bool, Bool);
-primitive_contract!(char, Char);
-primitive_contract!(i8, I8);
-primitive_contract!(i16, I16);
-primitive_contract!(i32, I32);
-primitive_contract!(i64, I64);
-primitive_contract!(i128, I128);
-primitive_contract!(isize, Isize);
-primitive_contract!(u8, U8);
-primitive_contract!(u16, U16);
-primitive_contract!(u32, U32);
-primitive_contract!(u64, U64);
-primitive_contract!(u128, U128);
-primitive_contract!(usize, Usize);
-primitive_contract!(f32, F32);
-primitive_contract!(f64, F64);
+primitive_contract!(bool, Bool, BoolKey);
+primitive_contract!(char, Char, CharKey);
+primitive_contract!(i8, I8, I8Key);
+primitive_contract!(i16, I16, I16Key);
+primitive_contract!(i32, I32, I32Key);
+primitive_contract!(i64, I64, I64Key);
+primitive_contract!(i128, I128, I128Key);
+primitive_contract!(isize, Isize, IsizeKey);
+primitive_contract!(u8, U8, U8Key);
+primitive_contract!(u16, U16, U16Key);
+primitive_contract!(u32, U32, U32Key);
+primitive_contract!(u64, U64, U64Key);
+primitive_contract!(u128, U128, U128Key);
+primitive_contract!(usize, Usize, UsizeKey);
+primitive_contract!(f32, F32, F32Key);
+primitive_contract!(f64, F64, F64Key);
 
 impl TypeContractSource for () {
     fn resolve_type(_resolver: &mut TypeResolver) -> TypeContractValue {
@@ -200,7 +211,7 @@ impl TypeContractSource for () {
     }
 
     fn type_key() -> TypeKey {
-        TypeKey::Unit
+        TypeKey::new::<UnitKey>(Vec::new(), Vec::new())
     }
 }
 
@@ -212,31 +223,31 @@ impl TypeContractSource for Infallible {
     }
 
     fn type_key() -> TypeKey {
-        TypeKey::Infallible
+        TypeKey::new::<InfallibleKey>(Vec::new(), Vec::new())
     }
 }
 
 /// Implements one semantic leaf contract shared by owned and borrowed standard-library forms.
 macro_rules! leaf_contract {
-    ($ty:ty, $value:expr, $key:expr) => {
+    ($ty:ty, $value:expr, $key:ty) => {
         impl TypeContractSource for $ty {
             fn resolve_type(_resolver: &mut TypeResolver) -> TypeContractValue {
                 $value
             }
 
             fn type_key() -> TypeKey {
-                $key
+                TypeKey::new::<$key>(Vec::new(), Vec::new())
             }
         }
     };
 }
 
-leaf_contract!(String, TypeContractValue::String, TypeKey::String);
-leaf_contract!(str, TypeContractValue::String, TypeKey::String);
-leaf_contract!(OsString, TypeContractValue::OsString, TypeKey::OsString);
-leaf_contract!(OsStr, TypeContractValue::OsString, TypeKey::OsString);
-leaf_contract!(PathBuf, TypeContractValue::Path, TypeKey::Path);
-leaf_contract!(Path, TypeContractValue::Path, TypeKey::Path);
+leaf_contract!(String, TypeContractValue::String, StringKey);
+leaf_contract!(str, TypeContractValue::String, StringKey);
+leaf_contract!(OsString, TypeContractValue::OsString, OsStringKey);
+leaf_contract!(OsStr, TypeContractValue::OsString, OsStringKey);
+leaf_contract!(PathBuf, TypeContractValue::Path, PathKey);
+leaf_contract!(Path, TypeContractValue::Path, PathKey);
 
 impl<T> TypeContractSource for Option<T>
 where
@@ -247,7 +258,7 @@ where
     }
 
     fn type_key() -> TypeKey {
-        TypeKey::Optional(Box::new(T::type_key()))
+        TypeKey::new::<OptionalKey>(vec![T::type_key()], Vec::new())
     }
 }
 
@@ -263,7 +274,7 @@ macro_rules! sequence_contract {
             }
 
             fn type_key() -> TypeKey {
-                TypeKey::Sequence(Box::new(T::type_key()))
+                TypeKey::new::<SequenceKey>(vec![T::type_key()], Vec::new())
             }
         }
     };
@@ -282,7 +293,7 @@ where
     }
 
     fn type_key() -> TypeKey {
-        TypeKey::Sequence(Box::new(T::type_key()))
+        TypeKey::new::<SequenceKey>(vec![T::type_key()], Vec::new())
     }
 }
 
@@ -295,7 +306,7 @@ where
     }
 
     fn type_key() -> TypeKey {
-        TypeKey::Array(Box::new(T::type_key()), N)
+        TypeKey::new::<ArrayKey>(vec![T::type_key()], vec![const_key(&N)])
     }
 }
 
@@ -308,7 +319,7 @@ where
     }
 
     fn type_key() -> TypeKey {
-        TypeKey::Set(Box::new(T::type_key()))
+        TypeKey::new::<SetKey>(vec![T::type_key()], Vec::new())
     }
 }
 
@@ -321,7 +332,7 @@ where
     }
 
     fn type_key() -> TypeKey {
-        TypeKey::Set(Box::new(T::type_key()))
+        TypeKey::new::<SetKey>(vec![T::type_key()], Vec::new())
     }
 }
 
@@ -338,7 +349,7 @@ where
     }
 
     fn type_key() -> TypeKey {
-        TypeKey::Map(Box::new(K::type_key()), Box::new(V::type_key()))
+        TypeKey::new::<MapKey>(vec![K::type_key(), V::type_key()], Vec::new())
     }
 }
 
@@ -355,7 +366,7 @@ where
     }
 
     fn type_key() -> TypeKey {
-        TypeKey::Map(Box::new(K::type_key()), Box::new(V::type_key()))
+        TypeKey::new::<MapKey>(vec![K::type_key(), V::type_key()], Vec::new())
     }
 }
 
@@ -421,7 +432,7 @@ macro_rules! tuple_contract {
             }
 
             fn type_key() -> TypeKey {
-                TypeKey::Tuple(vec![$($type::type_key()),+])
+                TypeKey::new::<TupleKey>(vec![$($type::type_key()),+], Vec::new())
             }
         }
     };
