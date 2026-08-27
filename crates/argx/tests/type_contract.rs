@@ -66,6 +66,30 @@ mod tests {
         value: T,
     }
 
+    /// Associates a generic argument with a contract shape that can differ despite equal
+    /// container semantics.
+    trait ProjectedValue {
+        type Value: argx::ContractType;
+    }
+
+    impl ProjectedValue for Vec<u8> {
+        type Value = u8;
+    }
+
+    impl ProjectedValue for VecDeque<u8> {
+        type Value = String;
+    }
+
+    /// Generic declaration whose shape depends on the concrete Rust type argument.
+    #[expect(dead_code, reason = "shape is exercised through the generated contract")]
+    #[derive(argx::Contract)]
+    struct Projected<T>
+    where
+        T: ProjectedValue,
+    {
+        value: T::Value,
+    }
+
     /// Const-generic declaration.
     #[derive(argx::Contract)]
     struct Fixed<const N: usize>([u8; N]);
@@ -191,16 +215,30 @@ mod tests {
     }
 
     #[test]
-    fn semantically_equivalent_container_arguments_share_generic_definitions() {
+    fn semantically_equal_rust_arguments_do_not_alias_generic_definitions() {
         #[expect(dead_code, reason = "shape is exercised through the generated contract")]
         #[derive(argx::Contract)]
         struct Root {
-            vector: Wrapper<Vec<u8>>,
-            queue: Wrapper<VecDeque<u8>>,
+            vector: Projected<Vec<u8>>,
+            queue: Projected<VecDeque<u8>>,
         }
 
         let contract = Root::type_contract();
-        assert_eq!(contract.definitions.iter().filter(|item| item.name == "Wrapper").count(), 1);
+        let projected =
+            contract.definitions.iter().filter(|item| item.name == "Projected").collect::<Vec<_>>();
+        assert_eq!(projected.len(), 2);
+
+        let TypeDefinitionKind::Struct { fields: vector_fields } = &projected[0].kind else {
+            panic!("Projected<Vec<u8>> must resolve to a struct definition");
+        };
+        let TypeDefinitionKind::Struct { fields: queue_fields } = &projected[1].kind else {
+            panic!("Projected<VecDeque<u8>> must resolve to a struct definition");
+        };
+        assert_eq!(
+            vector_fields[0].value_type,
+            TypeContractValue::Primitive { primitive: PrimitiveType::U8 },
+        );
+        assert_eq!(queue_fields[0].value_type, TypeContractValue::String);
     }
 
     #[test]
