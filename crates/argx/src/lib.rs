@@ -5,6 +5,17 @@
 //! completion, and machine-readable contracts. Normal applications therefore define the command
 //! once rather than maintaining separate parser, help, and discovery schemas.
 //!
+//! # Installation
+//!
+//! Add Argx with its default derive support:
+//!
+//! ```text
+//! cargo add argx
+//! ```
+//!
+//! The default `derive` feature re-exports the procedural macros used throughout this guide.
+//! Disable default features only when a crate needs the runtime API without derive macros.
+//!
 //! # Quick start
 //!
 //! A [`Parser`] struct defines the root command. A `#[derive(Subcommand)]` enum selects exact child
@@ -345,6 +356,30 @@
 //! choices from arbitrary [`std::str::FromStr`] implementations, enumerate filesystem paths, or
 //! expose custom value completers. Hidden aliases remain accepted while reconstructing scope but
 //! are never suggested.
+//!
+//! Applications normally expose the generated text through a small `completions <shell>` command,
+//! as demonstrated by the `completions` example. The adapter can then be sourced from shell startup
+//! or saved in the shell's normal completion location. For example, assuming an application named
+//! `acme` exposes that command:
+//!
+//! ```text
+//! # Bash
+//! source <(acme completions bash)
+//!
+//! # Fish
+//! acme completions fish | source
+//!
+//! # Zsh
+//! source <(acme completions zsh)
+//!
+//! # Nushell
+//! acme completions nushell | save --force ~/.cache/acme-completions.nu
+//! source ~/.cache/acme-completions.nu
+//! ```
+//!
+//! Because these adapters call the current executable dynamically, changes to the command tree do
+//! not require regenerating a shell-specific copy of the CLI. Regenerate only when updating the
+//! adapter itself is appropriate for the application installation.
 //!
 //! # Machine-readable contracts
 //!

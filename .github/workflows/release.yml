@@ -234,4 +234,4 @@ jobs:
           gh release create "$TAG" \
             --verify-tag \
             --generate-notes \
-            --title "argx $TAG"
+            --title "$TAG"

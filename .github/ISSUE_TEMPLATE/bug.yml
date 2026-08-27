@@ -46,12 +46,11 @@ body:
       description: What platform(s) did this occur on?
       multiple: true
       options:
-        - Linux (x86)
-        - Linux (ARM)
-        - Mac (Intel)
-        - Mac (Apple Silicon)
-        - Windows (x86)
-        - Windows (ARM)
+        - Linux (x86_64)
+        - Linux (ARM64)
+        - macOS (Intel)
+        - macOS (Apple Silicon)
+        - Windows Subsystem for Linux (WSL)
   - type: input
     id: argx-version
     attributes:
