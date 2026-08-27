@@ -271,10 +271,7 @@ impl<'t, 'a, 'v> ArgvParser<'t, 'a, 'v> {
         let Some(value) = self.argv.get(self.position).copied().map(bytes) else {
             return Err(Error::MissingFlagValue { flag });
         };
-        if !flag.allow_hyphen_values
-            && is_flag_like(value)
-            && !(flag.allow_negative_numbers && is_negative_number(value))
-        {
+        if !accepts_detached_flag_value(flag, value) {
             return Err(Error::MissingFlagValue { flag });
         }
         self.position += 1;
@@ -363,6 +360,16 @@ fn bytes(value: &OsStr) -> &[u8] {
 /// A lone `-` remains a value, conventionally representing standard input.
 const fn is_flag_like(token: &[u8]) -> bool {
     matches!(token, [b'-', rest @ ..] if !rest.is_empty())
+}
+
+/// Reports whether one detached token can be consumed as a value for `flag`.
+///
+/// Value completion shares this exact lexical policy so it never suggests a detached finite value
+/// that ordinary parsing would reject as another flag.
+pub(crate) fn accepts_detached_flag_value(flag: &Flag<'_>, value: &[u8]) -> bool {
+    flag.allow_hyphen_values
+        || !is_flag_like(value)
+        || (flag.allow_negative_numbers && is_negative_number(value))
 }
 
 /// Reports whether one negative-number token routes to the next positional argument.

@@ -11,7 +11,10 @@ use super::{
     PROTOCOL_COMMAND, PROTOCOL_ENV, PROTOCOL_LINE_ENV, PROTOCOL_VERSION, PROTOCOL_WORDS_ENV,
 };
 use crate::{
-    argv::{ArgvParser, Error as ArgvError, Event, routes_negative_number_to_arg},
+    argv::{
+        ArgvParser, Error as ArgvError, Event, accepts_detached_flag_value,
+        routes_negative_number_to_arg,
+    },
     command::{
         model::{Action, Arg, Command, ConstraintKind, Flag, Key},
         scope::{Named, long as resolve_long, short as resolve_short},
@@ -133,7 +136,7 @@ fn complete_split<'t>(root: &'t Command<'t>, split: &Split) -> Vec<Candidate<'t>
 
     if let Some(flag) = position.awaiting_value {
         return if flag_available_for_value(&position, flag) {
-            value_candidates(flag.accepted_values, &split.prefix, "")
+            detached_value_candidates(flag, &split.prefix)
         } else {
             Vec::new()
         };
@@ -258,11 +261,10 @@ fn candidates<'t>(position: &Position<'t>, prefix: &str) -> Vec<Candidate<'t>> {
         }
     }
 
-    if (position.flags_stopped || !prefix.starts_with('-'))
-        && let Some(arg) = position.next_arg
+    if let Some(arg) = position.next_arg
         && !conflicts_with_given(position, arg.key)
     {
-        push_values(&mut candidates, &mut seen, arg.accepted_values, prefix, "");
+        push_positional_values(&mut candidates, &mut seen, position, arg, prefix);
     }
 
     if flags_possible(position, prefix) {
@@ -384,6 +386,55 @@ fn resolves_flag_short(position: &Position<'_>, flag: &Flag<'_>, short: u8) -> b
         resolve_short(position.command, &position.ancestors, short),
         Some(Named::Flag { flag: found, .. }) if std::ptr::eq(found, flag)
     )
+}
+
+/// Builds finite detached values that ordinary flag parsing can actually consume.
+fn detached_value_candidates<'t>(flag: &'t Flag<'t>, typed: &str) -> Vec<Candidate<'t>> {
+    let mut candidates = Vec::new();
+    let mut seen = HashSet::new();
+    for &value in flag.accepted_values {
+        if accepts_detached_flag_value(flag, value.as_bytes())
+            && value.starts_with(typed)
+            && protocol_safe_value(value)
+        {
+            push_owned_candidate(&mut candidates, &mut seen, "", value.to_owned(), None);
+        }
+    }
+    candidates.sort_by(|left, right| left.value.cmp(&right.value));
+    candidates
+}
+
+/// Adds finite positional values that still route to the positional under raw argv semantics.
+fn push_positional_values<'t>(
+    candidates: &mut Vec<Candidate<'t>>,
+    seen: &mut HashSet<String>,
+    position: &Position<'t>,
+    arg: &'t Arg<'t>,
+    typed: &str,
+) {
+    for &value in arg.accepted_values {
+        if positional_value_reaches_arg(position, arg, value)
+            && value.starts_with(typed)
+            && protocol_safe_value(value)
+        {
+            push_owned_candidate(candidates, seen, "", value.to_owned(), None);
+        }
+    }
+}
+
+/// Reports whether one finite spelling would bind to `arg` instead of being parsed structurally.
+fn positional_value_reaches_arg(position: &Position<'_>, arg: &Arg<'_>, value: &str) -> bool {
+    if position.flags_stopped {
+        return true;
+    }
+
+    if position.command.subcommands.iter().any(|command| command.aliases.contains(&value)) {
+        return false;
+    }
+
+    let bytes = value.as_bytes();
+    !matches!(bytes, [b'-', rest @ ..] if !rest.is_empty())
+        || routes_negative_number_to_arg(position.command, &position.ancestors, Some(arg), bytes)
 }
 
 /// Builds finite value candidates using one typed value prefix and insertion prefix.
@@ -802,6 +853,75 @@ mod tests {
     fn finite_values_respect_nonrepeatable_and_conflict_state() {
         assert!(values("tool get --mode fast --mode=").is_empty());
         assert!(values("tool get --raw --mode=").is_empty());
+    }
+
+    #[test]
+    fn detached_finite_values_respect_flag_hyphen_policy() {
+        let strict = Flag { accepted_values: &["-fast", "slow"], ..Flag::VALUE };
+        assert_eq!(
+            detached_value_candidates(&strict, "")
+                .into_iter()
+                .map(|candidate| candidate.value)
+                .collect::<Vec<_>>(),
+            vec!["slow"],
+        );
+        assert_eq!(
+            value_candidates(strict.accepted_values, "-", "--mode="),
+            vec![Candidate { value: "--mode=-fast".into(), description: None }]
+        );
+
+        let loose = Flag { allow_hyphen_values: true, ..strict };
+        assert_eq!(
+            detached_value_candidates(&loose, "")
+                .into_iter()
+                .map(|candidate| candidate.value)
+                .collect::<Vec<_>>(),
+            vec!["-fast", "slow"],
+        );
+    }
+
+    #[test]
+    fn positional_finite_values_follow_raw_flag_and_alias_routing() {
+        use crate::command::model::Command as RuntimeCommand;
+
+        static ARG: Arg<'static> = Arg {
+            name: "mode",
+            required: false,
+            accepted_values: &["-fast", "show", "slow"],
+            ..Arg::REQUIRED
+        };
+        static CHILD: RuntimeCommand<'static> =
+            RuntimeCommand { name: "get", aliases: &["show"], ..RuntimeCommand::EMPTY };
+        static ROOT: RuntimeCommand<'static> = RuntimeCommand {
+            name: "tool",
+            args: &[&ARG],
+            subcommands: &[&CHILD],
+            ..RuntimeCommand::EMPTY
+        };
+        let position = Position {
+            command: &ROOT,
+            ancestors: Vec::new(),
+            next_arg: Some(&ARG),
+            flags_stopped: false,
+            awaiting_value: None,
+            given: HashSet::new(),
+        };
+        let mut candidates = Vec::new();
+        let mut seen = HashSet::new();
+        push_positional_values(&mut candidates, &mut seen, &position, &ARG, "");
+        assert_eq!(
+            candidates.into_iter().map(|candidate| candidate.value).collect::<Vec<_>>(),
+            vec!["slow"],
+        );
+
+        let stopped = Position { flags_stopped: true, ..position };
+        let mut candidates = Vec::new();
+        let mut seen = HashSet::new();
+        push_positional_values(&mut candidates, &mut seen, &stopped, &ARG, "-");
+        assert_eq!(
+            candidates.into_iter().map(|candidate| candidate.value).collect::<Vec<_>>(),
+            vec!["-fast"],
+        );
     }
 
     #[test]
