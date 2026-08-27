@@ -20,6 +20,7 @@ mod tests {
         "flatten",
         "structured_help",
         "subcommands",
+        "value_enum",
         "version",
     ];
 
@@ -63,6 +64,15 @@ mod tests {
             stdout.contains("Usage:"),
             "{name} --help succeeded without rendering Argx help:\n{stdout}",
         );
+
+        if name == "value_enum" {
+            assert!(
+                stdout.contains(
+                    "Output format. [possible values: human-readable, json, json-lines]",
+                ),
+                "value_enum --help omitted the derived vocabulary:\n{stdout}",
+            );
+        }
     }
 
     fn assert_advertised_behavior(name: &str, binary: &Path) {
@@ -111,6 +121,10 @@ mod tests {
             "subcommands" => {
                 command.args(["add", "hello", "--force"]);
                 ("", "force add: hello\n")
+            }
+            "value_enum" => {
+                command.args(["--output", "json-lines"]);
+                ("", "JSON Lines output\n")
             }
             "version" => {
                 command.arg("--version");
