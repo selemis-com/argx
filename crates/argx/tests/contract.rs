@@ -483,14 +483,8 @@ mod tests {
         let expected = TypeContractValue::Reference { index: 0 };
         assert_eq!(option_type, &expected);
         assert_eq!(positional_type, &expected);
-        assert_eq!(
-            format.accepted_values,
-            [String::from("json"), String::from("text")],
-        );
-        assert_eq!(
-            fallback.accepted_values,
-            [String::from("json"), String::from("text")],
-        );
+        assert_eq!(format.accepted_values, [String::from("json"), String::from("text")],);
+        assert_eq!(fallback.accepted_values, [String::from("json"), String::from("text")],);
 
         let json = contract.to_json().expect("typed invocation contract should serialize");
         assert!(json.contains(r#""acceptedValues":["json","text"]"#));
