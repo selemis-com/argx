@@ -65,6 +65,9 @@ pub(crate) fn contract(input: &DeriveInput) -> syn::Result<TokenStream> {
                 )
             }
         }
+
+        #[doc(hidden)]
+        impl #impl_generics #facade::ContractType for #ident #ty_generics #where_clause {}
     })
 }
 

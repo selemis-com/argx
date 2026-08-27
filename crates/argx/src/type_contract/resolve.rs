@@ -12,8 +12,8 @@ use std::{
 };
 
 use crate::type_contract::{
-    PrimitiveType, TYPE_CONTRACT_VERSION, TypeContract, TypeContractValue, TypeDefinition,
-    TypeDefinitionKind,
+    ContractType, PrimitiveType, TYPE_CONTRACT_VERSION, TypeContract, TypeContractValue,
+    TypeDefinition, TypeDefinitionKind,
 };
 
 /// Rust type identity used only while deduplicating named definitions in one discovery run.
@@ -204,6 +204,8 @@ macro_rules! primitive_contract {
                 TypeKey::new::<$key>(Vec::new(), Vec::new())
             }
         }
+
+        impl ContractType for $ty {}
     };
 }
 
@@ -234,6 +236,8 @@ impl TypeContractSource for () {
     }
 }
 
+impl ContractType for () {}
+
 impl TypeContractSource for Infallible {
     fn resolve_type(resolver: &mut TypeResolver) -> TypeContractValue {
         resolver.named(Self::type_key(), "Infallible", None, |_resolver| TypeDefinitionKind::Enum {
@@ -245,6 +249,8 @@ impl TypeContractSource for Infallible {
         TypeKey::new::<InfallibleKey>(Vec::new(), Vec::new())
     }
 }
+
+impl ContractType for Infallible {}
 
 /// Implements one semantic leaf contract while preserving its exact Rust form in private identity.
 macro_rules! leaf_contract {
@@ -258,6 +264,8 @@ macro_rules! leaf_contract {
                 TypeKey::new::<$key>(Vec::new(), Vec::new())
             }
         }
+
+        impl ContractType for $ty {}
     };
 }
 
@@ -281,6 +289,12 @@ where
     }
 }
 
+impl<T> ContractType for Option<T>
+where
+    T: ContractType,
+{
+}
+
 /// Implements one standard-library sequence container.
 macro_rules! sequence_contract {
     ($container:ident, $key:ty) => {
@@ -295,6 +309,12 @@ macro_rules! sequence_contract {
             fn type_key() -> TypeKey {
                 TypeKey::new::<$key>(vec![T::type_key()], Vec::new())
             }
+        }
+
+        impl<T> ContractType for $container<T>
+        where
+            T: ContractType,
+        {
         }
     };
 }
@@ -316,6 +336,12 @@ where
     }
 }
 
+impl<T> ContractType for [T]
+where
+    T: ContractType,
+{
+}
+
 impl<T, const N: usize> TypeContractSource for [T; N]
 where
     T: TypeContractSource,
@@ -327,6 +353,12 @@ where
     fn type_key() -> TypeKey {
         TypeKey::new::<ArrayKey>(vec![T::type_key()], vec![const_key(&N)])
     }
+}
+
+impl<T, const N: usize> ContractType for [T; N]
+where
+    T: ContractType,
+{
 }
 
 impl<T> TypeContractSource for BTreeSet<T>
@@ -342,6 +374,12 @@ where
     }
 }
 
+impl<T> ContractType for BTreeSet<T>
+where
+    T: ContractType,
+{
+}
+
 impl<T, S> TypeContractSource for HashSet<T, S>
 where
     T: TypeContractSource,
@@ -354,6 +392,13 @@ where
     fn type_key() -> TypeKey {
         TypeKey::new::<HashSetKey>(vec![T::type_key(), TypeKey::opaque::<S>()], Vec::new())
     }
+}
+
+impl<T, S> ContractType for HashSet<T, S>
+where
+    T: ContractType,
+    S: 'static,
+{
 }
 
 impl<K, V> TypeContractSource for BTreeMap<K, V>
@@ -371,6 +416,13 @@ where
     fn type_key() -> TypeKey {
         TypeKey::new::<BTreeMapKey>(vec![K::type_key(), V::type_key()], Vec::new())
     }
+}
+
+impl<K, V> ContractType for BTreeMap<K, V>
+where
+    K: ContractType,
+    V: ContractType,
+{
 }
 
 impl<K, V, S> TypeContractSource for HashMap<K, V, S>
@@ -394,6 +446,14 @@ where
     }
 }
 
+impl<K, V, S> ContractType for HashMap<K, V, S>
+where
+    K: ContractType,
+    V: ContractType,
+    S: 'static,
+{
+}
+
 impl<T> TypeContractSource for &T
 where
     T: TypeContractSource + ?Sized,
@@ -407,6 +467,12 @@ where
     }
 }
 
+impl<T> ContractType for &T
+where
+    T: ContractType + ?Sized,
+{
+}
+
 impl<T> TypeContractSource for &mut T
 where
     T: TypeContractSource + ?Sized,
@@ -418,6 +484,12 @@ where
     fn type_key() -> TypeKey {
         TypeKey::new::<MutableReferenceKey>(vec![T::type_key()], Vec::new())
     }
+}
+
+impl<T> ContractType for &mut T
+where
+    T: ContractType + ?Sized,
+{
 }
 
 /// Implements an ownership-only wrapper as semantically transparent.
@@ -434,6 +506,12 @@ macro_rules! transparent_contract {
             fn type_key() -> TypeKey {
                 TypeKey::new::<$key>(vec![T::type_key()], Vec::new())
             }
+        }
+
+        impl<T> ContractType for $wrapper<T>
+        where
+            T: ContractType + ?Sized,
+        {
         }
     };
 }
@@ -458,6 +536,12 @@ macro_rules! tuple_contract {
             fn type_key() -> TypeKey {
                 TypeKey::new::<TupleKey>(vec![$($type::type_key()),+], Vec::new())
             }
+        }
+
+        impl<$($type),+> ContractType for ($($type,)+)
+        where
+            $($type: ContractType,)+
+        {
         }
     };
 }

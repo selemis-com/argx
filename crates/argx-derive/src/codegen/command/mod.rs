@@ -163,6 +163,11 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
             impl #impl_generics #facade::__private::InvocableCommandContract
                 for #ident #ty_generics #where_clause
             {}
+
+            #[doc(hidden)]
+            impl #impl_generics #facade::InvocableContractCommand
+                for #ident #ty_generics #where_clause
+            {}
         }
     });
 

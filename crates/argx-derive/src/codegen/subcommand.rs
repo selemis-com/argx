@@ -444,10 +444,20 @@ fn semantic_projection(subcommand: &model::Subcommand, facade: &TokenStream) -> 
 
         if let Some(ty) = &variant.binding.payload {
             shape_definitions.push(quote!(type #associated = #ty;));
+            bounds.push(quote!(
+                <T as #shape_ident>::#associated: #facade::ContractCommand
+            ));
+            arms.push(quote! {
+                #index => <<T as #shape_ident>::#associated as
+                    #facade::__private::ResolveCommandTypeContract>::contract_types(
+                        rest,
+                        resolver,
+                    ),
+            });
         } else {
             let variant_ident = &variant.binding.ident;
             let marker = format_ident!(
-                "__ArgxUnitCommand{}{}RequiresArgsPayloadH{}",
+                "{}{}NeedsArgsPayloadForContractDiscoveryH{}",
                 suffix,
                 variant_ident,
                 declaration,
@@ -459,19 +469,12 @@ fn semantic_projection(subcommand: &model::Subcommand, facade: &TokenStream) -> 
                 struct #marker;
             });
             shape_definitions.push(quote!(type #associated = #marker;));
+            bounds.push(quote!(
+                <T as #shape_ident>::#associated:
+                    #facade::UnitSubcommandContractRequiresArgsPayload
+            ));
+            arms.push(quote!(#index => ::std::option::Option::None,));
         }
-
-        bounds.push(quote!(
-            <T as #shape_ident>::#associated:
-                #facade::__private::ResolveCommandTypeContract
-        ));
-        arms.push(quote! {
-            #index => <<T as #shape_ident>::#associated as
-                #facade::__private::ResolveCommandTypeContract>::contract_types(
-                    rest,
-                    resolver,
-                ),
-        });
     }
 
     SemanticProjection {

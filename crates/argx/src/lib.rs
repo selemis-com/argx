@@ -402,6 +402,39 @@ pub use type_contract::{
     TypeDefinition, TypeDefinitionKind, TypeFieldContract, TypeVariantContract, TypeVariantKind,
 };
 
+/// Compiler-facing marker for command trees that can produce a complete machine contract.
+///
+/// This trait is implemented by Argx's generated contract projection and is not an application
+/// extension point. It is public so Rust diagnostics can describe contract-discovery failures in
+/// Argx vocabulary instead of exposing `__private` projection traits.
+#[doc(hidden)]
+pub trait ContractCommand: __private::ResolveCommandTypeContract {}
+
+impl<T> ContractCommand for T where T: __private::ResolveCommandTypeContract {}
+
+/// Compiler-facing marker for command declarations that are directly invocable.
+///
+/// This trait is implemented from generated command metadata and is not an application extension
+/// point. It exists at the facade boundary to keep execution-contract diagnostics user-facing.
+#[doc(hidden)]
+pub trait InvocableContractCommand: __private::InvocableCommandContract {}
+
+/// Diagnostic marker for unit subcommands that cannot participate in machine-contract discovery.
+///
+/// Unit variants have no payload type to serve as an execution-contract identity. This trait has
+/// no implementations; generated projections use it only so the compiler explains that an `Args`
+/// payload is required when contract discovery reaches a unit subcommand declaration.
+#[doc(hidden)]
+pub trait UnitSubcommandContractRequiresArgsPayload {}
+
+/// Generated execution-contract source attached by `#[argx::contract(CommandType)]`.
+///
+/// Applications should use the attribute macro rather than implementing this trait directly. It is
+/// re-exported at the facade boundary so coherence and trait-bound diagnostics do not mention
+/// Argx's private generated-code module.
+#[doc(hidden)]
+pub use derive_support::traits::ExecutionContractSource;
+
 // Generated absolute paths must also work when a derive is used inside this crate. Integration
 // targets already receive this name through Cargo; the library target needs the self alias.
 #[expect(
@@ -632,7 +665,7 @@ pub trait Parser: Sized + __private::CommandArgs {
     /// Returns [`ContractError::UnknownCommand`] when one requested path segment does not resolve.
     fn contract(request: ContractRequest) -> Result<Contract, ContractError>
     where
-        Self: __private::ResolveCommandTypeContract,
+        Self: ContractCommand,
     {
         contract::discover::<Self>(request)
     }

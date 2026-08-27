@@ -53,7 +53,7 @@ error: #[argx::contract(CommandType)] can only be applied to a free function
             "missing_execution_contract",
             "argx",
             snapbox::str![[r#"
-error[E0277]: the trait bound `Cli: argx::__private::ResolveCommandTypeContract` is not satisfied
+error[E0277]: the trait bound `Cli: argx::ContractCommand` is not satisfied
 
 "#]],
         );
@@ -65,7 +65,7 @@ error[E0277]: the trait bound `Cli: argx::__private::ResolveCommandTypeContract`
             "duplicate_execution_contract",
             "argx",
             snapbox::str![[r#"
-error[E0119]: conflicting implementations of trait `argx::__private::ExecutionContractSource` for type `Command`
+error[E0119]: conflicting implementations of trait `ExecutionContractSource` for type `Command`
 
 "#]],
         );
@@ -77,7 +77,7 @@ error[E0119]: conflicting implementations of trait `argx::__private::ExecutionCo
             "non_invocable_execution_contract",
             "argx",
             snapbox::str![[r#"
-error[E0277]: the trait bound `GroupArgs: argx::__private::InvocableCommandContract` is not satisfied
+error[E0277]: the trait bound `GroupArgs: argx::InvocableContractCommand` is not satisfied
 
 "#]],
         );
@@ -89,7 +89,7 @@ error[E0277]: the trait bound `GroupArgs: argx::__private::InvocableCommandContr
             "uncontractable_execution_result",
             "argx",
             snapbox::str![[r#"
-error[E0277]: the trait bound `Output: argx::__private::TypeContractSource` is not satisfied
+error[E0277]: the trait bound `Output: ContractType` is not satisfied
 
 "#]],
         );
@@ -101,7 +101,7 @@ error[E0277]: the trait bound `Output: argx::__private::TypeContractSource` is n
             "unit_subcommand_execution_contract",
             "argx",
             snapbox::str![[r#"
-error[E0277]: the trait bound `__ArgxUnitCommandCommandsStatusRequiresArgsPayload[..]: argx::__private::CommandTypeContract` is not satisfied
+error[E0277]: the trait bound `CommandsStatusNeedsArgsPayloadForContractDiscoveryH[..]: UnitSubcommandContractRequiresArgsPayload` is not satisfied
 
 "#]],
         );

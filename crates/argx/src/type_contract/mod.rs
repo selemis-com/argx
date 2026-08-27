@@ -268,5 +268,3 @@ pub trait ContractType: crate::__private::TypeContractSource {
         crate::__private::discover_type_contract::<Self>()
     }
 }
-
-impl<T> ContractType for T where T: crate::__private::TypeContractSource + ?Sized {}

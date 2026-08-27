@@ -82,7 +82,7 @@ pub(crate) fn contract(attribute: TokenStream, input: TokenStream) -> syn::Resul
         #function
 
         #(#conditional)*
-        impl #facade::__private::ExecutionContractSource for #command_type {
+        impl #facade::ExecutionContractSource for #command_type {
             fn resolve_execution(
                 resolver: &mut #facade::__private::TypeResolver,
             ) -> #facade::__private::CommandExecutionTypes {

@@ -336,13 +336,13 @@ pub(super) fn semantic_projection(
 
                 impl<T> #facade::__private::ResolveExecutionContract for #execution_ident<T>
                 where
-                    T: #facade::__private::ExecutionContractSource,
+                    T: #facade::ExecutionContractSource,
                 {
                     fn resolve(
                         resolver: &mut #facade::__private::TypeResolver,
                     ) -> ::std::option::Option<#facade::__private::CommandExecutionTypes> {
                         ::std::option::Option::Some(
-                            <T as #facade::__private::ExecutionContractSource>::resolve_execution(
+                            <T as #facade::ExecutionContractSource>::resolve_execution(
                                 resolver,
                             ),
                         )
