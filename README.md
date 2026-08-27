@@ -23,6 +23,10 @@ machine-readable contracts.
 cargo add argx
 ```
 
+Argx intentionally has a small, focused feature set. It does not aim for feature parity or API
+compatibility with Clap or Usage, and diverges from their APIs where a different design better fits
+Argx. Features are added selectively as they are needed.
+
 Full API documentation and behavioral details are available on
 [docs.rs/argx](https://docs.rs/argx/latest/argx/).
 
