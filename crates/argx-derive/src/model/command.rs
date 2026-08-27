@@ -114,7 +114,7 @@ impl Field {
         })?;
         let attributes = attrs::field(&field.attrs)?;
         let name = ident_name(&ident);
-        let mut binding = FieldBinding {
+        let binding = FieldBinding {
             span: ident.span(),
             ident,
             ty: field.ty.clone(),
@@ -123,182 +123,88 @@ impl Field {
             default: None,
         };
 
-        if attributes.flatten && attributes.subcommand {
-            return Err(syn::Error::new(
-                binding.span,
-                "`flatten` and `subcommand` cannot be combined",
-            ));
-        }
-        if (attributes.flatten || attributes.subcommand)
-            && (!attributes.requires.is_empty() || !attributes.conflicts.is_empty())
-        {
-            return Err(syn::Error::new(
-                binding.span,
-                "`requires` and `conflicts` are only valid on argument fields",
-            ));
-        }
-
-        // Structural fields never bind CLI values themselves. Reject value metadata before any
-        // type-shape inference so unsupported combinations cannot leak into later projections.
+        validate_structural_role(&attributes, binding.span)?;
         if attributes.subcommand {
-            if attributes.long.is_some()
-                || attributes.short.is_some()
-                || !attributes.aliases.is_empty()
-                || attributes.global
-                || attributes.env.is_some()
-                || attributes.default.is_some()
-                || attributes.allow_hyphen_values
-                || attributes.allow_negative_numbers
-                || attributes.value_enum
-                || attributes.help.is_some()
-            {
-                return Err(syn::Error::new(
-                    binding.span,
-                    "`subcommand` cannot be combined with flag, value, or help attributes",
-                ));
-            }
-            if peel_option(&binding.ty).is_some() {
-                return Err(syn::Error::new_spanned(
-                    &binding.ty,
-                    "`subcommand` does not support `Option<T>`; hold the Subcommand enum directly",
-                ));
-            }
-            if peel_vec(&binding.ty).is_some() {
-                return Err(syn::Error::new_spanned(
-                    &binding.ty,
-                    "`subcommand` does not support collection wrappers",
-                ));
-            }
-            return Ok(Self { binding, semantics: FieldSemantics::Subcommand, help_heading: None });
+            return Self::subcommand_field(binding, &attributes);
         }
-
         if attributes.flatten {
-            if attributes.long.is_some()
-                || attributes.short.is_some()
-                || !attributes.aliases.is_empty()
-                || attributes.global
-                || attributes.env.is_some()
-                || attributes.default.is_some()
-                || attributes.allow_hyphen_values
-                || attributes.allow_negative_numbers
-                || attributes.value_enum
-                || attributes.help.is_some()
-            {
-                return Err(syn::Error::new(
-                    binding.span,
-                    "`flatten` cannot be combined with flag, value, or help attributes",
-                ));
-            }
-            if peel_option(&binding.ty).is_some() {
-                return Err(syn::Error::new_spanned(
-                    &binding.ty,
-                    "`flatten` does not support `Option<T>`; hold the Args struct directly",
-                ));
-            }
-            if peel_vec(&binding.ty).is_some() {
-                return Err(syn::Error::new_spanned(
-                    &binding.ty,
-                    "`flatten` does not support collection wrappers; hold one Args struct directly",
-                ));
-            }
+            return Self::flatten_field(field, binding, &attributes);
+        }
+        Self::argument_field(field, binding, attributes)
+    }
 
-            return Ok(Self {
-                binding,
-                semantics: FieldSemantics::Flatten,
-                help_heading: attrs::doc_summary(&field.attrs),
-            });
+    /// Normalizes one field that selects a derived `Subcommand` declaration.
+    fn subcommand_field(
+        binding: FieldBinding,
+        attributes: &attrs::FieldAttrs,
+    ) -> syn::Result<Self> {
+        validate_structural_metadata(
+            attributes,
+            binding.span,
+            "`subcommand` cannot be combined with flag, value, or help attributes",
+        )?;
+        if peel_option(&binding.ty).is_some() {
+            return Err(syn::Error::new_spanned(
+                &binding.ty,
+                "`subcommand` does not support `Option<T>`; hold the Subcommand enum directly",
+            ));
+        }
+        if peel_vec(&binding.ty).is_some() {
+            return Err(syn::Error::new_spanned(
+                &binding.ty,
+                "`subcommand` does not support collection wrappers",
+            ));
+        }
+        Ok(Self { binding, semantics: FieldSemantics::Subcommand, help_heading: None })
+    }
+
+    /// Normalizes one field that composes a derived `Args` declaration inline.
+    fn flatten_field(
+        field: &syn::Field,
+        binding: FieldBinding,
+        attributes: &attrs::FieldAttrs,
+    ) -> syn::Result<Self> {
+        validate_structural_metadata(
+            attributes,
+            binding.span,
+            "`flatten` cannot be combined with flag, value, or help attributes",
+        )?;
+        if peel_option(&binding.ty).is_some() {
+            return Err(syn::Error::new_spanned(
+                &binding.ty,
+                "`flatten` does not support `Option<T>`; hold the Args struct directly",
+            ));
+        }
+        if peel_vec(&binding.ty).is_some() {
+            return Err(syn::Error::new_spanned(
+                &binding.ty,
+                "`flatten` does not support collection wrappers; hold one Args struct directly",
+            ));
         }
 
-        // Ordinary fields are classified once into cardinality, command-line kind, and conversion
-        // strategy. Code generation consumes these facts directly rather than repeating type tests.
+        Ok(Self {
+            binding,
+            semantics: FieldSemantics::Flatten,
+            help_heading: attrs::doc_summary(&field.attrs),
+        })
+    }
+
+    /// Normalizes one ordinary flag or positional field after structural roles are excluded.
+    fn argument_field(
+        field: &syn::Field,
+        mut binding: FieldBinding,
+        mut attributes: attrs::FieldAttrs,
+    ) -> syn::Result<Self> {
+        // Preserve validation order: shape errors precede spelling errors, which precede value
+        // policy errors. These diagnostics are part of the derive's user-facing contract.
         let shape = Shape::from_type(&binding.ty);
         validate_value_shape(&binding.ty, shape, binding.span)?;
+        let kind = argument_kind(&binding, &mut attributes)?;
+        validate_argument_value_policies(&attributes, &kind, shape, binding.span)?;
+        let env = argument_env(&attributes, &kind, shape, binding.span)?;
+        validate_argument_default(&attributes, &kind, shape, binding.span)?;
 
-        let named = attributes.long.is_some() || attributes.short.is_some();
-        if !named && !attributes.aliases.is_empty() {
-            return Err(syn::Error::new(
-                binding.span,
-                "`alias` and `aliases` are only valid on named flags",
-            ));
-        }
-        let kind = if named {
-            let longs = attributes
-                .long
-                .map(|long| match long {
-                    attrs::Inferred::Infer => case::to_kebab(&binding.name),
-                    attrs::Inferred::Explicit(value) => value,
-                })
-                .into_iter()
-                .collect();
-            let shorts = attributes
-                .short
-                .map(|short| match short {
-                    attrs::Inferred::Infer => infer_short(&binding.name, binding.span),
-                    attrs::Inferred::Explicit(value) => validate_short(value, binding.span),
-                })
-                .transpose()?
-                .into_iter()
-                .collect();
-            ArgumentKind::Flag { longs, aliases: attributes.aliases, shorts }
-        } else {
-            ArgumentKind::Positional
-        };
-
-        if attributes.allow_hyphen_values && matches!(&kind, ArgumentKind::Positional) {
-            return Err(syn::Error::new(
-                binding.span,
-                "`allow_hyphen_values` is only valid on named flags",
-            ));
-        }
-        if attributes.global && matches!(&kind, ArgumentKind::Positional) {
-            return Err(syn::Error::new(binding.span, "`global` is only valid on named flags"));
-        }
-        if (attributes.allow_hyphen_values || attributes.allow_negative_numbers)
-            && shape == Shape::Bool
-        {
-            return Err(syn::Error::new(
-                binding.span,
-                "value policies are not valid on bool fields",
-            ));
-        }
-        if attributes.env.is_some()
-            && (!matches!(&kind, ArgumentKind::Flag { .. })
-                || matches!(shape, Shape::Bool | Shape::Many))
-        {
-            return Err(syn::Error::new(
-                binding.span,
-                "`env` is only supported on scalar value-taking flags",
-            ));
-        }
-        let env = attributes
-            .env
-            .map(|env| {
-                validate_env_name(&env.value(), env.span())?;
-                Ok::<_, syn::Error>(env.value())
-            })
-            .transpose()?;
-        if attributes.default.is_some()
-            && (!matches!(&kind, ArgumentKind::Flag { .. })
-                || matches!(shape, Shape::Bool | Shape::Many))
-        {
-            return Err(syn::Error::new(
-                binding.span,
-                "`default` is only supported on scalar value-taking flags",
-            ));
-        }
-
-        let diagnostic = match &kind {
-            ArgumentKind::Flag { longs, shorts, .. } => longs.first().map_or_else(
-                || {
-                    shorts.first().map_or_else(
-                        || binding.name.clone(),
-                        |short| format!("-{}", char::from(*short)),
-                    )
-                },
-                |long| format!("--{long}"),
-            ),
-            ArgumentKind::Positional => binding.name.clone(),
-        };
+        let diagnostic = argument_diagnostic(&binding, &kind);
         let has_default = attributes.default.is_some();
         let switch = matches!(&kind, ArgumentKind::Flag { .. }) && shape == Shape::Bool;
         if attributes.value_enum && switch {
@@ -356,6 +262,159 @@ impl Field {
     /// Returns normalized typed-value binding information.
     pub(crate) const fn value_binding(&self) -> &ValueBinding {
         self.binding.value.as_ref().expect("composed fields and switches do not bind typed values")
+    }
+}
+
+/// Rejects contradictory structural roles and relationship metadata before role-specific checks.
+fn validate_structural_role(attributes: &attrs::FieldAttrs, span: Span) -> syn::Result<()> {
+    if attributes.flatten && attributes.subcommand {
+        return Err(syn::Error::new(span, "`flatten` and `subcommand` cannot be combined"));
+    }
+    if (attributes.flatten || attributes.subcommand)
+        && (!attributes.requires.is_empty() || !attributes.conflicts.is_empty())
+    {
+        return Err(syn::Error::new(
+            span,
+            "`requires` and `conflicts` are only valid on argument fields",
+        ));
+    }
+    Ok(())
+}
+
+/// Rejects ordinary argument metadata on a structural `flatten` or `subcommand` field.
+fn validate_structural_metadata(
+    attributes: &attrs::FieldAttrs,
+    span: Span,
+    message: &str,
+) -> syn::Result<()> {
+    let has_argument_metadata = [
+        attributes.long.is_some(),
+        attributes.short.is_some(),
+        !attributes.aliases.is_empty(),
+        attributes.global,
+        attributes.env.is_some(),
+        attributes.default.is_some(),
+        attributes.allow_hyphen_values,
+        attributes.allow_negative_numbers,
+        attributes.value_enum,
+        attributes.help.is_some(),
+    ]
+    .into_iter()
+    .any(|present| present);
+    if has_argument_metadata {
+        return Err(syn::Error::new(span, message));
+    }
+    Ok(())
+}
+
+/// Classifies one ordinary field as a named flag or positional and normalizes its spellings.
+fn argument_kind(
+    binding: &FieldBinding,
+    attributes: &mut attrs::FieldAttrs,
+) -> syn::Result<ArgumentKind> {
+    let named = attributes.long.is_some() || attributes.short.is_some();
+    if !named && !attributes.aliases.is_empty() {
+        return Err(syn::Error::new(
+            binding.span,
+            "`alias` and `aliases` are only valid on named flags",
+        ));
+    }
+    if !named {
+        return Ok(ArgumentKind::Positional);
+    }
+
+    let longs = attributes
+        .long
+        .take()
+        .map(|long| match long {
+            attrs::Inferred::Infer => case::to_kebab(&binding.name),
+            attrs::Inferred::Explicit(value) => value,
+        })
+        .into_iter()
+        .collect();
+    let shorts = attributes
+        .short
+        .take()
+        .map(|short| match short {
+            attrs::Inferred::Infer => infer_short(&binding.name, binding.span),
+            attrs::Inferred::Explicit(value) => validate_short(value, binding.span),
+        })
+        .transpose()?
+        .into_iter()
+        .collect();
+    let aliases = std::mem::take(&mut attributes.aliases);
+    Ok(ArgumentKind::Flag { longs, aliases, shorts })
+}
+
+/// Validates value-consumption policies whose legality depends on argument kind and shape.
+fn validate_argument_value_policies(
+    attributes: &attrs::FieldAttrs,
+    kind: &ArgumentKind,
+    shape: Shape,
+    span: Span,
+) -> syn::Result<()> {
+    if attributes.allow_hyphen_values && matches!(kind, ArgumentKind::Positional) {
+        return Err(syn::Error::new(span, "`allow_hyphen_values` is only valid on named flags"));
+    }
+    if attributes.global && matches!(kind, ArgumentKind::Positional) {
+        return Err(syn::Error::new(span, "`global` is only valid on named flags"));
+    }
+    if (attributes.allow_hyphen_values || attributes.allow_negative_numbers) && shape == Shape::Bool
+    {
+        return Err(syn::Error::new(span, "value policies are not valid on bool fields"));
+    }
+    Ok(())
+}
+
+/// Normalizes an environment fallback after validating that the field can consume one value.
+fn argument_env(
+    attributes: &attrs::FieldAttrs,
+    kind: &ArgumentKind,
+    shape: Shape,
+    span: Span,
+) -> syn::Result<Option<String>> {
+    let Some(env) = attributes.env.as_ref() else {
+        return Ok(None);
+    };
+    if !matches!(kind, ArgumentKind::Flag { .. }) || matches!(shape, Shape::Bool | Shape::Many) {
+        return Err(syn::Error::new(span, "`env` is only supported on scalar value-taking flags"));
+    }
+    validate_env_name(&env.value(), env.span())?;
+    Ok(Some(env.value()))
+}
+
+/// Validates that a typed default is attached only to a scalar value-taking flag.
+fn validate_argument_default(
+    attributes: &attrs::FieldAttrs,
+    kind: &ArgumentKind,
+    shape: Shape,
+    span: Span,
+) -> syn::Result<()> {
+    if attributes.default.is_some()
+        && (!matches!(kind, ArgumentKind::Flag { .. })
+            || matches!(shape, Shape::Bool | Shape::Many))
+    {
+        return Err(syn::Error::new(
+            span,
+            "`default` is only supported on scalar value-taking flags",
+        ));
+    }
+    Ok(())
+}
+
+/// Chooses the canonical spelling used by parser diagnostics for one normalized argument.
+fn argument_diagnostic(binding: &FieldBinding, kind: &ArgumentKind) -> String {
+    match kind {
+        ArgumentKind::Flag { longs, shorts, .. } => longs.first().map_or_else(
+            || {
+                shorts.first().map_or_else(
+                    || binding.name.clone(),
+                    |short| format!("-{}", char::from(*short)),
+                )
+            },
+            |long| format!("--{long}"),
+        ),
+        ArgumentKind::Positional => binding.name.clone(),
     }
 }
 

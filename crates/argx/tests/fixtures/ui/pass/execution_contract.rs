@@ -58,6 +58,15 @@ fn generic_u32_handler(_command: GenericCommand<u32>) -> Result<GenericOutput<u3
     Ok(GenericOutput { value: 0 })
 }
 
+#[derive(argx::Parser)]
+struct DecoratedCommand;
+
+#[argx::contract(DecoratedCommand)]
+#[cfg_attr(all(), allow(dead_code))]
+fn decorated_handler() -> Result<(), ()> {
+    Ok(())
+}
+
 #[derive(argx::Args)]
 struct ConditionalCommand;
 
@@ -78,4 +87,5 @@ fn main() {
     let _ = ConstCommand::contract(argx::ContractRequest::root());
     let _ = GenericCommand::<u16>::contract(argx::ContractRequest::root());
     let _ = GenericCommand::<u32>::contract(argx::ContractRequest::root());
+    let _ = DecoratedCommand::contract(argx::ContractRequest::root());
 }

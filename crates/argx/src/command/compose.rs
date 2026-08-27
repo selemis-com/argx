@@ -319,10 +319,10 @@ const fn str_eq(left: &str, right: &str) -> bool {
 mod tests {
     use super::{
         action_flag_spellings_disjoint, argument_key_by_name, command_keys_unique, concat_args,
-        concat_constraints, concat_flags, flag_spellings_unique, positional_layout_valid,
-        table_len,
+        concat_constraints, concat_flags, concat_help_groups, flag_spellings_unique,
+        positional_layout_valid, table_len,
     };
-    use crate::__private::{Arg, Constraint, ConstraintKind, Flag, HELP_ACTION};
+    use crate::__private::{Arg, Constraint, ConstraintKind, Flag, HELP_ACTION, HelpGroup};
 
     static ALPHA: Flag<'static> = Flag {
         key: 1,
@@ -350,6 +350,14 @@ mod tests {
         const CONFLICTS: Constraint =
             Constraint { kind: ConstraintKind::Conflicts, source: 2, target: 3 };
         assert_eq!(concat_constraints::<2>(&[&[REQUIRES], &[CONFLICTS]]), [REQUIRES, CONFLICTS],);
+
+        static PRIMARY_HELP: HelpGroup<'static> =
+            HelpGroup { heading: "Primary", flags: &[&ALPHA], args: &[] };
+        static SECONDARY_HELP: HelpGroup<'static> =
+            HelpGroup { heading: "Secondary", flags: &[&BETA], args: &[&INPUT] };
+        let help_groups: &[&[&HelpGroup<'static>]] = &[&[&PRIMARY_HELP], &[], &[&SECONDARY_HELP]];
+        assert_eq!(table_len(help_groups), 2);
+        assert_eq!(concat_help_groups::<2>(help_groups), [&PRIMARY_HELP, &SECONDARY_HELP],);
     }
 
     #[test]

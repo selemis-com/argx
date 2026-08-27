@@ -371,6 +371,17 @@ mod tests {
             .expect("flattened type must not depend on the containing const parameter");
         assert!(error.to_string().contains("`flatten` cannot depend"));
 
+        let const_expression_input: DeriveInput = parse_quote! {
+            struct Cli<const N: usize> {
+                #[argx(flatten)]
+                shared: Shared<{ N }>,
+            }
+        };
+        let error = Command::from_input(&const_expression_input, true)
+            .err()
+            .expect("flattened const expressions must detect containing const parameters");
+        assert!(error.to_string().contains("`flatten` cannot depend"));
+
         let subcommand_lifetime_input: DeriveInput = parse_quote! {
             enum Commands<'a> {
                 Run(Shared<'a>),
