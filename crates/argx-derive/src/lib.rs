@@ -2,8 +2,9 @@
 //!
 //! The derive crate is intentionally a compile-time frontend. It parses attributes and Rust
 //! documentation into one normalized semantic model, validates every invariant visible to the
-//! current expansion, and emits static runtime/contract tables plus typed binding code. Runtime
-//! parsing policy lives in the `argx` facade crate rather than in generated token-matching logic.
+//! current expansion, and emits shared static command metadata plus typed binding and semantic
+//! projections. Runtime parsing policy lives in the `argx` facade crate rather than in generated
+//! token-matching logic.
 
 #![doc(
     html_logo_url = "https://raw.githubusercontent.com/selemis-com/argx/master/.github/assets/logo.jpg",
@@ -16,8 +17,10 @@ mod attrs;
 mod case;
 mod codegen;
 mod crate_name;
+mod execution_contract;
 mod key;
 mod model;
+mod type_contract;
 
 use proc_macro::TokenStream;
 use syn::{DeriveInput, parse_macro_input};
@@ -52,6 +55,36 @@ pub fn derive_parser(input: TokenStream) -> TokenStream {
 pub fn derive_args(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     expand_command(&input, false).unwrap_or_else(syn::Error::into_compile_error).into()
+}
+
+/// Derives a standalone machine-readable semantic contract for a Rust struct or enum.
+///
+/// The generated contract preserves Rust declaration, field, and variant names. It is independent
+/// of serialization frameworks and does not interpret attributes such as `serde(rename = ...)`.
+/// When `Contract` is co-derived with `Parser` or `Args`, their CLI helper attributes remain
+/// available but do not rename semantic type-contract fields. `Contract` by itself does not
+/// register `#[argx(...)]` as meaningful type-contract metadata.
+#[proc_macro_derive(Contract)]
+pub fn derive_contract(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    type_contract::contract(&input).unwrap_or_else(syn::Error::into_compile_error).into()
+}
+
+/// Attaches one canonical execution result contract to an invocable command type.
+///
+/// The annotated free function remains ordinary Rust. Its parameters are runtime-only and do not
+/// participate in the machine contract. Its concrete `Result<Success, Error>` return type is the
+/// command's semantic execution contract: both `Success` and `Error` must implement Argx's type
+/// contract. The attribute records contract metadata only; it does not register, wrap, or invoke
+/// the function for dispatch.
+#[proc_macro_attribute]
+pub fn contract(attribute: TokenStream, input: TokenStream) -> TokenStream {
+    execution_contract::contract(
+        proc_macro2::TokenStream::from(attribute),
+        proc_macro2::TokenStream::from(input),
+    )
+    .unwrap_or_else(syn::Error::into_compile_error)
+    .into()
 }
 
 /// Derives a subcommand set for an enum.

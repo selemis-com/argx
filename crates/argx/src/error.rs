@@ -254,8 +254,9 @@ impl fmt::Display for Error {
             ),
             Self::InvalidEnvironmentValue { name, environment, value, reason } => write!(
                 formatter,
-                "invalid value `{}` from environment variable `{environment}` for `{name}`: {}",
+                "invalid value `{}` from environment variable `{}` for `{name}`: {}",
                 display_bytes(value.as_os_str().as_encoded_bytes()),
+                display_bytes(environment.as_bytes()),
                 display_bytes(reason.as_bytes()),
             ),
             Self::InvalidOsValue { name, value } => write!(
@@ -270,7 +271,7 @@ impl fmt::Display for Error {
 impl std::error::Error for Error {}
 
 /// Lossily renders encoded argument bytes while escaping terminal control characters.
-fn display_bytes(value: &[u8]) -> String {
+pub(crate) fn display_bytes(value: &[u8]) -> String {
     String::from_utf8_lossy(value).escape_debug().to_string()
 }
 
@@ -366,6 +367,21 @@ Usage: tool [OPTIONS]
             Error::DuplicateArgument { name: "--verbose" }.to_string(),
             "argument `--verbose` cannot be used more than once",
         );
+    }
+
+    #[test]
+    fn environment_names_do_not_emit_terminal_controls() {
+        let rendered = Error::InvalidEnvironmentValue {
+            name: "--port",
+            environment: "TOOL_PORT\n\u{1b}[31m",
+            value: OsString::from("bad"),
+            reason: String::from("invalid"),
+        }
+        .to_string();
+
+        assert!(!rendered.contains('\n'));
+        assert!(!rendered.contains('\u{1b}'));
+        assert!(rendered.contains(r"environment variable `TOOL_PORT\n"));
     }
 
     #[test]

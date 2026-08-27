@@ -22,9 +22,113 @@ mod tests {
             ("environment", "argx"),
             ("flatten", "argx"),
             ("subcommands", "argx"),
+            ("contract", "argx"),
+            ("contract_renamed", "cli_args"),
+            ("execution_contract", "argx"),
         ] {
             support::assert_ui_success(fixture, dependency);
         }
+    }
+
+    #[test]
+    fn invalid_execution_contract_declarations_are_rejected_deterministically() {
+        support::assert_ui_failure(
+            "invalid_execution_contract",
+            "argx",
+            snapbox::str![[r#"
+error: #[argx::contract] requires an invocable command type, for example #[argx::contract(GetArgs)]
+error: Argx execution contract handlers must be non-generic
+error: Argx execution contracts require a concrete Result<Success, Error> return type
+error: Argx execution contracts do not support opaque `impl Trait` return types
+error: unsupported Argx execution contract arguments; expected only #[argx::contract(CommandType)]
+error: #[argx::contract(CommandType)] can only be applied to a free function
+
+"#]],
+        );
+    }
+
+    #[test]
+    fn missing_execution_contract_is_rejected_when_discovery_is_requested() {
+        support::assert_ui_failure(
+            "missing_execution_contract",
+            "argx",
+            snapbox::str![[r#"
+error[E0277]: the trait bound `Cli: argx::ContractCommand` is not satisfied
+
+"#]],
+        );
+    }
+
+    #[test]
+    fn duplicate_execution_contracts_are_rejected_by_coherence() {
+        support::assert_ui_failure(
+            "duplicate_execution_contract",
+            "argx",
+            snapbox::str![[r#"
+error[E0119]: conflicting implementations of trait `ExecutionContractSource` for type `Command`
+
+"#]],
+        );
+    }
+
+    #[test]
+    fn execution_contracts_cannot_attach_to_non_invocable_command_groups() {
+        support::assert_ui_failure(
+            "non_invocable_execution_contract",
+            "argx",
+            snapbox::str![[r#"
+error[E0277]: the trait bound `GroupArgs: argx::InvocableContractCommand` is not satisfied
+
+"#]],
+        );
+    }
+
+    #[test]
+    fn execution_result_types_must_have_semantic_contracts() {
+        support::assert_ui_failure(
+            "uncontractable_execution_result",
+            "argx",
+            snapbox::str![[r#"
+error[E0277]: the trait bound `Output: ContractType` is not satisfied
+
+"#]],
+        );
+    }
+
+    #[test]
+    fn unit_subcommands_require_an_args_payload_for_execution_discovery() {
+        support::assert_ui_failure(
+            "unit_subcommand_execution_contract",
+            "argx",
+            snapbox::str![[r#"
+error[E0277]: the trait bound `CommandsStatusNeedsArgsPayloadForContractDiscoveryH[..]: UnitSubcommandContractRequiresArgsPayload` is not satisfied
+
+"#]],
+        );
+    }
+
+    #[test]
+    fn contract_only_types_reject_cli_helper_attributes() {
+        support::assert_ui_failure(
+            "contract_only_argx_attribute",
+            "argx",
+            snapbox::str![[r#"
+error: cannot find attribute `argx` in this scope
+
+"#]],
+        );
+    }
+
+    #[test]
+    fn invalid_type_contract_declarations_are_rejected_deterministically() {
+        support::assert_ui_failure(
+            "invalid_contract",
+            "argx",
+            snapbox::str![[r#"
+error: Contract can only be derived for structs and enums
+
+"#]],
+        );
     }
 
     #[test]
@@ -147,6 +251,45 @@ error[E0308]: mismatched types
 error[E0308]: mismatched types
 
 "#]],
+        );
+    }
+
+    #[test]
+    fn selected_ui_diagnostics_remain_anchored_in_user_source() {
+        support::assert_ui_failure_spans(
+            "invalid_default_types",
+            "argx",
+            &[
+                ("mismatched types", r#"default = "3000""#),
+                ("mismatched types", "default = Some(3000_u16)"),
+            ],
+        );
+        support::assert_ui_failure_spans(
+            "invalid_execution_contract",
+            "argx",
+            &[
+                (
+                    "#[argx::contract] requires an invocable command type, for example #[argx::contract(GetArgs)]",
+                    "#[argx::contract]",
+                ),
+                ("Argx execution contract handlers must be non-generic", "fn generic_handler<T>()"),
+                (
+                    "Argx execution contracts require a concrete Result<Success, Error> return type",
+                    "fn missing_result()",
+                ),
+                (
+                    "Argx execution contracts do not support opaque `impl Trait` return types",
+                    "fn opaque_result() -> impl Sized",
+                ),
+                (
+                    "unsupported Argx execution contract arguments; expected only #[argx::contract(CommandType)]",
+                    "#[argx::contract(UnsupportedArguments, error = ())]",
+                ),
+                (
+                    "#[argx::contract(CommandType)] can only be applied to a free function",
+                    "#[argx::contract(NotAFunction)]",
+                ),
+            ],
         );
     }
 

@@ -205,7 +205,9 @@ mod tests {
         assert_eq!(command.flags[0].help, Some("Enable verbose output."));
         assert!(command.flags[0].global);
         assert!(!command.flags[0].takes_value);
+        assert!(!command.flags[0].repeatable);
         assert!(!command.flags[0].required);
+        assert!(!command.flags[0].has_default);
         assert!(!command.flags[0].allow_hyphen_values);
         assert!(!command.flags[0].allow_negative_numbers);
 
@@ -217,7 +219,9 @@ mod tests {
         assert_eq!(command.flags[1].help, Some("Optional output path"));
         assert!(!command.flags[1].global);
         assert!(command.flags[1].takes_value);
+        assert!(!command.flags[1].repeatable);
         assert!(!command.flags[1].required);
+        assert!(!command.flags[1].has_default);
         assert!(!command.flags[1].allow_hyphen_values);
         assert!(!command.flags[1].allow_negative_numbers);
 
@@ -247,6 +251,8 @@ mod tests {
         assert!(group.args.is_empty());
         assert!(std::ptr::eq(group.flags[0], command.flags[0]));
         assert!(std::ptr::eq(group.flags[1], command.flags[1]));
+        assert!(!command.flags[0].repeatable);
+        assert!(command.flags[1].repeatable);
     }
 
     #[test]

@@ -15,21 +15,16 @@
   <a href="#license"><picture><source media="(prefers-color-scheme: dark)" srcset="https://img.shields.io/crates/l/argx?colorA=21262d&colorB=21262d&style=flat"><img src="https://img.shields.io/crates/l/argx?colorA=f6f8fa&colorB=f6f8fa&style=flat" alt="MIT OR Apache-2.0"></picture></a>
 </p>
 
-Argx is a derive-first command-line argument parser for Rust. Rust structs and enums define one
-static command model that drives argv parsing, typed binding, generated help and version output,
-diagnostics, and machine-readable invocation contracts.
-
-The public model is intentionally small: [`Parser`](https://docs.rs/argx/latest/argx/trait.Parser.html)
-defines a root command, [`Args`](https://docs.rs/argx/latest/argx/trait.Args.html) defines reusable
-arguments, and `#[derive(Subcommand)]` defines typed child-command selection.
-
-## Installation
+Argx is a derive-first command-line argument parser for Rust. Rust structs and enums define the
+command tree while generated static metadata drives parsing, typed binding, help, diagnostics, and
+machine-readable contracts.
 
 ```sh
 cargo add argx
 ```
 
-The default `derive` feature exports the `Parser`, `Args`, and `Subcommand` derive macros.
+Full API documentation and behavioral details are available on
+[docs.rs/argx](https://docs.rs/argx/latest/argx/).
 
 ## Quick start
 
@@ -83,19 +78,79 @@ Usage: acme [OPTIONS] <COMMAND>
 ...
 ```
 
-Argx supports positional and named arguments, short bundles, exact nested subcommands, reusable
-flattened argument groups, lexical globals, hidden aliases, typed defaults, environment fallbacks,
-argument relationships, documentation-derived structured help, version actions, and versioned
-machine-readable invocation contracts.
+[`Parser`](https://docs.rs/argx/latest/argx/trait.Parser.html) defines a root command,
+[`Args`](https://docs.rs/argx/latest/argx/trait.Args.html) defines reusable argument groups, and
+[`Subcommand`](https://docs.rs/argx/latest/argx/derive.Subcommand.html) defines exact typed
+child-command selection. Rust field shapes determine cardinality and conversion; Rust documentation
+and `#[argx(...)]` metadata define the human-facing CLI.
 
-The complete behavioral model and `#[argx(...)]` attribute reference live in the
-[crate documentation](https://docs.rs/argx). Unsupported derive shapes are rejected explicitly
-rather than approximated at runtime.
+Argx supports positional and named arguments, short bundles, nested subcommands, flattened argument
+groups, lexical globals, aliases, typed defaults, environment fallbacks, argument relationships,
+structured help, and version actions. See the [crate documentation](https://docs.rs/argx/latest/argx/)
+for the complete grammar, precedence rules, derive restrictions, and error behavior.
+
+## Machine-readable contracts
+
+Argx can expose the same command model to tools and agents without maintaining a second schema
+registry. [`#[derive(argx::Contract)]`](https://docs.rs/argx/latest/argx/derive.Contract.html)
+describes semantic Rust value types, while
+[`#[argx::contract(CommandType)]`](https://docs.rs/argx/latest/argx/attr.contract.html) binds an
+invocable command to the success and error types returned by its handler.
+
+```rust
+use argx::{ContractRequest, Parser as _};
+
+#[derive(argx::Args)]
+struct GetArgs {
+    id: String,
+}
+
+#[derive(argx::Subcommand)]
+enum Command {
+    Get(GetArgs),
+}
+
+#[derive(argx::Parser)]
+struct Cli {
+    #[argx(subcommand)]
+    command: Command,
+}
+
+#[derive(argx::Contract)]
+struct GetOutput {
+    id: String,
+}
+
+#[derive(argx::Contract)]
+enum GetError {
+    NotFound,
+}
+
+#[argx::contract(GetArgs)]
+fn get(args: GetArgs) -> Result<GetOutput, GetError> {
+    Ok(GetOutput { id: args.id })
+}
+
+let contract = Cli::contract(ContractRequest::new(["get"]))
+    .expect("get command must exist");
+assert!(contract.command.execution.is_some());
+```
+
+Contracts describe invocation semantics and semantic Rust input/output types. They are not JSON
+Schema, do not interpret `serde` attributes, and do not describe the lexical grammar of custom
+`FromStr` implementations. Standalone type contracts and combined CLI contracts share one wire
+version, and named types use document-local references so repeated and recursive shapes have one
+consistent representation.
+
+See [`Parser::contract`](https://docs.rs/argx/latest/argx/trait.Parser.html#method.contract), the
+[`contract` module](https://docs.rs/argx/latest/argx/contract/), and the
+[`type_contract` module](https://docs.rs/argx/latest/argx/type_contract/) for discovery behavior,
+execution requirements, wire fields, and type-contract semantics.
 
 ## Examples
 
-The examples are executable documentation. Each focuses on one public behavior and includes
-runnable invocations in its module documentation.
+The examples are executable documentation. Detailed behavior is documented on
+[docs.rs/argx](https://docs.rs/argx/latest/argx/).
 
 | Example | Focus | Try it |
 | --- | --- | --- |

@@ -12,6 +12,7 @@ use crate::{
     __private::{ActionKind, CommandArgs, RawValue},
     Error, InvalidValue,
     argv::{Error as RawError, Event},
+    error::display_bytes,
     help,
 };
 
@@ -80,7 +81,7 @@ fn raw_error(error: RawError<'static, '_>) -> Error {
 fn render_version(name: &str, version: &str) -> String {
     let version = version.trim_end_matches('\n');
     let mut rendered = String::with_capacity(name.len() + version.len() + 2);
-    rendered.push_str(name);
+    rendered.push_str(&display_bytes(name.as_bytes()));
     if !version.is_empty() {
         rendered.push(' ');
         rendered.push_str(version);
@@ -239,5 +240,21 @@ fn os_string(value: Vec<u8>, name: &'static str) -> Result<OsString, Error> {
             Ok(text) => Ok(OsString::from(text)),
             Err(bad) => Err(Error::InvalidOsValue { name, value: bad.into_bytes() }),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::render_version;
+
+    #[test]
+    fn version_command_name_does_not_emit_terminal_controls() {
+        let rendered = render_version("tool\n\u{1b}[31m", "1.2.3");
+        let body = rendered.strip_suffix('\n').expect("version output ends with one newline");
+
+        assert!(!body.contains('\n'));
+        assert!(!body.contains('\u{1b}'));
+        assert!(body.starts_with(r"tool\n"));
+        assert!(body.ends_with(" 1.2.3"));
     }
 }

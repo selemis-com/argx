@@ -2,7 +2,7 @@
 //!
 //! Argx derives a static command model from Rust structs and enums. The same model drives raw argv
 //! parsing, typed value binding, generated help and version output, diagnostics, and
-//! machine-readable invocation contracts. Normal applications therefore define the command once
+//! machine-readable contracts. Normal applications therefore define the command once
 //! rather than maintaining separate parser, help, and discovery schemas.
 //!
 //! # Quick start
@@ -286,10 +286,11 @@
 //! process-oriented parsing methods print those actions to stdout and exit successfully. Other
 //! parse/binding errors go to stderr and exit with status 2.
 //!
-//! # Machine-readable invocation contracts
+//! # Machine-readable contracts
 //!
-//! [`Parser::contract`] exposes a versioned description of how the CLI can be invoked. This is
-//! derived from Argx's internal command metadata rather than from a separate reflection registry.
+//! [`Parser::contract`] exposes a versioned description of how the CLI can be invoked and what each
+//! invocable command returns. This is derived from Argx's internal command metadata and explicit
+//! execution bindings rather than from a separate reflection registry.
 //!
 //! ```
 //! use argx::{ContractRequest, Parser as _};
@@ -300,26 +301,37 @@
 //! # enum Command { Get(GetArgs) }
 //! # #[derive(argx::Parser)]
 //! # struct Cli { #[argx(subcommand)] command: Command }
+//! # #[derive(argx::Contract)]
+//! # struct GetOutput { id: String }
+//! # #[derive(argx::Contract)]
+//! # enum GetError { NotFound }
+//! # #[argx::contract(GetArgs)]
+//! # fn get(args: GetArgs) -> Result<GetOutput, GetError> { Ok(GetOutput { id: args.id }) }
 //! let contract = Cli::contract(ContractRequest::new(["get"]).recursive())?;
 //! assert_eq!(contract.version, argx::CONTRACT_VERSION);
 //! assert_eq!(contract.command.path, ["get"]);
 //! # Ok::<(), argx::ContractError>(())
 //! ```
 //!
-//! A [`Contract`] contains the canonical root and selected command, command aliases, direct
-//! invocability, the root-to-selected invocation contexts, positional and named arguments, value
-//! cardinality, global scope, environment/default sources, and normalized `requires` / `conflicts`
-//! relationships. Command paths supplied in a [`ContractRequest`] may use aliases; returned paths
-//! always use canonical command names.
+//! A [`struct@Contract`] contains the canonical root and selected command, command aliases, direct
+//! invocability, the root-to-selected invocation contexts, positional and named arguments,
+//! semantic Rust value types and multiplicity, global scope, environment/default sources,
+//! built-in terminal help/version actions, normalized `requires` / `conflicts` relationships, and
+//! semantic success/error types for invocable commands.
+//! Named semantic types share one type table across the returned document. Command paths supplied
+//! in a [`ContractRequest`] may use aliases; returned paths always use canonical command names.
 //!
-//! [`ContractDepth::Shallow`] includes the selected command in full and direct children as
-//! summaries. [`ContractDepth::Recursive`] expands the selected command's complete descendant
-//! subtree. [`Contract::to_json`] and [`Contract::to_json_pretty`] serialize the public protocol,
-//! whose current version is [`CONTRACT_VERSION`].
+//! Discovery is shallow by default: the selected command is returned in full and direct children
+//! are summaries. Calling [`ContractRequest::recursive`] expands the selected command's complete
+//! descendant subtree. [`Contract::to_json`] and [`Contract::to_json_pretty`] serialize the public
+//! protocol, whose current version is [`CONTRACT_VERSION`]. Standalone [`TypeContract`] documents
+//! use the same version and semantic type model.
 //!
-//! The contract is deliberately an **invocation contract**. It describes command structure,
-//! accepted inputs, cardinality, sources, and relationships; it is not a serialization schema for
-//! the concrete Rust value types stored in fields.
+//! Attached semantic types describe Rust values at the command boundary. For invocation values they
+//! do not define the lexical encoding accepted by an arbitrary [`std::str::FromStr`]. For an
+//! execution binding, the handler's concrete `Result<Success, Error>` is the declared command
+//! contract; Argx describes both branches but does not prescribe how applications serialize or
+//! transport them. A unit branch explicitly means that outcome carries no semantic payload.
 //!
 //! # Failure model
 //!
@@ -369,18 +381,63 @@
 
 mod argv;
 mod binding;
+mod command;
 pub mod contract;
+mod derive_support;
 mod error;
 mod help;
+pub mod type_contract;
 
 use std::ffi::{OsStr, OsString};
 
+/// Current serialized Argx contract protocol version.
+///
+/// This versions both [`struct@Contract`] and [`TypeContract`] documents.
+pub const CONTRACT_VERSION: u32 = 1;
+
 pub use contract::{
-    ArgumentContract, CONTRACT_VERSION, CommandContextContract, CommandContract,
-    ConstraintContract, ConstraintContractKind, Contract, ContractDepth, ContractError,
-    ContractRequest, InvocationContract, OptionContract, ValueContract,
+    ActionContract, ActionContractKind, CommandContextContract, CommandContract,
+    ConstraintContract, ConstraintContractKind, Contract, ContractError, ContractRequest,
+    ExecutionContract, OptionContract, PositionalContract,
 };
 pub use error::{Error, InvalidValue};
+pub use type_contract::{
+    ContractType, PrimitiveType, TypeContract, TypeContractValue, TypeDefinition,
+    TypeDefinitionKind, TypeFieldContract, TypeVariantContract, TypeVariantKind,
+};
+
+/// Compiler-facing marker for command trees that can produce a complete machine contract.
+///
+/// This trait is implemented by Argx's generated contract projection and is not an application
+/// extension point. It is public so Rust diagnostics can describe contract-discovery failures in
+/// Argx vocabulary instead of exposing `__private` projection traits.
+#[doc(hidden)]
+pub trait ContractCommand: __private::ResolveCommandTypeContract {}
+
+impl<T> ContractCommand for T where T: __private::ResolveCommandTypeContract {}
+
+/// Compiler-facing marker for command declarations that are directly invocable.
+///
+/// This trait is implemented from generated command metadata and is not an application extension
+/// point. It exists at the facade boundary to keep execution-contract diagnostics user-facing.
+#[doc(hidden)]
+pub trait InvocableContractCommand: __private::InvocableCommandContract {}
+
+/// Diagnostic marker for unit subcommands that cannot participate in machine-contract discovery.
+///
+/// Unit variants have no payload type to serve as an execution-contract identity. This trait has
+/// no implementations; generated projections use it only so the compiler explains that an `Args`
+/// payload is required when contract discovery reaches a unit subcommand declaration.
+#[doc(hidden)]
+pub trait UnitSubcommandContractRequiresArgsPayload {}
+
+/// Generated execution-contract source attached by `#[argx::contract(CommandType)]`.
+///
+/// Applications should use the attribute macro rather than implementing this trait directly.
+/// It is re-exported at the facade boundary so coherence and trait-bound diagnostics do not
+/// mention Argx's private generated-code module.
+#[doc(hidden)]
+pub use derive_support::traits::ExecutionContractSource;
 
 // Generated absolute paths must also work when a derive is used inside this crate. Integration
 // targets already receive this name through Cargo; the library target needs the self alias.
@@ -391,7 +448,7 @@ pub use error::{Error, InvalidValue};
 extern crate self as argx;
 
 #[cfg(feature = "derive")]
-pub use argx_derive::{Args, Parser, Subcommand};
+pub use argx_derive::{Args, Contract, Parser, Subcommand, contract};
 
 /// Marks a reusable argument group derived with `#[derive(Args)]`.
 ///
@@ -419,14 +476,14 @@ pub use argx_derive::{Args, Parser, Subcommand};
 /// assert!(cli.output.json);
 /// # Ok::<(), argx::Error>(())
 /// ```
-pub trait Args: Sized + __private::CommandArgs + __private::CommandContract {}
+pub trait Args: Sized + __private::CommandArgs {}
 
 /// Parses command-line arguments into a typed value.
 ///
 /// The derive generates one static command model and the hidden binding implementation required by
 /// these entry points. Prefer the `try_parse*` methods when the caller owns process policy; the
 /// corresponding `parse*` methods are convenience entry points for ordinary CLI binaries.
-pub trait Parser: Sized + __private::CommandArgs + __private::CommandContract {
+pub trait Parser: Sized + __private::CommandArgs {
     /// Parses the current process arguments, excluding the program name.
     ///
     /// Help and version requests are printed to standard output and terminate successfully. Parse
@@ -542,10 +599,25 @@ pub trait Parser: Sized + __private::CommandArgs + __private::CommandContract {
         binding::parse_refs::<Self>(&refs)
     }
 
-    /// Discovers the machine-readable invocation contract for this CLI.
+    /// Discovers the machine-readable invocation and execution contract for this CLI.
     ///
     /// Command paths are relative to the root command and may use canonical names or aliases.
-    /// Returned paths always use canonical command names. Contract discovery does not parse
+    /// Returned paths always use canonical command names. Custom consumed values and execution
+    /// success/error types anywhere in the command tree must implement [`ContractType`], normally
+    /// through `#[derive(argx::Contract)]`. Every directly invocable command must also have exactly
+    /// one `#[argx::contract(CommandType)]` handler declaration.
+    ///
+    /// Unit subcommand variants do not provide a distinct Rust type to which an execution contract
+    /// can be attached. CLIs using machine-contract discovery should represent such commands with
+    /// an empty `Args` payload instead. The payload type is the execution identity, so branches
+    /// that need different execution contracts must use distinct payload types.
+    ///
+    /// The handler's concrete `Result<T, E>` is the execution contract, so both `T` and `E` must
+    /// implement [`ContractType`]. Semantic contracts describe Rust-level shapes; they do not infer
+    /// an application's `serde` representation or a custom [`std::str::FromStr`] lexical grammar.
+    /// Named definitions are referenced by index into the returned type table; their short Rust
+    /// names are descriptive and need not be unique. These requirements apply only when contract
+    /// discovery is used and do not affect parsing support. Contract discovery does not parse
     /// process arguments or evaluate environment fallbacks.
     ///
     /// # Examples
@@ -569,18 +641,37 @@ pub trait Parser: Sized + __private::CommandArgs + __private::CommandContract {
     ///     command: Command,
     /// }
     ///
+    /// #[derive(argx::Contract)]
+    /// struct GetOutput {
+    ///     id: String,
+    /// }
+    ///
+    /// #[derive(argx::Contract)]
+    /// enum GetError {
+    ///     NotFound,
+    /// }
+    ///
+    /// #[argx::contract(GetArgs)]
+    /// fn get(args: GetArgs) -> Result<GetOutput, GetError> {
+    ///     Ok(GetOutput { id: args.id })
+    /// }
+    ///
     /// let contract = Cli::contract(ContractRequest::new(["get"]))?;
     /// assert_eq!(contract.command.path.len(), 1);
     /// assert_eq!(contract.command.path[0], "get");
     /// assert!(contract.command.invocation.is_some());
+    /// assert!(contract.command.execution.is_some());
     /// # Ok::<(), argx::ContractError>(())
     /// ```
     ///
     /// # Errors
     ///
     /// Returns [`ContractError::UnknownCommand`] when one requested path segment does not resolve.
-    fn contract(request: ContractRequest) -> Result<Contract, ContractError> {
-        contract::discover(Self::CONTRACT, request)
+    fn contract(request: ContractRequest) -> Result<Contract, ContractError>
+    where
+        Self: ContractCommand,
+    {
+        contract::discover::<Self>(request)
     }
 
     /// Renders generated help for this root command.
@@ -615,5 +706,5 @@ pub trait Parser: Sized + __private::CommandArgs + __private::CommandContract {
 /// This module is public so proc-macro expansions can name these items from downstream crates. It
 /// is not part of Argx's stable user-facing API.
 #[doc(hidden)]
-#[path = "private/mod.rs"]
+#[path = "private.rs"]
 pub mod __private;

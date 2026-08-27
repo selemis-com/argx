@@ -8,8 +8,9 @@
 
 use std::fmt::Write as _;
 
-use crate::__private::{
-    Action, Arg, Command, Flag, HelpGroup, Key, Named, resolve_long, resolve_short,
+use crate::{
+    __private::{Action, Arg, Command, Flag, HelpGroup, Key, Named, resolve_long, resolve_short},
+    error::display_bytes,
 };
 
 /// Renderable argument rows collected under one help section.
@@ -53,7 +54,7 @@ pub(crate) fn render(path: &[&Command<'_>]) -> String {
     output.push_str("Usage:");
     for (index, command) in path.iter().enumerate() {
         output.push(' ');
-        output.push_str(command.name);
+        output.push_str(&display_bytes(command.name.as_bytes()));
         if index + 1 == path.len() {
             output.push_str(" [OPTIONS]");
         }
@@ -97,7 +98,9 @@ pub(crate) fn render(path: &[&Command<'_>]) -> String {
         let rows = command
             .subcommands
             .iter()
-            .map(|command| (command.name.to_owned(), command.about.unwrap_or("").to_owned()))
+            .map(|command| {
+                (display_bytes(command.name.as_bytes()), command.about.unwrap_or("").to_owned())
+            })
             .collect::<Vec<_>>();
         write_rows(&mut output, &rows);
     }
@@ -273,7 +276,7 @@ fn flag_help(flag: &Flag<'_>) -> String {
             help.push(' ');
         }
         help.push_str("[env: ");
-        help.push_str(env);
+        help.push_str(&display_bytes(env.as_bytes()));
         if flag.required_if_env_unset {
             help.push_str("; required if unset");
         }
@@ -405,6 +408,27 @@ mod tests {
         subcommands: &[&CONFIG],
         ..Command::EMPTY
     };
+
+    #[test]
+    fn command_and_environment_metadata_cannot_inject_terminal_controls() {
+        let token = Flag {
+            key: 99,
+            name: "token",
+            help: None,
+            longs: &["token"],
+            env: Some("TOOL_TOKEN\n\u{1b}[31m"),
+            ..Flag::VALUE
+        };
+        let flags = [&token];
+        let command = Command { name: "tool\n\u{1b}[31m", flags: &flags, ..Command::EMPTY };
+        let help = render(&[&command]);
+
+        assert!(!help.contains("tool\n\u{1b}"));
+        assert!(!help.contains("TOOL_TOKEN\n\u{1b}"));
+        assert!(!help.contains('\u{1b}'));
+        assert!(help.contains(r"tool\n"));
+        assert!(help.contains(r"[env: TOOL_TOKEN\n"));
+    }
 
     #[test]
     fn renders_scope_aware_aligned_help() {
