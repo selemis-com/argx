@@ -16,7 +16,8 @@
 //! The serialized representation carries [`CONTRACT_VERSION`] so consumers can identify the wire
 //! format they received. It is intentionally sparse: optional empty collections and default-false
 //! argument properties are omitted where absence is unambiguous, while command `invocable` remains
-//! explicit. Positional multiplicity is expressed directly through `required` and
+//! explicit. Each detailed command context also exposes the built-in terminal actions accepted in
+//! that lexical scope. Positional multiplicity is expressed directly through `required` and
 //! `variadic`; a named option's `type` is present exactly when each occurrence consumes one value,
 //! while `repeatable` controls occurrence multiplicity. Compatibility guarantees are release-policy
 //! concerns rather than inferred from Rust API compatibility.
@@ -231,6 +232,9 @@ pub struct CommandContextContract {
     /// Canonical child-command path relative to the root command.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub path: Vec<String>,
+    /// Built-in terminal actions accepted in this command context.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub actions: Vec<ActionContract>,
     /// Positional arguments accepted in this command context.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub positionals: Vec<PositionalContract>,
@@ -240,6 +244,29 @@ pub struct CommandContextContract {
     /// Relationships between arguments and options in this command context.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub constraints: Vec<ConstraintContract>,
+}
+
+/// One built-in terminal action accepted in a command context.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActionContract {
+    /// Preferred canonical command-line spelling, including its leading dash characters.
+    pub name: String,
+    /// Other accepted spellings, including their leading dash characters.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub aliases: Vec<String>,
+    /// Terminal behavior triggered by this action.
+    pub kind: ActionContractKind,
+}
+
+/// Built-in terminal behaviors exposed through machine invocation contracts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ActionContractKind {
+    /// Render generated help for this command scope.
+    Help,
+    /// Render configured version information for this command scope.
+    Version,
 }
 
 /// One positional argument in a machine invocation contract.

@@ -11,8 +11,8 @@ mod tests {
     #![expect(dead_code, reason = "contract fixtures include metadata-only handler functions")]
 
     use argx::{
-        ConstraintContractKind, ContractDepth, ContractRequest, Parser as _, PrimitiveType,
-        TypeContractValue, TypeDefinitionKind,
+        ActionContractKind, ConstraintContractKind, ContractDepth, ContractRequest, Parser as _,
+        PrimitiveType, TypeContractValue, TypeDefinitionKind,
     };
 
     /// Reusable authentication arguments.
@@ -67,7 +67,7 @@ mod tests {
     #[derive(argx::Subcommand)]
     enum ObjectCommands {
         /// Retrieve one object.
-        #[argx(alias = "show")]
+        #[argx(alias = "show", version = "1.2.3")]
         Get(GetArgs),
         /// List objects.
         List(ListArgs),
@@ -661,6 +661,36 @@ mod tests {
     }
 
     #[test]
+    fn invocation_actions_match_parser_terminal_actions_by_scope() {
+        let contract = Cli::contract(ContractRequest::new(["objects", "get"]))
+            .expect("nested contract should exist");
+        let invocation = contract.command.invocation.expect("selected command should be detailed");
+
+        assert_eq!(invocation[0].actions.len(), 1);
+        assert_eq!(invocation[0].actions[0].kind, ActionContractKind::Help);
+        assert_eq!(invocation[1].actions.len(), 1);
+        assert_eq!(invocation[1].actions[0].kind, ActionContractKind::Help);
+
+        let leaf_actions = &invocation[2].actions;
+        assert_eq!(leaf_actions.len(), 2);
+        assert_eq!(leaf_actions[0].name, "--help");
+        assert!(leaf_actions[0].aliases.iter().map(String::as_str).eq(["-h"]));
+        assert_eq!(leaf_actions[0].kind, ActionContractKind::Help);
+        assert_eq!(leaf_actions[1].name, "--version");
+        assert!(leaf_actions[1].aliases.iter().map(String::as_str).eq(["-V"]));
+        assert_eq!(leaf_actions[1].kind, ActionContractKind::Version);
+
+        assert!(matches!(
+            Cli::try_parse_from(["tool", "objects", "get", "--version"]),
+            Err(argx::Error::DisplayVersion { .. }),
+        ));
+        assert!(matches!(
+            Cli::try_parse_from(["tool", "--version"]),
+            Err(argx::Error::UnknownFlag { .. }),
+        ));
+    }
+
+    #[test]
     fn recursive_discovery_expands_the_complete_selected_subtree() {
         let request = ContractRequest::root().recursive();
         assert_eq!(request.depth(), ContractDepth::Recursive);
@@ -702,6 +732,15 @@ mod tests {
     "invocable": true,
     "invocation": [
       {
+        "actions": [
+          {
+            "name": "--help",
+            "aliases": [
+              "-h"
+            ],
+            "kind": "help"
+          }
+        ],
         "options": [
           {
             "name": "--config",
@@ -735,12 +774,37 @@ mod tests {
       {
         "path": [
           "objects"
+        ],
+        "actions": [
+          {
+            "name": "--help",
+            "aliases": [
+              "-h"
+            ],
+            "kind": "help"
+          }
         ]
       },
       {
         "path": [
           "objects",
           "get"
+        ],
+        "actions": [
+          {
+            "name": "--help",
+            "aliases": [
+              "-h"
+            ],
+            "kind": "help"
+          },
+          {
+            "name": "--version",
+            "aliases": [
+              "-V"
+            ],
+            "kind": "version"
+          }
         ],
         "positionals": [
           {
@@ -898,6 +962,15 @@ mod tests {
     "invocable": true,
     "invocation": [
       {
+        "actions": [
+          {
+            "name": "--help",
+            "aliases": [
+              "-h"
+            ],
+            "kind": "help"
+          }
+        ],
         "positionals": [
           {
             "name": "value",

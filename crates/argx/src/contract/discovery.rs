@@ -1,14 +1,15 @@
 //! Projection from generated static command metadata into the public contract model.
 
 use super::{
-    CONTRACT_VERSION, CommandContextContract, CommandContract, ConstraintContract,
-    ConstraintContractKind, Contract, ContractDepth, ContractError, ContractRequest,
-    ExecutionContract, OptionContract, PositionalContract,
+    CONTRACT_VERSION, ActionContract, ActionContractKind, CommandContextContract, CommandContract,
+    ConstraintContract, ConstraintContractKind, Contract, ContractDepth, ContractError,
+    ContractRequest, ExecutionContract, OptionContract, PositionalContract,
 };
 use crate::{
     __private::{
-        Arg as StaticArg, Command as StaticCommand, CommandArgs as StaticCommandArgs,
-        CommandExecutionTypes, CommandValueTypes, ConstraintKind, Flag as StaticFlag, Key,
+        Action as StaticAction, ActionKind as StaticActionKind, Arg as StaticArg,
+        Command as StaticCommand, CommandArgs as StaticCommandArgs, CommandExecutionTypes,
+        CommandValueTypes, ConstraintKind, Flag as StaticFlag, Key,
         ResolveCommandTypeContract as SemanticCommandContract, TypeResolver,
     },
     type_contract::TypeContractValue,
@@ -168,6 +169,7 @@ fn command_context(
     );
 
     let path = contexts.iter().skip(1).map(|context| context.name.to_owned()).collect();
+    let actions = command.actions.iter().copied().map(action_contract).collect();
     let positionals = command
         .args
         .iter()
@@ -194,7 +196,30 @@ fn command_context(
         })
         .collect();
 
-    CommandContextContract { path, positionals, options, constraints }
+    CommandContextContract { path, actions, positionals, options, constraints }
+}
+
+/// Builds one built-in terminal action contract.
+fn action_contract(action: &StaticAction<'_>) -> ActionContract {
+    let name = action.diagnostic.to_owned();
+    let mut aliases = Vec::with_capacity(action.longs.len() + action.shorts.len());
+    aliases.extend(
+        action.longs.iter().map(|long| format!("--{long}")).filter(|spelling| spelling != &name),
+    );
+    aliases.extend(
+        action
+            .shorts
+            .iter()
+            .map(|short| format!("-{}", char::from(*short)))
+            .filter(|spelling| spelling != &name),
+    );
+
+    let kind = match action.kind {
+        StaticActionKind::Help => ActionContractKind::Help,
+        StaticActionKind::Version { .. } => ActionContractKind::Version,
+    };
+
+    ActionContract { name, aliases, kind }
 }
 
 /// Builds one named public option contract.
