@@ -87,6 +87,19 @@ impl UiProject {
             "--offline",
         ])
     }
+
+    /// Builds a Cargo command that preserves structured compiler diagnostics.
+    fn diagnostic_command(&self) -> Command {
+        let cargo = env::var_os("CARGO").unwrap_or_else(|| OsString::from("cargo"));
+        Command::new(cargo).current_dir(&self.root).env("CARGO_TARGET_DIR", ui_target_dir()).args([
+            "check",
+            "--color",
+            "never",
+            "--locked",
+            "--offline",
+            "--message-format=json",
+        ])
+    }
 }
 
 impl Drop for UiProject {
@@ -105,6 +118,78 @@ pub(crate) fn assert_ui_success(fixture: &str, dependency: &str) {
 #[track_caller]
 pub(crate) fn assert_ui_failure(fixture: &str, dependency: &str, expected_stderr: impl IntoData) {
     ui_output("fail", fixture, dependency).failure().stdout_eq("").stderr_eq(expected_stderr);
+}
+
+/// Compiles one downstream fixture with JSON diagnostics and asserts primary error locations.
+///
+/// This complements the stable heading-only snapshots with a small set of source-location
+/// invariants. Only primary spans in the fixture's own `src/main.rs` participate so dependency
+/// diagnostics and compiler-owned secondary notes do not make these checks brittle.
+#[track_caller]
+pub(crate) fn assert_ui_failure_spans(
+    fixture: &str,
+    dependency: &str,
+    expected: &[(&str, &str)],
+) {
+    let _guard = CARGO_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let project = UiProject::new("fail", fixture, dependency);
+    let output = project
+        .diagnostic_command()
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile UI fixture `{fixture}`: {error}"));
+    assert!(!output.status.success(), "UI fixture `{fixture}` unexpectedly compiled");
+
+    let actual = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .filter(|message| {
+            message.get("reason").and_then(serde_json::Value::as_str)
+                == Some("compiler-message")
+        })
+        .filter_map(|message| message.get("message").cloned())
+        .filter(|message| message.get("level").and_then(serde_json::Value::as_str) == Some("error"))
+        .filter_map(|message| {
+            let message_text = message.get("message")?.as_str()?.to_owned();
+            let span = message.get("spans")?.as_array()?.iter().find(|span| {
+                span.get("is_primary").and_then(serde_json::Value::as_bool) == Some(true)
+                    && span
+                        .get("file_name")
+                        .and_then(serde_json::Value::as_str)
+                        .is_some_and(|path| {
+                            let path = path.replace('\\', "/");
+                            path == "src/main.rs" || path.ends_with("/src/main.rs")
+                        })
+            })?;
+            let source_line = span
+                .get("text")?
+                .as_array()?
+                .first()?
+                .get("text")?
+                .as_str()?
+                .trim()
+                .to_owned();
+            Some((message_text, source_line))
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        actual.len(),
+        expected.len(),
+        "number of primary UI diagnostics changed for `{fixture}`",
+    );
+    for ((actual_message, actual_source), (expected_message, expected_source)) in
+        actual.iter().zip(expected)
+    {
+        assert_eq!(
+            actual_message, expected_message,
+            "primary UI diagnostic message changed for `{fixture}`",
+        );
+        assert!(
+            actual_source.contains(expected_source),
+            "primary UI diagnostic `{actual_message}` for `{fixture}` moved away from user source \
+             containing `{expected_source}`; actual source line: `{actual_source}`",
+        );
+    }
 }
 
 /// Compiles one downstream fixture and exposes normalized output to Snapbox.

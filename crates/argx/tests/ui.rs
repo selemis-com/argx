@@ -255,6 +255,48 @@ error[E0308]: mismatched types
     }
 
     #[test]
+    fn selected_ui_diagnostics_remain_anchored_in_user_source() {
+        support::assert_ui_failure_spans(
+            "invalid_default_types",
+            "argx",
+            &[
+                ("mismatched types", r#"default = "3000""#),
+                ("mismatched types", "default = Some(3000_u16)"),
+            ],
+        );
+        support::assert_ui_failure_spans(
+            "invalid_execution_contract",
+            "argx",
+            &[
+                (
+                    "#[argx::contract] requires an invocable command type, for example #[argx::contract(GetArgs)]",
+                    "#[argx::contract]",
+                ),
+                (
+                    "Argx execution contract handlers must be non-generic",
+                    "fn generic_handler<T>()",
+                ),
+                (
+                    "Argx execution contracts require a concrete Result<Success, Error> return type",
+                    "fn missing_result()",
+                ),
+                (
+                    "Argx execution contracts do not support opaque `impl Trait` return types",
+                    "fn opaque_result() -> impl Sized",
+                ),
+                (
+                    "unsupported Argx execution contract arguments; expected only #[argx::contract(CommandType)]",
+                    "#[argx::contract(UnsupportedArguments, error = ())]",
+                ),
+                (
+                    "#[argx::contract(CommandType)] can only be applied to a free function",
+                    "#[argx::contract(NotAFunction)]",
+                ),
+            ],
+        );
+    }
+
+    #[test]
     fn invalid_command_models_are_rejected_before_codegen() {
         support::assert_ui_failure(
             "invalid_command_model",
