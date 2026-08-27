@@ -391,10 +391,9 @@ pub mod type_contract;
 use std::ffi::{OsStr, OsString};
 
 pub use contract::{
-    CONTRACT_VERSION, ActionContract, ActionContractKind, CommandContextContract, CommandContract,
-    ConstraintContract,
-    ConstraintContractKind, Contract, ContractDepth, ContractError, ContractRequest,
-    ExecutionContract, OptionContract, PositionalContract,
+    ActionContract, ActionContractKind, CONTRACT_VERSION, CommandContextContract, CommandContract,
+    ConstraintContract, ConstraintContractKind, Contract, ContractDepth, ContractError,
+    ContractRequest, ExecutionContract, OptionContract, PositionalContract,
 };
 pub use error::{Error, InvalidValue};
 pub use type_contract::{
@@ -429,9 +428,9 @@ pub trait UnitSubcommandContractRequiresArgsPayload {}
 
 /// Generated execution-contract source attached by `#[argx::contract(CommandType)]`.
 ///
-/// Applications should use the attribute macro rather than implementing this trait directly. It is
-/// re-exported at the facade boundary so coherence and trait-bound diagnostics do not mention
-/// Argx's private generated-code module.
+/// Applications should use the attribute macro rather than implementing this trait directly.
+/// It is re-exported at the facade boundary so coherence and trait-bound diagnostics do not
+/// mention Argx's private generated-code module.
 #[doc(hidden)]
 pub use derive_support::traits::ExecutionContractSource;
 

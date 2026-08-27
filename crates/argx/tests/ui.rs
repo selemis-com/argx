@@ -272,10 +272,7 @@ error[E0308]: mismatched types
                     "#[argx::contract] requires an invocable command type, for example #[argx::contract(GetArgs)]",
                     "#[argx::contract]",
                 ),
-                (
-                    "Argx execution contract handlers must be non-generic",
-                    "fn generic_handler<T>()",
-                ),
+                ("Argx execution contract handlers must be non-generic", "fn generic_handler<T>()"),
                 (
                     "Argx execution contracts require a concrete Result<Success, Error> return type",
                     "fn missing_result()",

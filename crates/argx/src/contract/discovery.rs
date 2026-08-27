@@ -1,7 +1,7 @@
 //! Projection from generated static command metadata into the public contract model.
 
 use super::{
-    CONTRACT_VERSION, ActionContract, ActionContractKind, CommandContextContract, CommandContract,
+    ActionContract, ActionContractKind, CONTRACT_VERSION, CommandContextContract, CommandContract,
     ConstraintContract, ConstraintContractKind, Contract, ContractDepth, ContractError,
     ContractRequest, ExecutionContract, OptionContract, PositionalContract,
 };

@@ -126,11 +126,7 @@ pub(crate) fn assert_ui_failure(fixture: &str, dependency: &str, expected_stderr
 /// invariants. Only primary spans in the fixture's own `src/main.rs` participate so dependency
 /// diagnostics and compiler-owned secondary notes do not make these checks brittle.
 #[track_caller]
-pub(crate) fn assert_ui_failure_spans(
-    fixture: &str,
-    dependency: &str,
-    expected: &[(&str, &str)],
-) {
+pub(crate) fn assert_ui_failure_spans(fixture: &str, dependency: &str, expected: &[(&str, &str)]) {
     let _guard = CARGO_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let project = UiProject::new("fail", fixture, dependency);
     let output = project
@@ -143,8 +139,7 @@ pub(crate) fn assert_ui_failure_spans(
         .lines()
         .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
         .filter(|message| {
-            message.get("reason").and_then(serde_json::Value::as_str)
-                == Some("compiler-message")
+            message.get("reason").and_then(serde_json::Value::as_str) == Some("compiler-message")
         })
         .filter_map(|message| message.get("message").cloned())
         .filter(|message| message.get("level").and_then(serde_json::Value::as_str) == Some("error"))
@@ -152,22 +147,15 @@ pub(crate) fn assert_ui_failure_spans(
             let message_text = message.get("message")?.as_str()?.to_owned();
             let span = message.get("spans")?.as_array()?.iter().find(|span| {
                 span.get("is_primary").and_then(serde_json::Value::as_bool) == Some(true)
-                    && span
-                        .get("file_name")
-                        .and_then(serde_json::Value::as_str)
-                        .is_some_and(|path| {
+                    && span.get("file_name").and_then(serde_json::Value::as_str).is_some_and(
+                        |path| {
                             let path = path.replace('\\', "/");
                             path == "src/main.rs" || path.ends_with("/src/main.rs")
-                        })
+                        },
+                    )
             })?;
-            let source_line = span
-                .get("text")?
-                .as_array()?
-                .first()?
-                .get("text")?
-                .as_str()?
-                .trim()
-                .to_owned();
+            let source_line =
+                span.get("text")?.as_array()?.first()?.get("text")?.as_str()?.trim().to_owned();
             Some((message_text, source_line))
         })
         .collect::<Vec<_>>();

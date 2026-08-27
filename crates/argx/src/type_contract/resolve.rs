@@ -289,11 +289,7 @@ where
     }
 }
 
-impl<T> ContractType for Option<T>
-where
-    T: ContractType,
-{
-}
+impl<T> ContractType for Option<T> where T: ContractType {}
 
 /// Implements one standard-library sequence container.
 macro_rules! sequence_contract {
@@ -311,11 +307,7 @@ macro_rules! sequence_contract {
             }
         }
 
-        impl<T> ContractType for $container<T>
-        where
-            T: ContractType,
-        {
-        }
+        impl<T> ContractType for $container<T> where T: ContractType {}
     };
 }
 
@@ -336,11 +328,7 @@ where
     }
 }
 
-impl<T> ContractType for [T]
-where
-    T: ContractType,
-{
-}
+impl<T> ContractType for [T] where T: ContractType {}
 
 impl<T, const N: usize> TypeContractSource for [T; N]
 where
@@ -355,11 +343,7 @@ where
     }
 }
 
-impl<T, const N: usize> ContractType for [T; N]
-where
-    T: ContractType,
-{
-}
+impl<T, const N: usize> ContractType for [T; N] where T: ContractType {}
 
 impl<T> TypeContractSource for BTreeSet<T>
 where
@@ -374,11 +358,7 @@ where
     }
 }
 
-impl<T> ContractType for BTreeSet<T>
-where
-    T: ContractType,
-{
-}
+impl<T> ContractType for BTreeSet<T> where T: ContractType {}
 
 impl<T, S> TypeContractSource for HashSet<T, S>
 where
@@ -467,11 +447,7 @@ where
     }
 }
 
-impl<T> ContractType for &T
-where
-    T: ContractType + ?Sized,
-{
-}
+impl<T> ContractType for &T where T: ContractType + ?Sized {}
 
 impl<T> TypeContractSource for &mut T
 where
@@ -486,11 +462,7 @@ where
     }
 }
 
-impl<T> ContractType for &mut T
-where
-    T: ContractType + ?Sized,
-{
-}
+impl<T> ContractType for &mut T where T: ContractType + ?Sized {}
 
 /// Implements an ownership-only wrapper as semantically transparent.
 macro_rules! transparent_contract {
@@ -508,11 +480,7 @@ macro_rules! transparent_contract {
             }
         }
 
-        impl<T> ContractType for $wrapper<T>
-        where
-            T: ContractType + ?Sized,
-        {
-        }
+        impl<T> ContractType for $wrapper<T> where T: ContractType + ?Sized {}
     };
 }
 
