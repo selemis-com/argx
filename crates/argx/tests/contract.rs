@@ -380,7 +380,12 @@ mod tests {
             .expect("repeated option contract should exist");
         let invocation =
             contract.command.invocation.as_ref().expect("root command should be detailed");
-        let option = &invocation[0].options[0];
+        let [context, ..] = invocation.as_slice() else {
+            panic!("expected root invocation context");
+        };
+        let [option, ..] = context.options.as_slice() else {
+            panic!("expected repeated option");
+        };
 
         assert_eq!(option.name, "--tag");
         assert!(option.repeatable);
@@ -393,15 +398,25 @@ mod tests {
         let contract = ProjectionCli::contract(request).expect("root contract should exist");
         let invocation =
             contract.command.invocation.as_ref().expect("root command should be detailed");
-        let context = &invocation[0];
+        let [context, ..] = invocation.as_slice() else {
+            panic!("expected root invocation context");
+        };
+        let [tag, ..] = context.options.as_slice() else {
+            panic!("expected short option");
+        };
+        let [input, ..] = context.positionals.as_slice() else {
+            panic!("expected optional positional");
+        };
+        let [constraint, ..] = context.constraints.as_slice() else {
+            panic!("expected positional constraint");
+        };
 
-        assert_eq!(context.options[0].name, "-t");
-        assert!(context.options[0].required);
-        assert_eq!(context.positionals[0].name, "input");
-        assert!(!context.positionals[0].required);
-        assert!(!context.positionals[0].variadic);
-        assert_eq!(context.constraints[0].source, "input");
-        assert_eq!(context.constraints[0].target, "-t");
+        assert_eq!(tag.name, "-t");
+        assert!(tag.required);
+        assert_eq!(input.name, "input");
+        assert!(!input.required);
+        assert!(!input.variadic);
+        assert_eq!((constraint.source.as_str(), constraint.target.as_str()), ("input", "-t"));
 
         let json = contract.to_json().expect("compact contract JSON should serialize");
         assert!(!json.contains('\n'));
@@ -415,13 +430,21 @@ mod tests {
             .expect("value policy contract should exist");
         let invocation =
             contract.command.invocation.as_ref().expect("root command should be detailed");
-        let context = &invocation[0];
+        let [context, ..] = invocation.as_slice() else {
+            panic!("expected root invocation context");
+        };
+        let [hyphen, negative, ..] = context.options.as_slice() else {
+            panic!("expected hyphen and negative-number options");
+        };
+        let [positional, ..] = context.positionals.as_slice() else {
+            panic!("expected positional value");
+        };
 
-        assert!(context.options[0].allow_hyphen_values);
-        assert!(!context.options[0].allow_negative_numbers);
-        assert!(!context.options[1].allow_hyphen_values);
-        assert!(context.options[1].allow_negative_numbers);
-        assert!(context.positionals[0].allow_negative_numbers);
+        assert!(hyphen.allow_hyphen_values);
+        assert!(!hyphen.allow_negative_numbers);
+        assert!(!negative.allow_hyphen_values);
+        assert!(negative.allow_negative_numbers);
+        assert!(positional.allow_negative_numbers);
 
         let json = contract.to_json().expect("value policy contract should serialize");
         assert!(json.contains(r#""allowHyphenValues":true"#));
@@ -434,8 +457,9 @@ mod tests {
     fn invocation_values_reference_one_shared_named_type_definition() {
         let contract = TypedContractCli::contract(ContractRequest::root())
             .expect("typed invocation contract should exist");
-        assert_eq!(contract.types.len(), 1);
-        let definition = &contract.types[0];
+        let [definition] = contract.types.as_slice() else {
+            panic!("expected one shared type definition");
+        };
         assert_eq!(definition.name, "OutputFormat");
         assert!(matches!(
             &definition.kind,
@@ -445,18 +469,26 @@ mod tests {
 
         let invocation =
             contract.command.invocation.as_ref().expect("root command should be detailed");
-        let context = &invocation[0];
-        let option_type = context.options[0].value_type.as_ref().expect("format takes a value");
-        let positional_type = &context.positionals[0].value_type;
+        let [context, ..] = invocation.as_slice() else {
+            panic!("expected root invocation context");
+        };
+        let [format, ..] = context.options.as_slice() else {
+            panic!("expected typed option");
+        };
+        let [fallback, ..] = context.positionals.as_slice() else {
+            panic!("expected typed positional");
+        };
+        let option_type = format.value_type.as_ref().expect("format takes a value");
+        let positional_type = &fallback.value_type;
         let expected = TypeContractValue::Reference { index: 0 };
         assert_eq!(option_type, &expected);
         assert_eq!(positional_type, &expected);
         assert_eq!(
-            context.options[0].accepted_values,
+            format.accepted_values,
             [String::from("json"), String::from("text")],
         );
         assert_eq!(
-            context.positionals[0].accepted_values,
+            fallback.accepted_values,
             [String::from("json"), String::from("text")],
         );
 
@@ -475,9 +507,11 @@ mod tests {
         let execution = contract.command.execution.expect("root command is invocable");
         assert_eq!(execution.success, TypeContractValue::Reference { index: 0 },);
         assert_eq!(execution.error, TypeContractValue::Reference { index: 1 },);
-        assert_eq!(contract.types.len(), 2);
-        assert_eq!(contract.types[0].name, "ExecutionOutput");
-        assert_eq!(contract.types[1].name, "ExecutionError");
+        let [output, error] = contract.types.as_slice() else {
+            panic!("expected execution output and error definitions");
+        };
+        assert_eq!(output.name, "ExecutionOutput");
+        assert_eq!(error.name, "ExecutionError");
         assert!(contract.types.iter().all(|definition| definition.name != "RuntimeContext"));
     }
 
@@ -507,19 +541,27 @@ mod tests {
         ] {
             let execution = contract.command.execution.as_ref().expect("root command is invocable");
             assert_eq!(execution.success, TypeContractValue::Reference { index: 0 },);
-            assert_eq!(contract.types.len(), 1);
-            assert_eq!(contract.types[0].name, "GenericOutput");
-            let TypeDefinitionKind::Struct { fields } = &contract.types[0].kind else {
+            let [definition] = contract.types.as_slice() else {
+                panic!("expected one generic output definition");
+            };
+            assert_eq!(definition.name, "GenericOutput");
+            let TypeDefinitionKind::Struct { fields } = &definition.kind else {
                 panic!("GenericOutput must resolve to a struct definition");
             };
-            assert_eq!(fields[0].value_type, TypeContractValue::Primitive { primitive },);
+            let [field, ..] = fields.as_slice() else {
+                panic!("expected generic output field");
+            };
+            assert_eq!(field.value_type, TypeContractValue::Primitive { primitive });
 
             let invocation =
                 contract.command.invocation.as_ref().expect("root command is detailed");
-            assert_eq!(
-                invocation[0].positionals[0].value_type,
-                TypeContractValue::Primitive { primitive },
-            );
+            let [context, ..] = invocation.as_slice() else {
+                panic!("expected root invocation context");
+            };
+            let [positional, ..] = context.positionals.as_slice() else {
+                panic!("expected generic positional");
+            };
+            assert_eq!(positional.value_type, TypeContractValue::Primitive { primitive });
         }
     }
 
@@ -528,13 +570,21 @@ mod tests {
         let shallow = TypedNestedCli::contract(ContractRequest::root())
             .expect("shallow nested contract should exist");
         assert!(shallow.types.is_empty());
-        assert!(shallow.command.subcommands[0].invocation.is_none());
+        let shallow_leaf = shallow
+            .command
+            .subcommands
+            .iter()
+            .find(|command| command.name == "leaf")
+            .expect("leaf command summary should exist");
+        assert!(shallow_leaf.invocation.is_none());
 
         let selected = TypedNestedCli::contract(ContractRequest::new(["leaf"]))
             .expect("selected typed descendant should exist");
-        assert_eq!(selected.types.len(), 2);
-        assert_eq!(selected.types[0].name, "OutputFormat");
-        assert_eq!(selected.types[1].name, "TypedLeafOutput");
+        let [format, output] = selected.types.as_slice() else {
+            panic!("expected output format and typed leaf output definitions");
+        };
+        assert_eq!(format.name, "OutputFormat");
+        assert_eq!(output.name, "TypedLeafOutput");
         assert_eq!(
             selected
                 .command
@@ -545,14 +595,18 @@ mod tests {
             TypeContractValue::Reference { index: 1 },
         );
         let invocation = selected.command.invocation.expect("selected command should be detailed");
-        let value_type = &invocation[1].positionals[0].value_type;
-        assert_eq!(value_type, &TypeContractValue::Reference { index: 0 },);
+        let [_root, leaf, ..] = invocation.as_slice() else {
+            panic!("expected root and leaf invocation contexts");
+        };
+        let [format, ..] = leaf.positionals.as_slice() else {
+            panic!("expected leaf format positional");
+        };
+        assert_eq!(format.value_type, TypeContractValue::Reference { index: 0 });
 
         let recursive = TypedNestedCli::contract(ContractRequest::root().recursive())
             .expect("recursive nested contract should exist");
         assert_eq!(recursive.types.len(), 2);
-        assert!(recursive.command.subcommands[0].invocation.is_some());
-        assert!(recursive.command.subcommands[1].invocation.is_some());
+        assert!(recursive.command.subcommands.iter().all(|command| command.invocation.is_some()));
     }
 
     #[test]
@@ -566,9 +620,10 @@ mod tests {
         assert!(!contract.command.invocable);
         assert!(contract.command.invocation.is_some());
         assert!(contract.command.execution.is_none());
-        assert_eq!(contract.command.subcommands.len(), 2);
+        let [objects, status] = contract.command.subcommands.as_slice() else {
+            panic!("expected objects and status command summaries");
+        };
 
-        let objects = &contract.command.subcommands[0];
         assert!(objects.path.iter().map(String::as_str).eq(["objects"]));
         assert!(objects.aliases.iter().map(String::as_str).eq(["obj"]));
         assert!(!objects.invocable);
@@ -576,7 +631,6 @@ mod tests {
         assert!(objects.execution.is_none());
         assert!(objects.subcommands.is_empty());
 
-        let status = &contract.command.subcommands[1];
         assert!(status.path.iter().map(String::as_str).eq(["status"]));
         assert!(status.invocable);
         assert!(status.invocation.is_none());
@@ -596,57 +650,69 @@ mod tests {
         assert!(command.execution.is_some());
 
         let invocation = command.invocation.as_ref().expect("selected command must be detailed");
-        assert_eq!(invocation.len(), 3);
-        assert_eq!(invocation[0].path, Vec::<String>::new());
-        assert!(invocation[1].path.iter().map(String::as_str).eq(["objects"]));
-        assert!(invocation[2].path.iter().map(String::as_str).eq(["objects", "get"]));
+        let [root, objects, leaf] = invocation.as_slice() else {
+            panic!("expected root, objects, and get invocation contexts");
+        };
+        assert!(root.path.is_empty());
+        assert!(objects.path.iter().map(String::as_str).eq(["objects"]));
+        assert!(leaf.path.iter().map(String::as_str).eq(["objects", "get"]));
 
-        let root = &invocation[0];
         assert!(root.positionals.is_empty());
-        assert_eq!(root.options.len(), 3);
-        assert_eq!(root.options[0].name, "--config");
-        assert!(root.options[0].aliases.iter().map(String::as_str).eq(["--cfg"]));
-        assert!(root.options[0].global);
-        assert!(!root.options[0].required);
-        assert_eq!(root.options[0].value_type, Some(TypeContractValue::String));
-        assert!(!root.options[0].repeatable);
+        let [config, profile, verbose] = root.options.as_slice() else {
+            panic!("expected config, profile, and verbose root options");
+        };
+        assert_eq!(config.name, "--config");
+        assert!(config.aliases.iter().map(String::as_str).eq(["--cfg"]));
+        assert!(config.global);
+        assert!(!config.required);
+        assert_eq!(config.value_type, Some(TypeContractValue::String));
+        assert!(!config.repeatable);
 
-        assert_eq!(root.options[1].name, "--profile");
-        assert_eq!(root.options[1].environment.as_deref(), Some("TOOL_PROFILE"));
-        assert!(root.options[1].has_default);
-        assert!(!root.options[1].required);
+        assert_eq!(profile.name, "--profile");
+        assert_eq!(profile.environment.as_deref(), Some("TOOL_PROFILE"));
+        assert!(profile.has_default);
+        assert!(!profile.required);
 
-        assert_eq!(root.options[2].name, "--verbose");
-        assert!(root.options[2].aliases.iter().map(String::as_str).eq(["-v"]));
-        assert!(root.options[2].value_type.is_none());
+        assert_eq!(verbose.name, "--verbose");
+        assert!(verbose.aliases.iter().map(String::as_str).eq(["-v"]));
+        assert!(verbose.value_type.is_none());
 
-        let leaf = &invocation[2];
-        assert_eq!(leaf.options.len(), 3);
-        assert_eq!(leaf.options[0].name, "--endpoint");
-        assert_eq!(leaf.options[1].name, "--auth-token");
-        assert_eq!(leaf.options[1].environment.as_deref(), Some("TOOL_TOKEN"));
-        assert!(leaf.options[1].required);
-        assert!(leaf.options[1].aliases.iter().map(String::as_str).eq(["--token"]));
-        assert_eq!(leaf.options[2].name, "--stdout");
-        assert!(leaf.options[2].value_type.is_none());
+        let [endpoint, token, stdout] = leaf.options.as_slice() else {
+            panic!("expected endpoint, auth-token, and stdout leaf options");
+        };
+        assert_eq!(endpoint.name, "--endpoint");
+        assert_eq!(token.name, "--auth-token");
+        assert_eq!(token.environment.as_deref(), Some("TOOL_TOKEN"));
+        assert!(token.required);
+        assert!(token.aliases.iter().map(String::as_str).eq(["--token"]));
+        assert_eq!(stdout.name, "--stdout");
+        assert!(stdout.value_type.is_none());
 
-        assert_eq!(leaf.positionals.len(), 2);
-        assert_eq!(leaf.positionals[0].name, "id");
-        assert!(leaf.positionals[0].required);
-        assert!(!leaf.positionals[0].variadic);
-        assert_eq!(leaf.positionals[0].value_type, TypeContractValue::String);
-        assert_eq!(leaf.positionals[1].name, "selectors");
-        assert!(!leaf.positionals[1].required);
-        assert!(leaf.positionals[1].variadic);
-        assert_eq!(leaf.positionals[1].value_type, TypeContractValue::String);
+        let [id, selectors] = leaf.positionals.as_slice() else {
+            panic!("expected id and selectors leaf positionals");
+        };
+        assert_eq!(id.name, "id");
+        assert!(id.required);
+        assert!(!id.variadic);
+        assert_eq!(id.value_type, TypeContractValue::String);
+        assert_eq!(selectors.name, "selectors");
+        assert!(!selectors.required);
+        assert!(selectors.variadic);
+        assert_eq!(selectors.value_type, TypeContractValue::String);
 
-        assert_eq!(leaf.constraints.len(), 2);
-        assert_eq!(leaf.constraints[0].kind, ConstraintContractKind::Requires);
-        assert_eq!(leaf.constraints[0].source, "--endpoint");
-        assert_eq!(leaf.constraints[0].target, "--auth-token");
-        assert_eq!(leaf.constraints[1].kind, ConstraintContractKind::Conflicts);
-        assert_eq!(leaf.constraints[1].source, "--endpoint");
-        assert_eq!(leaf.constraints[1].target, "--stdout");
+        let [requires, conflicts] = leaf.constraints.as_slice() else {
+            panic!("expected requires and conflicts leaf constraints");
+        };
+        assert_eq!(requires.kind, ConstraintContractKind::Requires);
+        assert_eq!(
+            (requires.source.as_str(), requires.target.as_str()),
+            ("--endpoint", "--auth-token"),
+        );
+        assert_eq!(conflicts.kind, ConstraintContractKind::Conflicts);
+        assert_eq!(
+            (conflicts.source.as_str(), conflicts.target.as_str()),
+            ("--endpoint", "--stdout"),
+        );
     }
 
     #[test]
@@ -654,20 +720,28 @@ mod tests {
         let contract = Cli::contract(ContractRequest::new(["objects", "get"]))
             .expect("nested contract should exist");
         let invocation = contract.command.invocation.expect("selected command should be detailed");
+        let [root, objects, leaf, ..] = invocation.as_slice() else {
+            panic!("expected root, objects, and get invocation contexts");
+        };
 
-        assert_eq!(invocation[0].actions.len(), 1);
-        assert_eq!(invocation[0].actions[0].kind, ActionContractKind::Help);
-        assert_eq!(invocation[1].actions.len(), 1);
-        assert_eq!(invocation[1].actions[0].kind, ActionContractKind::Help);
+        let [root_help] = root.actions.as_slice() else {
+            panic!("expected root help action");
+        };
+        assert_eq!(root_help.kind, ActionContractKind::Help);
+        let [objects_help] = objects.actions.as_slice() else {
+            panic!("expected objects help action");
+        };
+        assert_eq!(objects_help.kind, ActionContractKind::Help);
 
-        let leaf_actions = &invocation[2].actions;
-        assert_eq!(leaf_actions.len(), 2);
-        assert_eq!(leaf_actions[0].name, "--help");
-        assert!(leaf_actions[0].aliases.iter().map(String::as_str).eq(["-h"]));
-        assert_eq!(leaf_actions[0].kind, ActionContractKind::Help);
-        assert_eq!(leaf_actions[1].name, "--version");
-        assert!(leaf_actions[1].aliases.iter().map(String::as_str).eq(["-V"]));
-        assert_eq!(leaf_actions[1].kind, ActionContractKind::Version);
+        let [help, version] = leaf.actions.as_slice() else {
+            panic!("expected leaf help and version actions");
+        };
+        assert_eq!(help.name, "--help");
+        assert!(help.aliases.iter().map(String::as_str).eq(["-h"]));
+        assert_eq!(help.kind, ActionContractKind::Help);
+        assert_eq!(version.name, "--version");
+        assert!(version.aliases.iter().map(String::as_str).eq(["-V"]));
+        assert_eq!(version.kind, ActionContractKind::Version);
 
         assert!(matches!(
             Cli::try_parse_from(["tool", "objects", "get", "--version"]),
@@ -684,15 +758,19 @@ mod tests {
         let request = ContractRequest::root().recursive();
         let contract = Cli::contract(request).expect("recursive root contract should exist");
 
-        let objects = &contract.command.subcommands[0];
+        let [objects, ..] = contract.command.subcommands.as_slice() else {
+            panic!("expected objects command");
+        };
         assert!(objects.invocation.is_some());
-        assert_eq!(objects.subcommands.len(), 2);
-        assert!(objects.subcommands[0].invocation.is_some());
-        assert!(objects.subcommands[1].invocation.is_some());
-        assert!(objects.subcommands[0].execution.is_some());
-        assert!(objects.subcommands[1].execution.is_some());
-        assert!(objects.subcommands[0].path.iter().map(String::as_str).eq(["objects", "get"]));
-        assert!(objects.subcommands[1].path.iter().map(String::as_str).eq(["objects", "list"]));
+        let [get, list] = objects.subcommands.as_slice() else {
+            panic!("expected get and list object commands");
+        };
+        assert!(get.invocation.is_some());
+        assert!(list.invocation.is_some());
+        assert!(get.execution.is_some());
+        assert!(list.execution.is_some());
+        assert!(get.path.iter().map(String::as_str).eq(["objects", "get"]));
+        assert!(list.path.iter().map(String::as_str).eq(["objects", "list"]));
     }
 
     #[test]

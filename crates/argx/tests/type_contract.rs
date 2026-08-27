@@ -103,9 +103,12 @@ mod tests {
         assert_eq!(std::ffi::OsString::type_contract().root, TypeContractValue::OsString);
         assert_eq!(std::path::PathBuf::type_contract().root, TypeContractValue::Path);
         let infallible = std::convert::Infallible::type_contract();
-        assert_eq!(infallible.root, TypeContractValue::Reference { index: 0 },);
+        assert_eq!(infallible.root, TypeContractValue::Reference { index: 0 });
+        let [definition, ..] = infallible.types.as_slice() else {
+            panic!("expected Infallible definition");
+        };
         assert!(matches!(
-            &infallible.types[0].kind,
+            &definition.kind,
             TypeDefinitionKind::Enum { variants } if variants.is_empty()
         ));
         assert_eq!(
@@ -137,32 +140,34 @@ mod tests {
         let contract = Node::type_contract();
         assert_eq!(contract.version, argx::CONTRACT_VERSION);
         assert_eq!(contract.root, TypeContractValue::Reference { index: 0 },);
-        assert_eq!(contract.types.len(), 2);
+        let [node, identity] = contract.types.as_slice() else {
+            panic!("expected Node and Identity definitions");
+        };
 
-        let node = &contract.types[0];
         assert_eq!(node.name, "Node");
         assert_eq!(node.description.as_deref(), Some("One recursive tree node."));
         let TypeDefinitionKind::Struct { fields } = &node.kind else {
             panic!("Node must resolve to a struct definition");
         };
-        assert_eq!(fields.len(), 2);
-        assert_eq!(fields[0].name.as_deref(), Some("children"));
-        assert_eq!(fields[0].description.as_deref(), Some("Child nodes."));
+        let [children, identity_field] = fields.as_slice() else {
+            panic!("expected children and identity fields");
+        };
+        assert_eq!(children.name.as_deref(), Some("children"));
+        assert_eq!(children.description.as_deref(), Some("Child nodes."));
         assert_eq!(
-            fields[0].value_type,
+            children.value_type,
             TypeContractValue::Sequence {
                 element: Box::new(TypeContractValue::Reference { index: 0 }),
             },
         );
-        assert_eq!(fields[1].name.as_deref(), Some("identity"));
+        assert_eq!(identity_field.name.as_deref(), Some("identity"));
         assert_eq!(
-            fields[1].value_type,
+            identity_field.value_type,
             TypeContractValue::Optional {
                 value: Box::new(TypeContractValue::Reference { index: 1 }),
             },
         );
 
-        let identity = &contract.types[1];
         assert_eq!(identity.name, "Identity");
         assert_eq!(identity.description.as_deref(), Some("A documented reusable leaf."));
     }
@@ -170,27 +175,37 @@ mod tests {
     #[test]
     fn mutually_recursive_definitions_are_reserved_before_descent() {
         let contract = Left::type_contract();
-        assert_eq!(contract.types.len(), 2);
-        assert_eq!(contract.types[0].name, "Left");
-        assert_eq!(contract.types[1].name, "Right");
+        let [left, right] = contract.types.as_slice() else {
+            panic!("expected Left and Right definitions");
+        };
+        assert_eq!(left.name, "Left");
+        assert_eq!(right.name, "Right");
     }
 
     #[test]
     fn enum_contracts_preserve_variant_and_field_shapes() {
         let contract = Event::type_contract();
-        let TypeDefinitionKind::Enum { variants } = &contract.types[0].kind else {
+        let [event, ..] = contract.types.as_slice() else {
+            panic!("expected Event definition");
+        };
+        let TypeDefinitionKind::Enum { variants } = &event.kind else {
             panic!("Event must resolve to an enum definition");
         };
-        assert_eq!(variants.len(), 3);
-        assert_eq!(variants[0].name, "Started");
-        assert_eq!(variants[0].description.as_deref(), Some("No payload."));
-        assert_eq!(variants[0].kind, TypeVariantKind::Unit);
-        assert!(matches!(&variants[1].kind, TypeVariantKind::Tuple { .. }));
-        let TypeVariantKind::Struct { fields } = &variants[2].kind else {
+        let [started, count, renamed] = variants.as_slice() else {
+            panic!("expected Started, Count, and Renamed variants");
+        };
+        assert_eq!(started.name, "Started");
+        assert_eq!(started.description.as_deref(), Some("No payload."));
+        assert_eq!(started.kind, TypeVariantKind::Unit);
+        assert!(matches!(&count.kind, TypeVariantKind::Tuple { .. }));
+        let TypeVariantKind::Struct { fields } = &renamed.kind else {
             panic!("Renamed must preserve its named payload");
         };
-        assert_eq!(fields[0].name.as_deref(), Some("name"));
-        assert_eq!(fields[0].description.as_deref(), Some("New display name."));
+        let [name, ..] = fields.as_slice() else {
+            panic!("expected Renamed name field");
+        };
+        assert_eq!(name.name.as_deref(), Some("name"));
+        assert_eq!(name.description.as_deref(), Some("New display name."));
     }
 
     #[test]
@@ -221,19 +236,27 @@ mod tests {
         let contract = Root::type_contract();
         let projected =
             contract.types.iter().filter(|item| item.name == "Projected").collect::<Vec<_>>();
-        assert_eq!(projected.len(), 2);
+        let [vector, queue] = projected.as_slice() else {
+            panic!("expected vector and queue Projected definitions");
+        };
 
-        let TypeDefinitionKind::Struct { fields: vector_fields } = &projected[0].kind else {
+        let TypeDefinitionKind::Struct { fields: vector_fields } = &vector.kind else {
             panic!("Projected<Vec<u8>> must resolve to a struct definition");
         };
-        let TypeDefinitionKind::Struct { fields: queue_fields } = &projected[1].kind else {
+        let TypeDefinitionKind::Struct { fields: queue_fields } = &queue.kind else {
             panic!("Projected<VecDeque<u8>> must resolve to a struct definition");
         };
+        let [vector_value, ..] = vector_fields.as_slice() else {
+            panic!("expected projected vector value field");
+        };
+        let [queue_value, ..] = queue_fields.as_slice() else {
+            panic!("expected projected queue value field");
+        };
         assert_eq!(
-            vector_fields[0].value_type,
+            vector_value.value_type,
             TypeContractValue::Primitive { primitive: PrimitiveType::U8 },
         );
-        assert_eq!(queue_fields[0].value_type, TypeContractValue::String);
+        assert_eq!(queue_value.value_type, TypeContractValue::String);
     }
 
     #[test]
@@ -253,6 +276,7 @@ mod tests {
     #[test]
     fn equal_short_rust_names_remain_distinct_definitions() {
         mod first {
+            #[expect(dead_code, reason = "shape is exercised through the generated contract")]
             #[derive(argx::Contract)]
             pub(super) struct Duplicate {
                 pub(super) value: String,
@@ -260,6 +284,7 @@ mod tests {
         }
 
         mod second {
+            #[expect(dead_code, reason = "shape is exercised through the generated contract")]
             #[derive(argx::Contract)]
             pub(super) struct Duplicate {
                 pub(super) value: u32,
@@ -273,34 +298,42 @@ mod tests {
             second: second::Duplicate,
         }
 
-        let first_value = first::Duplicate { value: String::new() };
-        let second_value = second::Duplicate { value: 0 };
-        assert!(first_value.value.is_empty());
-        assert_eq!(second_value.value, 0);
-
         let contract = Root::type_contract();
-        let TypeDefinitionKind::Struct { fields } = &contract.types[0].kind else {
+        let root = contract.types.first().expect("expected Root definition");
+        let TypeDefinitionKind::Struct { fields } = &root.kind else {
             panic!("Root must resolve to a struct definition");
         };
-        assert_ne!(fields[0].value_type, fields[1].value_type);
+        let [first, second, ..] = fields.as_slice() else {
+            panic!("expected first and second Root fields");
+        };
+        assert_ne!(first.value_type, second.value_type);
 
         let duplicates = contract
             .types
             .iter()
             .filter(|definition| definition.name == "Duplicate")
             .collect::<Vec<_>>();
+        let [first, second] = duplicates.as_slice() else {
+            panic!("expected two distinct Duplicate definitions");
+        };
 
-        assert_eq!(duplicates.len(), 2);
-        assert!(matches!(
-            &duplicates[0].kind,
-            TypeDefinitionKind::Struct { fields } if fields[0].value_type == TypeContractValue::String
-        ));
-        assert!(matches!(
-            &duplicates[1].kind,
-            TypeDefinitionKind::Struct { fields }
-                if fields[0].value_type
-                    == TypeContractValue::Primitive { primitive: PrimitiveType::U32 }
-        ));
+        let TypeDefinitionKind::Struct { fields: first_fields } = &first.kind else {
+            panic!("first Duplicate must resolve to a struct definition");
+        };
+        let TypeDefinitionKind::Struct { fields: second_fields } = &second.kind else {
+            panic!("second Duplicate must resolve to a struct definition");
+        };
+        let [first_value, ..] = first_fields.as_slice() else {
+            panic!("expected first Duplicate value field");
+        };
+        let [second_value, ..] = second_fields.as_slice() else {
+            panic!("expected second Duplicate value field");
+        };
+        assert_eq!(first_value.value_type, TypeContractValue::String);
+        assert_eq!(
+            second_value.value_type,
+            TypeContractValue::Primitive { primitive: PrimitiveType::U32 },
+        );
     }
 
     #[test]
@@ -317,11 +350,17 @@ mod tests {
         assert!(serialized.get("wireName").is_some());
 
         let contract = Payload::type_contract();
-        assert_eq!(contract.types[0].name, "Payload");
-        let TypeDefinitionKind::Struct { fields } = &contract.types[0].kind else {
+        let [payload, ..] = contract.types.as_slice() else {
+            panic!("expected Payload definition");
+        };
+        assert_eq!(payload.name, "Payload");
+        let TypeDefinitionKind::Struct { fields } = &payload.kind else {
             panic!("Payload must resolve to a struct definition");
         };
-        assert_eq!(fields[0].name.as_deref(), Some("rust_name"));
+        let [rust_name, ..] = fields.as_slice() else {
+            panic!("expected rust_name field");
+        };
+        assert_eq!(rust_name.name.as_deref(), Some("rust_name"));
     }
 
     #[test]

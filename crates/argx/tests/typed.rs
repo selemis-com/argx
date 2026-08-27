@@ -929,9 +929,15 @@ mod tests {
         let expected = <OutputMode as argx::ValueEnum>::VALUES;
         assert_eq!(expected, &["human-readable", "json", "quiet"]);
         let command = <ValueEnumCli as argx::__private::CommandArgs>::COMMAND;
-        assert_eq!(command.flags[0].accepted_values, expected);
-        assert_eq!(command.flags[1].accepted_values, expected);
-        assert_eq!(command.args[0].accepted_values, expected);
+        let &[output, include, ..] = command.flags else {
+            panic!("expected output and include value-enum flags");
+        };
+        let &[fallback, ..] = command.args else {
+            panic!("expected fallback value-enum positional");
+        };
+        assert_eq!(output.accepted_values, expected);
+        assert_eq!(include.accepted_values, expected);
+        assert_eq!(fallback.accepted_values, expected);
 
         let help = ValueEnumCli::render_help();
         assert!(help.contains("Output mode. [possible values: human-readable, json, quiet]"));

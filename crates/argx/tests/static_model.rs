@@ -10,6 +10,8 @@
 #[cfg(test)]
 #[cfg(feature = "derive")]
 mod tests {
+    #![expect(dead_code, reason = "fixtures are exercised through generated metadata")]
+
     use argx::__private::{Arg, Command, CommandArgs as _, Event, Flag};
 
     /// Documentation that is overridden by explicit command help.
@@ -185,74 +187,83 @@ mod tests {
 
     #[test]
     fn parser_derive_emits_static_command_tables() {
-        let value = Cli { verbose: false, output: None, input: String::new(), rest: Vec::new() };
-        assert!(!value.verbose);
-        assert!(value.output.is_none());
-        assert!(value.input.is_empty());
-        assert!(value.rest.is_empty());
-
         let command = Cli::COMMAND;
         assert_eq!(command.name, "example");
         assert_eq!(command.about, Some("Example command"));
-        assert_eq!(command.flags.len(), 2);
-        assert_eq!(command.args.len(), 2);
         assert!(command.subcommands.is_empty());
 
-        assert_eq!(command.flags[0].name, "verbose");
-        assert_eq!(command.flags[0].diagnostic, "--verbose");
-        assert_eq!(command.flags[0].longs, ["verbose"]);
-        assert_eq!(command.flags[0].shorts, [b'v']);
-        assert_eq!(command.flags[0].help, Some("Enable verbose output."));
-        assert!(command.flags[0].global);
-        assert!(!command.flags[0].takes_value);
-        assert!(!command.flags[0].repeatable);
-        assert!(!command.flags[0].required);
-        assert!(!command.flags[0].has_default);
-        assert!(!command.flags[0].allow_hyphen_values);
-        assert!(!command.flags[0].allow_negative_numbers);
+        let &[verbose, output] = command.flags else {
+            panic!("expected verbose and output flags");
+        };
+        assert_eq!(
+            *verbose,
+            Flag {
+                key: verbose.key,
+                name: "verbose",
+                diagnostic: "--verbose",
+                help: Some("Enable verbose output."),
+                longs: &["verbose"],
+                shorts: b"v",
+                global: true,
+                ..Flag::BOOL
+            },
+        );
+        assert_eq!(
+            *output,
+            Flag {
+                key: output.key,
+                name: "output",
+                diagnostic: "--output",
+                help: Some("Optional output path"),
+                longs: &["output"],
+                env: Some("ARGX_OUTPUT"),
+                ..Flag::VALUE
+            },
+        );
 
-        assert_eq!(command.flags[1].name, "output");
-        assert_eq!(command.flags[1].diagnostic, "--output");
-        assert_eq!(command.flags[1].env, Some("ARGX_OUTPUT"));
-        assert_eq!(command.flags[1].longs, ["output"]);
-        assert!(command.flags[1].shorts.is_empty());
-        assert_eq!(command.flags[1].help, Some("Optional output path"));
-        assert!(!command.flags[1].global);
-        assert!(command.flags[1].takes_value);
-        assert!(!command.flags[1].repeatable);
-        assert!(!command.flags[1].required);
-        assert!(!command.flags[1].has_default);
-        assert!(!command.flags[1].allow_hyphen_values);
-        assert!(!command.flags[1].allow_negative_numbers);
-
-        assert_eq!(command.args[0].name, "input");
-        assert_eq!(command.args[0].help, Some("Input value to process."));
-        assert!(command.args[0].required);
-        assert!(!command.args[0].variadic);
-        assert!(!command.args[0].allow_negative_numbers);
-
-        assert_eq!(command.args[1].name, "rest");
-        assert!(!command.args[1].required);
-        assert!(command.args[1].variadic);
-        assert!(!command.args[1].allow_negative_numbers);
+        let &[input, rest] = command.args else {
+            panic!("expected input and rest positionals");
+        };
+        assert_eq!(
+            *input,
+            Arg {
+                key: input.key,
+                name: "input",
+                help: Some("Input value to process."),
+                ..Arg::REQUIRED
+            },
+        );
+        assert_eq!(
+            *rest,
+            Arg {
+                key: rest.key,
+                name: "rest",
+                required: false,
+                variadic: true,
+                ..Arg::REQUIRED
+            },
+        );
     }
 
     #[test]
     fn flatten_field_docs_are_projected_as_help_groups() {
-        let value = GroupedModel { output: GroupedModelArgs { json: false, field: Vec::new() } };
-        assert!(!value.output.json);
-        assert!(value.output.field.is_empty());
-
         let command = GroupedModel::COMMAND;
-        assert_eq!(command.help_groups.len(), 1);
-        let group = command.help_groups[0];
+        let &[group] = command.help_groups else {
+            panic!("expected one documented help group");
+        };
+        let &[json, field, ..] = command.flags else {
+            panic!("expected json and field flags");
+        };
+
         assert_eq!(group.heading, "Output");
-        assert_eq!(group.flags.len(), 2);
         assert!(group.args.is_empty());
-        assert!(std::ptr::eq(group.flags[0], command.flags[0]));
-        assert!(std::ptr::eq(group.flags[1], command.flags[1]));
-        assert!(!command.flags[0].repeatable);
-        assert!(command.flags[1].repeatable);
+        let &[group_json, group_field] = group.flags else {
+            panic!("expected json and field flags in the help group");
+        };
+        assert!(std::ptr::eq(group_json, json));
+        assert!(std::ptr::eq(group_field, field));
+        assert!(!json.repeatable);
+        assert!(field.repeatable);
     }
 
     #[test]
@@ -265,50 +276,45 @@ mod tests {
                 "Documented command summary.\n\nAdditional command context remains available to full help."
             )
         );
-        assert_eq!(command.help_sections.len(), 2);
-        assert_eq!(command.help_sections[0].heading, "Examples");
-        assert_eq!(command.help_sections[0].body, "example run");
-        assert_eq!(command.help_sections[1].heading, "Machine-readable usage");
-        assert_eq!(command.help_sections[1].body, "Use `example schema`.");
+        let [examples, machine_usage] = command.help_sections else {
+            panic!("expected examples and machine-readable usage sections");
+        };
+        assert_eq!(examples.heading, "Examples");
+        assert_eq!(examples.body, "example run");
+        assert_eq!(machine_usage.heading, "Machine-readable usage");
+        assert_eq!(machine_usage.body, "Use `example schema`.");
     }
 
     #[test]
     fn flattened_tables_are_composed_in_declaration_order_without_rekeying_children() {
-        let value = Flattened {
-            before_flag: false,
-            before: String::new(),
-            nested: Nested {
-                nested: false,
-                shared: Shared { shared: false, middle: String::new() },
-            },
-            after_flag: false,
-            after: String::new(),
-        };
-        assert!(!value.before_flag);
-        assert!(value.before.is_empty());
-        assert!(!value.nested.nested);
-        assert!(!value.nested.shared.shared);
-        assert!(value.nested.shared.middle.is_empty());
-        assert!(!value.after_flag);
-        assert!(value.after.is_empty());
-
         let command = Flattened::COMMAND;
         let nested = <Nested as argx::__private::CommandArgs>::COMMAND;
         let shared = <Shared as argx::__private::CommandArgs>::COMMAND;
 
-        assert_eq!(command.flags.len(), 4);
-        assert_eq!(command.flags[0].name, "before_flag");
-        assert_eq!(command.flags[1].name, "nested");
-        assert_eq!(command.flags[2].name, "shared");
-        assert_eq!(command.flags[3].name, "after_flag");
-        assert_eq!(command.flags[1].key, nested.flags[0].key);
-        assert_eq!(command.flags[2].key, shared.flags[0].key);
+        let &[before_flag, nested_flag, shared_flag, after_flag] = command.flags else {
+            panic!("expected four composed flags");
+        };
+        assert_eq!(
+            [before_flag.name, nested_flag.name, shared_flag.name, after_flag.name],
+            ["before_flag", "nested", "shared", "after_flag"],
+        );
+        let &[nested_own_flag, ..] = nested.flags else {
+            panic!("expected nested flag");
+        };
+        let &[shared_own_flag, ..] = shared.flags else {
+            panic!("expected shared flag");
+        };
+        assert_eq!(nested_flag.key, nested_own_flag.key);
+        assert_eq!(shared_flag.key, shared_own_flag.key);
 
-        assert_eq!(command.args.len(), 3);
-        assert_eq!(command.args[0].name, "before");
-        assert_eq!(command.args[1].name, "middle");
-        assert_eq!(command.args[2].name, "after");
-        assert_eq!(command.args[1].key, shared.args[0].key);
+        let &[before, middle, after] = command.args else {
+            panic!("expected three composed positionals");
+        };
+        assert_eq!([before.name, middle.name, after.name], ["before", "middle", "after"]);
+        let &[shared_middle, ..] = shared.args else {
+            panic!("expected shared middle positional");
+        };
+        assert_eq!(middle.key, shared_middle.key);
 
         assert!(argx::__private::command_keys_unique(command.flags, command.args));
         assert!(argx::__private::flag_spellings_unique(command.flags));
@@ -320,26 +326,34 @@ mod tests {
         let command = Cli::COMMAND;
         let high = command.key & 0xffff_ffff_0000_0000;
 
+        let &[verbose, output, ..] = command.flags else {
+            panic!("expected verbose and output flags");
+        };
+        let &[input, rest, ..] = command.args else {
+            panic!("expected input and rest positionals");
+        };
+
         assert_eq!(command.key, high | 0x8000_0000);
-        assert_eq!(command.flags[0].key, high);
-        assert_eq!(command.flags[1].key, high | 1);
-        assert_eq!(command.args[0].key, high | 0x4000_0000);
-        assert_eq!(command.args[1].key, high | 0x4000_0001);
+        assert_eq!(verbose.key, high);
+        assert_eq!(output.key, high | 1);
+        assert_eq!(input.key, high | 0x4000_0000);
+        assert_eq!(rest.key, high | 0x4000_0001);
     }
 
     #[test]
     fn identical_declarations_in_different_modules_have_different_keys() {
-        let add_value = add::Options { force: false };
-        let remove_value = remove::Options { force: false };
-        assert!(!add_value.force);
-        assert!(!remove_value.force);
-
         let add = <add::Options as argx::__private::CommandArgs>::COMMAND;
         let remove = <remove::Options as argx::__private::CommandArgs>::COMMAND;
+        let &[add_force, ..] = add.flags else {
+            panic!("expected add force flag");
+        };
+        let &[remove_force, ..] = remove.flags else {
+            panic!("expected remove force flag");
+        };
 
         assert_ne!(add.key, remove.key);
-        assert_ne!(add.flags[0].key, remove.flags[0].key);
-        assert_eq!(add.flags[0].key & 0xffff_ffff, remove.flags[0].key & 0xffff_ffff);
+        assert_ne!(add_force.key, remove_force.key);
+        assert_eq!(add_force.key & 0xffff_ffff, remove_force.key & 0xffff_ffff);
     }
 
     #[test]
@@ -347,120 +361,93 @@ mod tests {
         use argx::__private::Subcommands as _;
 
         let command = CommandCli::COMMAND;
-        assert_eq!(command.subcommands.len(), 4);
-        assert_eq!(command.subcommands[0].name, "add");
-        assert_eq!(command.subcommands[0].about, Some("Add one value."));
-        assert_eq!(command.subcommands[1].name, "remove");
-        assert_eq!(command.subcommands[1].about, Some("Remove one value"));
-        assert_eq!(command.subcommands[2].name, "nested");
-        assert_eq!(command.subcommands[3].name, "status");
+        let &[add, remove, nested, status] = command.subcommands else {
+            panic!("expected add, remove, nested, and status subcommands");
+        };
+        assert_eq!(
+            [add.name, remove.name, nested.name, status.name],
+            ["add", "remove", "nested", "status"],
+        );
+        assert_eq!(add.about, Some("Add one value."));
+        assert_eq!(remove.about, Some("Remove one value"));
 
-        let add = command.subcommands[0];
         let add_args = <AddArgs as argx::__private::CommandArgs>::COMMAND;
         assert_eq!(add.flags, add_args.flags);
         assert_eq!(add.args, add_args.args);
-        assert_eq!(add.flags[0].name, "force");
-        assert_eq!(add.args[0].name, "value");
-
-        let remove = command.subcommands[1];
+        let &[force, ..] = add.flags else {
+            panic!("expected add force flag");
+        };
+        let &[value, ..] = add.args else {
+            panic!("expected add value positional");
+        };
+        assert_eq!(force.name, "force");
+        assert_eq!(value.name, "value");
         assert_eq!(remove.flags, add_args.flags);
         assert_eq!(remove.args, add_args.args);
 
-        let nested = command.subcommands[2];
-        assert_eq!(nested.subcommands.len(), 1);
-        assert_eq!(nested.subcommands[0].name, "leaf");
+        let &[leaf] = nested.subcommands else {
+            panic!("expected nested leaf command");
+        };
+        assert_eq!(leaf.name, "leaf");
         assert_eq!(Commands::COMMANDS, command.subcommands);
-        assert_ne!(command.subcommands[0].key, command.subcommands[1].key);
-        assert_ne!(command.subcommands[1].key, command.subcommands[2].key);
-        assert_ne!(command.subcommands[2].key, command.subcommands[3].key);
-        for (index, command) in command.subcommands.iter().enumerate() {
-            assert_eq!(command.key & 0xffff_ffff, 0x8000_0000 | index as u64);
+
+        let keys = [add.key, remove.key, nested.key, status.key];
+        assert!(keys.windows(2).all(|pair| pair[0] != pair[1]));
+        for (index, key) in keys.into_iter().enumerate() {
+            assert_eq!(key & 0xffff_ffff, 0x8000_0000 | index as u64);
         }
-
-        let add_value = Commands::Add(AddArgs { force: false, value: String::new() });
-        let Commands::Add(add_value) = add_value else {
-            unreachable!("constructed Add variant changed")
-        };
-        assert!(!add_value.force);
-        assert!(add_value.value.is_empty());
-
-        let remove_value = Commands::Remove(AddArgs { force: false, value: String::new() });
-        let Commands::Remove(remove_value) = remove_value else {
-            unreachable!("constructed Remove variant changed")
-        };
-        assert!(!remove_value.force);
-        assert!(remove_value.value.is_empty());
-
-        let nested_value = Commands::Nested(NestedArgs { command: NestedCommand::Leaf });
-        let Commands::Nested(nested_value) = nested_value else {
-            unreachable!("constructed Nested variant changed")
-        };
-        assert!(matches!(nested_value.command, NestedCommand::Leaf));
-
-        let value = CommandCli { verbose: false, command: Commands::Status };
-        assert!(!value.verbose);
-        assert!(matches!(value.command, Commands::Status));
     }
 
     #[test]
     fn version_metadata_is_projected_into_private_command_actions() {
-        let value = MetadataCli { command: MetadataCommands::Plain };
-        assert!(matches!(value.command, MetadataCommands::Plain));
-
         use argx::__private::{ActionKind, Subcommands as _};
 
         let root = MetadataCli::COMMAND;
-        assert_eq!(root.actions.len(), 2);
-        assert_eq!(root.actions[0].name, "help");
-        assert_eq!(root.actions[1].name, "version");
-        assert_eq!(
-            root.actions[1].kind,
-            ActionKind::Version { short: VERSION, long: LONG_VERSION }
-        );
+        let &[help, version] = root.actions else {
+            panic!("expected help and version actions");
+        };
+        assert_eq!(help.name, "help");
+        assert_eq!(version.name, "version");
+        assert_eq!(version.kind, ActionKind::Version { short: VERSION, long: LONG_VERSION });
 
-        let commands = MetadataCommands::COMMANDS;
-        assert_eq!(commands.len(), 2);
-        assert_eq!(commands[0].actions.len(), 2);
-        assert_eq!(commands[1].actions.len(), 1);
+        let &[versioned, plain] = MetadataCommands::COMMANDS else {
+            panic!("expected versioned and plain commands");
+        };
+        assert_eq!(versioned.actions.len(), 2);
+        assert_eq!(plain.actions.len(), 1);
     }
 
     #[test]
     fn constraints_are_normalized_to_semantic_argument_keys() {
         use argx::__private::ConstraintKind;
 
-        let value = ConstraintCli {
-            endpoint: None,
-            shared: ConstraintShared { token: None },
-            stdout: false,
-        };
-        assert!(value.endpoint.is_none());
-        assert!(value.shared.token.is_none());
-        assert!(!value.stdout);
-
         let command = ConstraintCli::COMMAND;
-        assert_eq!(command.constraints.len(), 2);
-        assert_eq!(command.constraints[0].kind, ConstraintKind::Requires);
-        assert_eq!(command.constraints[0].source, command.flags[0].key);
-        assert_eq!(command.constraints[0].target, command.flags[1].key);
-        assert_eq!(command.constraints[1].kind, ConstraintKind::Conflicts);
-        assert_eq!(command.constraints[1].source, command.flags[0].key);
-        assert_eq!(command.constraints[1].target, command.flags[2].key);
-        assert_eq!(command.flags[1].name, "token");
-        assert_eq!(command.flags[1].diagnostic, "--auth-token");
-        assert_eq!(command.flags[1].aliases, ["token"]);
+        let &[endpoint, token, stdout, ..] = command.flags else {
+            panic!("expected endpoint, token, and stdout flags");
+        };
+        let &[requires, conflicts] = command.constraints else {
+            panic!("expected requires and conflicts constraints");
+        };
+
+        assert_eq!(requires.kind, ConstraintKind::Requires);
+        assert_eq!((requires.source, requires.target), (endpoint.key, token.key));
+        assert_eq!(conflicts.kind, ConstraintKind::Conflicts);
+        assert_eq!((conflicts.source, conflicts.target), (endpoint.key, stdout.key));
+        assert_eq!(token.name, "token");
+        assert_eq!(token.diagnostic, "--auth-token");
+        assert_eq!(token.aliases, ["token"]);
     }
 
     #[test]
     fn identical_subcommand_declarations_in_different_modules_have_different_keys() {
         use argx::__private::Subcommands as _;
 
-        let first_value = command_a::Action::Run;
-        let second_value = command_b::Action::Run;
-        assert!(matches!(first_value, command_a::Action::Run));
-        assert!(matches!(second_value, command_b::Action::Run));
-
-        let first = command_a::Action::COMMANDS[0];
-        let second = command_b::Action::COMMANDS[0];
+        let &[first, ..] = command_a::Action::COMMANDS else {
+            panic!("expected first run command");
+        };
+        let &[second, ..] = command_b::Action::COMMANDS else {
+            panic!("expected second run command");
+        };
         assert_ne!(first.key, second.key);
         assert_eq!(first.key & 0xffff_ffff, second.key & 0xffff_ffff);
     }
@@ -468,7 +455,9 @@ mod tests {
     #[test]
     fn binding_uses_key_dispatch_with_exact_metadata_identity() {
         let command = Cli::COMMAND;
-        let real_flag = command.flags[0];
+        let &[real_flag, ..] = command.flags else {
+            panic!("expected command flag metadata");
+        };
         let fake_flag = Flag { key: real_flag.key, ..Flag::BOOL };
         let mut command_partial = <Cli as argx::__private::CommandArgs>::start();
         assert!(!<Cli as argx::__private::CommandArgs>::apply(
@@ -476,14 +465,18 @@ mod tests {
             &Event::Flag { flag: &fake_flag, value: None },
         ));
 
-        let real_arg = command.args[0];
+        let &[real_arg, ..] = command.args else {
+            panic!("expected command positional metadata");
+        };
         let fake_arg = Arg { key: real_arg.key, ..Arg::REQUIRED };
         assert!(!<Cli as argx::__private::CommandArgs>::apply(
             &mut command_partial,
             &Event::Arg { arg: &fake_arg, value: b"value" },
         ));
 
-        let real_command = <Commands as argx::__private::Subcommands>::COMMANDS[0];
+        let &[real_command, ..] = <Commands as argx::__private::Subcommands>::COMMANDS else {
+            panic!("expected subcommand metadata");
+        };
         let fake_command = Command { key: real_command.key, ..Command::EMPTY };
         let mut subcommand_partial = <Commands as argx::__private::Subcommands>::start();
         assert!(!<Commands as argx::__private::Subcommands>::apply(
