@@ -22,6 +22,20 @@ mod tests {
         support::example_command("basic")
             .env("ARGX_COMPLETE", "1")
             .env("ARGX_COMPLETE_LINE", "cli --")
+            .env_remove("ARGX_COMPLETE_WORDS")
+            .arg("__argx_complete__")
+            .assert()
+            .success()
+            .stdout_eq("--help\tPrint help\n")
+            .stderr_eq("");
+    }
+
+    #[test]
+    fn parse_entry_point_answers_nushell_span_protocol() {
+        support::example_command("basic")
+            .env("ARGX_COMPLETE", "1")
+            .env("ARGX_COMPLETE_WORDS", r#"["cli","--"]"#)
+            .env_remove("ARGX_COMPLETE_LINE")
             .arg("__argx_complete__")
             .assert()
             .success()
@@ -34,6 +48,7 @@ mod tests {
         support::example_command("basic")
             .env_remove("ARGX_COMPLETE")
             .env_remove("ARGX_COMPLETE_LINE")
+            .env_remove("ARGX_COMPLETE_WORDS")
             .args(["__argx_complete__", "--line", "cli --"])
             .assert()
             .failure()
@@ -46,6 +61,19 @@ mod tests {
             .env("ARGX_COMPLETE", "1")
             .env("ARGX_COMPLETE_LINE", "cli --")
             .args(["__argx_complete__", "unexpected"])
+            .assert()
+            .success()
+            .stdout_eq("")
+            .stderr_eq("");
+    }
+
+    #[test]
+    fn malformed_nushell_span_requests_are_consumed_silently() {
+        support::example_command("basic")
+            .env("ARGX_COMPLETE", "1")
+            .env("ARGX_COMPLETE_WORDS", "not-json")
+            .env_remove("ARGX_COMPLETE_LINE")
+            .arg("__argx_complete__")
             .assert()
             .success()
             .stdout_eq("")

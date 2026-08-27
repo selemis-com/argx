@@ -7,7 +7,9 @@ use std::{
     io::{self, Write as _},
 };
 
-use super::{PROTOCOL_COMMAND, PROTOCOL_ENV, PROTOCOL_LINE_ENV, PROTOCOL_VERSION};
+use super::{
+    PROTOCOL_COMMAND, PROTOCOL_ENV, PROTOCOL_LINE_ENV, PROTOCOL_VERSION, PROTOCOL_WORDS_ENV,
+};
 use crate::{
     argv::{ArgvParser, Error as ArgvError, Event, routes_negative_number_to_arg},
     command::{
@@ -39,14 +41,26 @@ where
         return true;
     }
 
-    let Some(line) = env::var_os(PROTOCOL_LINE_ENV) else {
-        return true;
-    };
-    let Some(line) = line.to_str() else {
-        return true;
+    let candidates = match env::var(PROTOCOL_WORDS_ENV) {
+        Ok(encoded) => {
+            let Ok(spans) = serde_json::from_str::<Vec<String>>(&encoded) else {
+                return true;
+            };
+            complete_spans(T::COMMAND, &spans)
+        }
+        Err(env::VarError::NotUnicode(_)) => return true,
+        Err(env::VarError::NotPresent) => {
+            let Some(line) = env::var_os(PROTOCOL_LINE_ENV) else {
+                return true;
+            };
+            let Some(line) = line.to_str() else {
+                return true;
+            };
+            complete_line(T::COMMAND, line)
+        }
     };
 
-    let rendered = render_candidates(&complete_line(T::COMMAND, line));
+    let rendered = render_candidates(&candidates);
     let mut stdout = io::stdout().lock();
     let _ = stdout.write_all(rendered.as_bytes());
     let _ = stdout.flush();
@@ -89,6 +103,26 @@ impl<'t> Position<'t> {
 /// Completes one shell line already truncated at the cursor.
 fn complete_line<'t>(root: &'t Command<'t>, line: &str) -> Vec<Candidate<'t>> {
     let split = split_line(line);
+    complete_split(root, &split)
+}
+
+/// Completes Nushell's already-tokenized external-completer spans.
+fn complete_spans<'t>(root: &'t Command<'t>, spans: &[String]) -> Vec<Candidate<'t>> {
+    let Some((prefix, completed)) = spans.split_last() else {
+        return Vec::new();
+    };
+    let current_index = completed.len();
+    let argv = if current_index <= 1 { Vec::new() } else { completed[1..].to_vec() };
+    // Nushell uses a whitespace-only final span to represent a fresh word after a separator.
+    let prefix =
+        if prefix.chars().all(char::is_whitespace) { String::new() } else { prefix.clone() };
+
+    let split = Split { argv, prefix, current_index };
+    complete_split(root, &split)
+}
+
+/// Completes one normalized cursor position independent of its shell transport.
+fn complete_split<'t>(root: &'t Command<'t>, split: &Split) -> Vec<Candidate<'t>> {
     if split.current_index == 0 {
         return Vec::new();
     }
@@ -671,6 +705,25 @@ mod tests {
             split_line(r#"tool get "--j"#),
             Split { argv: vec!["get".into()], prefix: "--j".into(), current_index: 2 },
         );
+    }
+
+    #[test]
+    fn nushell_spans_map_directly_to_completed_argv_and_prefix() {
+        let root = <Cli as CommandArgs>::COMMAND;
+        let spans = vec!["tool".into(), "get".into(), "--j".into()];
+        let candidates = complete_spans(root, &spans)
+            .into_iter()
+            .map(|candidate| candidate.value)
+            .collect::<Vec<_>>();
+        assert_eq!(candidates, vec!["--json"]);
+
+        let fresh_word = vec!["tool".into(), "get".into(), " ".into()];
+        let candidates = complete_spans(root, &fresh_word)
+            .into_iter()
+            .map(|candidate| candidate.value)
+            .collect::<Vec<_>>();
+        assert!(candidates.contains(&"--json".into()));
+        assert!(candidates.contains(&"--help".into()));
     }
 
     #[test]

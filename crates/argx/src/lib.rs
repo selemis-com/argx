@@ -317,9 +317,10 @@
 //!
 //! # Shell completions
 //!
-//! Argx generates dynamic completion adapters for Bash, Fish, and Zsh through the [`completion`]
-//! module. The generated shell code sends the command line through the cursor back to the
-//! executable; Argx reconstructs completed argv words and walks them through the same raw argv
+//! Argx generates dynamic completion adapters for Bash, Fish, Nushell, and Zsh through the
+//! [`completion`] module. Bash, Fish, and Zsh send the command line through the cursor back to the
+//! executable, while Nushell forwards the tokenized spans its external-completer API already
+//! provides. Argx normalizes either form and walks completed argv words through the same raw argv
 //! parser used for ordinary invocation. Command selection, aliases, global scope, lexical
 //! shadowing, option repeatability, conflicts, negative-number routing, and `--` therefore do not
 //! have a second shell-specific implementation.

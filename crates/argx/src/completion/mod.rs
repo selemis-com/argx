@@ -1,15 +1,16 @@
 //! Dynamic shell completion driven by Argx's static command model.
 //!
-//! Generated shell adapters send the command line up to the cursor back to the executable. Argx
-//! reconstructs completed argv words, walks them through the same raw parser used for normal
-//! invocation, and returns candidates for the cursor position. This keeps command, option, value,
-//! scope, alias, and lexical behavior in one implementation rather than reproducing the
-//! parser in shell code.
+//! Generated shell adapters send the cursor state back to the executable. Bash, Fish, and Zsh
+//! send the command line through the cursor, while Nushell sends the tokenized spans it already
+//! provides to external completers. Argx normalizes either transport, walks completed argv words
+//! through the same raw parser used for normal invocation, and returns candidates for the cursor
+//! position. This keeps command, option, value, scope, alias, and lexical behavior in one
+//! implementation rather than reproducing the parser in shell code.
 //!
-//! Completion currently targets Bash, Fish, and Zsh. Fields declared with `#[argx(value_enum)]`
-//! complete from the same canonical finite vocabulary used by parsing, help, and contracts. Argx
-//! intentionally does not infer possible values from arbitrary `FromStr` implementations, enumerate
-//! filesystem paths, or expose custom value completers.
+//! Completion currently targets Bash, Fish, Nushell, and Zsh. Fields declared with
+//! `#[argx(value_enum)]` complete from the same canonical finite vocabulary used by parsing, help,
+//! and contracts. Argx intentionally does not infer possible values from arbitrary `FromStr`
+//! implementations, enumerate filesystem paths, or expose custom value completers.
 //!
 //! Conflict suppression is likewise intentionally lexical: arguments already supplied on argv are
 //! considered, while environment fallbacks and typed defaults remain the binding layer's concern.
@@ -37,12 +38,14 @@ const PROTOCOL_VERSION: &str = "1";
 const PROTOCOL_COMMAND: &str = "__argx_complete__";
 /// Environment variable carrying the shell command line through the cursor.
 const PROTOCOL_LINE_ENV: &str = "ARGX_COMPLETE_LINE";
+/// Environment variable carrying Nushell's already-tokenized completion spans as JSON.
+const PROTOCOL_WORDS_ENV: &str = "ARGX_COMPLETE_WORDS";
 
 /// Shells for which Argx can generate dynamic completion adapters.
 ///
-/// [`FromStr`] accepts the canonical lower-case spellings `bash`, `fish`, and `zsh`. The type also
-/// implements [`crate::ValueEnum`], so a CLI field can opt into that vocabulary with
-/// `#[argx(value_enum)]`.
+/// [`FromStr`] accepts the canonical lower-case spellings `bash`, `fish`, `nushell`, and `zsh`.
+/// The type also implements [`crate::ValueEnum`], so a CLI field can opt into that vocabulary
+/// with `#[argx(value_enum)]`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum Shell {
@@ -50,6 +53,8 @@ pub enum Shell {
     Bash,
     /// Fish shell.
     Fish,
+    /// Nushell.
+    Nushell,
     /// Z shell.
     Zsh,
 }
@@ -61,6 +66,7 @@ impl Shell {
         match self {
             Self::Bash => "bash",
             Self::Fish => "fish",
+            Self::Nushell => "nushell",
             Self::Zsh => "zsh",
         }
     }
@@ -73,12 +79,13 @@ impl fmt::Display for Shell {
 }
 
 impl crate::ValueEnum for Shell {
-    const VALUES: &'static [&'static str] = &["bash", "fish", "zsh"];
+    const VALUES: &'static [&'static str] = &["bash", "fish", "nushell", "zsh"];
 
     fn from_value(value: &str) -> Option<Self> {
         match value {
             "bash" => Some(Self::Bash),
             "fish" => Some(Self::Fish),
+            "nushell" => Some(Self::Nushell),
             "zsh" => Some(Self::Zsh),
             _ => None,
         }
@@ -99,16 +106,23 @@ impl TypeContractSource for Shell {
         resolver.named(
             Self::type_key(),
             "Shell",
-            Some("Shell completion target. CLI spellings are `bash`, `fish`, and `zsh`."),
+            Some(
+                "Shell completion target. CLI spellings are `bash`, `fish`, `nushell`, and `zsh`.",
+            ),
             |_resolver| TypeDefinitionKind::Enum {
-                variants: [("Bash", "GNU Bash."), ("Fish", "Fish shell."), ("Zsh", "Z shell.")]
-                    .into_iter()
-                    .map(|(name, description)| TypeVariantContract {
-                        name: name.to_owned(),
-                        description: Some(description.to_owned()),
-                        kind: TypeVariantKind::Unit,
-                    })
-                    .collect(),
+                variants: [
+                    ("Bash", "GNU Bash."),
+                    ("Fish", "Fish shell."),
+                    ("Nushell", "Nushell."),
+                    ("Zsh", "Z shell."),
+                ]
+                .into_iter()
+                .map(|(name, description)| TypeVariantContract {
+                    name: name.to_owned(),
+                    description: Some(description.to_owned()),
+                    kind: TypeVariantKind::Unit,
+                })
+                .collect(),
             },
         )
     }
@@ -167,7 +181,9 @@ mod tests {
     fn shell_names_parse_and_render() {
         assert_eq!("bash".parse(), Ok(Shell::Bash));
         assert_eq!(Shell::Fish.to_string(), "fish");
-        assert_eq!(<Shell as crate::ValueEnum>::VALUES, &["bash", "fish", "zsh"]);
+        assert_eq!("nushell".parse(), Ok(Shell::Nushell));
+        assert_eq!(Shell::Nushell.to_string(), "nushell");
+        assert_eq!(<Shell as crate::ValueEnum>::VALUES, &["bash", "fish", "nushell", "zsh"],);
         assert!("nu".parse::<Shell>().is_err());
     }
 
@@ -178,7 +194,9 @@ mod tests {
         assert_eq!(contract.types[0].name, "Shell");
         assert_eq!(
             contract.types[0].description.as_deref(),
-            Some("Shell completion target. CLI spellings are `bash`, `fish`, and `zsh`."),
+            Some(
+                "Shell completion target. CLI spellings are `bash`, `fish`, `nushell`, and `zsh`.",
+            ),
         );
     }
 }
