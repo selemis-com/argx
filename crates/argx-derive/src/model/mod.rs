@@ -187,6 +187,8 @@ pub(crate) struct Argument {
     pub allow_hyphen_values: bool,
     /// Whether negative numbers may be consumed while other flag-like values are refused.
     pub allow_negative_numbers: bool,
+    /// Whether this argument is restricted to a finite `ValueEnum` vocabulary.
+    pub value_enum: bool,
 }
 
 /// Command-line category of one argument.

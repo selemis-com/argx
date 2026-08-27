@@ -28,6 +28,7 @@ mod tests {
         help: None,
         required: false,
         variadic: true,
+        accepted_values: &[],
         allow_negative_numbers: false,
     };
     static COMMAND: Command<'static> = Command {
@@ -658,14 +659,8 @@ mod tests {
     #[test]
     fn exact_subcommand_names_take_precedence_over_positionals() {
         static CHILD: Command<'static> = Command { name: "child", key: 51, ..Command::EMPTY };
-        static VALUE: Arg<'static> = Arg {
-            key: 52,
-            name: "value",
-            help: None,
-            required: false,
-            variadic: true,
-            allow_negative_numbers: false,
-        };
+        static VALUE: Arg<'static> =
+            Arg { key: 52, name: "value", required: false, variadic: true, ..Arg::REQUIRED };
         static ROOT: Command<'static> = Command {
             name: "root",
             args: &[&VALUE],

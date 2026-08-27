@@ -65,6 +65,26 @@ mod tests {
         numbers: Vec<u16>,
     }
 
+    #[derive(Debug, PartialEq, Eq, argx::ValueEnum)]
+    enum OutputMode {
+        HumanReadable,
+        Json,
+        Quiet,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    #[argx(name = "value-enum")]
+    struct ValueEnumCli {
+        /// Output mode.
+        #[argx(long, value_enum)]
+        output: Option<OutputMode>,
+        #[argx(long, value_enum)]
+        include: Vec<OutputMode>,
+        /// Fallback mode.
+        #[argx(value_enum)]
+        fallback: OutputMode,
+    }
+
     #[derive(Debug, PartialEq, Eq, argx::Parser)]
     struct NegativeValues {
         #[argx(long, allow_negative_numbers)]
@@ -885,6 +905,44 @@ mod tests {
             OptionalMany::try_parse_args(["--tags="]),
             Ok(OptionalMany { tags: Some(vec![String::new()]) })
         );
+    }
+
+    #[test]
+    fn value_enums_share_one_vocabulary_across_parsing_and_help() {
+        assert_eq!("human-readable".parse::<OutputMode>(), Ok(OutputMode::HumanReadable),);
+        assert!("HumanReadable".parse::<OutputMode>().is_err());
+
+        let parsed = ValueEnumCli::try_parse_args([
+            "--output",
+            "json",
+            "--include",
+            "human-readable",
+            "--include",
+            "quiet",
+            "quiet",
+        ])
+        .expect("canonical enum values should parse");
+        assert_eq!(parsed.output, Some(OutputMode::Json));
+        assert_eq!(parsed.include, vec![OutputMode::HumanReadable, OutputMode::Quiet]);
+        assert_eq!(parsed.fallback, OutputMode::Quiet);
+
+        let expected = <OutputMode as argx::ValueEnum>::VALUES;
+        assert_eq!(expected, &["human-readable", "json", "quiet"]);
+        let command = <ValueEnumCli as argx::__private::CommandArgs>::COMMAND;
+        assert_eq!(command.flags[0].accepted_values, expected);
+        assert_eq!(command.flags[1].accepted_values, expected);
+        assert_eq!(command.args[0].accepted_values, expected);
+
+        let help = ValueEnumCli::render_help();
+        assert!(help.contains("Output mode. [possible values: human-readable, json, quiet]"));
+        assert!(help.contains("[possible values: human-readable, json, quiet]"));
+
+        let error = ValueEnumCli::try_parse_args(["--output", "yaml", "quiet"])
+            .expect_err("unknown enum spelling must fail");
+        let Error::InvalidValue(error) = error else { panic!("unexpected error: {error:?}") };
+        assert_eq!(error.name, "--output");
+        assert_eq!(error.value, "yaml");
+        assert_eq!(error.reason, "expected one of: human-readable, json, quiet");
     }
 
     #[test]

@@ -63,6 +63,7 @@ impl Command {
         validate_fields(&fields, has_version)?;
         validate_constraints(&fields)?;
         validate_composed_generics(&fields, &input.generics)?;
+        validate_value_enum_generics(&fields, &input.generics)?;
 
         // Only after validation do we derive human-facing metadata. This keeps inferred names and
         // doc-derived help in the same semantic representation as explicit attribute overrides.
@@ -148,6 +149,7 @@ impl Field {
                 || attributes.default.is_some()
                 || attributes.allow_hyphen_values
                 || attributes.allow_negative_numbers
+                || attributes.value_enum
                 || attributes.help.is_some()
             {
                 return Err(syn::Error::new(
@@ -179,6 +181,7 @@ impl Field {
                 || attributes.default.is_some()
                 || attributes.allow_hyphen_values
                 || attributes.allow_negative_numbers
+                || attributes.value_enum
                 || attributes.help.is_some()
             {
                 return Err(syn::Error::new(
@@ -298,6 +301,12 @@ impl Field {
         };
         let has_default = attributes.default.is_some();
         let switch = matches!(&kind, ArgumentKind::Flag { .. }) && shape == Shape::Bool;
+        if attributes.value_enum && switch {
+            return Err(syn::Error::new(
+                binding.span,
+                "`value_enum` is only valid on value-taking arguments",
+            ));
+        }
         if !switch {
             binding.value = Some(value_binding(&binding.ty, shape));
         }
@@ -318,6 +327,7 @@ impl Field {
                 conflicts: attributes.conflicts.into_iter().map(|value| value.value()).collect(),
                 allow_hyphen_values: attributes.allow_hyphen_values,
                 allow_negative_numbers: attributes.allow_negative_numbers,
+                value_enum: attributes.value_enum,
             }),
             help_heading: None,
         })
@@ -617,6 +627,45 @@ fn validate_composed_generics(fields: &[Field], generics: &syn::Generics) -> syn
                 format!(
                     "`{attribute}` cannot depend on the containing struct's generic parameters; use a concrete derived type"
                 ),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Rejects finite-value metadata that depends on the containing command's generic parameters.
+///
+/// Accepted values live in static command metadata, so the value type must be nameable without a
+/// command monomorphization. Concrete generic types remain valid; only references to the containing
+/// declaration's own generic parameters are rejected.
+fn validate_value_enum_generics(fields: &[Field], generics: &syn::Generics) -> syn::Result<()> {
+    let params = generics
+        .params
+        .iter()
+        .map(|param| match param {
+            GenericParam::Type(param) => GenericName::Ident(param.ident.clone()),
+            GenericParam::Const(param) => GenericName::Ident(param.ident.clone()),
+            GenericParam::Lifetime(param) => GenericName::Lifetime(param.lifetime.ident.clone()),
+        })
+        .collect::<Vec<_>>();
+    if params.is_empty() {
+        return Ok(());
+    }
+
+    for field in fields {
+        let Some(argument) = field.argument() else {
+            continue;
+        };
+        if !argument.value_enum {
+            continue;
+        }
+        let ty = &field.value_binding().ty;
+        let mut visitor = GenericUse { params: &params, found: false };
+        visitor.visit_type(ty);
+        if visitor.found {
+            return Err(syn::Error::new_spanned(
+                ty,
+                "`value_enum` cannot depend on the containing struct's generic parameters; use a concrete ValueEnum type",
             ));
         }
     }

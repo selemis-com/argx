@@ -86,10 +86,8 @@ pub(crate) fn render(path: &[&Command<'_>]) -> String {
         .collect::<Vec<_>>();
     if !ungrouped_args.is_empty() {
         output.push_str("\nArguments:\n");
-        let rows = ungrouped_args
-            .iter()
-            .map(|arg| (arg_usage(arg), arg.help.unwrap_or("").to_owned()))
-            .collect::<Vec<_>>();
+        let rows =
+            ungrouped_args.iter().map(|arg| (arg_usage(arg), arg_help(arg))).collect::<Vec<_>>();
         write_rows(&mut output, &rows);
     }
 
@@ -159,7 +157,7 @@ fn grouped_rows<'a>(
                 for arg in selected.args {
                     if group_contains_arg(group, arg) && !grouped_keys.contains(&arg.key) {
                         grouped_keys.push(arg.key);
-                        rows.push((arg_usage(arg), arg.help.unwrap_or("").to_owned()));
+                        rows.push((arg_usage(arg), arg_help(arg)));
                     }
                 }
             }
@@ -268,9 +266,10 @@ fn flag_label(flag: &VisibleFlag<'_>) -> String {
     spellings_label(&flag.shorts, &flag.longs, flag.flag.takes_value.then_some(flag.flag.name))
 }
 
-/// Renders help text plus the explicit environment fallback, when present.
+/// Renders help text plus finite-value and environment metadata.
 fn flag_help(flag: &Flag<'_>) -> String {
     let mut help = flag.help.unwrap_or("").to_owned();
+    append_accepted_values(&mut help, flag.accepted_values);
     if let Some(env) = flag.env {
         if !help.is_empty() {
             help.push(' ');
@@ -283,6 +282,31 @@ fn flag_help(flag: &Flag<'_>) -> String {
         help.push(']');
     }
     help
+}
+
+/// Renders positional help plus finite accepted values.
+fn arg_help(arg: &Arg<'_>) -> String {
+    let mut help = arg.help.unwrap_or("").to_owned();
+    append_accepted_values(&mut help, arg.accepted_values);
+    help
+}
+
+/// Appends one canonical finite vocabulary without trusting values as terminal-safe text.
+fn append_accepted_values(help: &mut String, values: &[&str]) {
+    if values.is_empty() {
+        return;
+    }
+    if !help.is_empty() {
+        help.push(' ');
+    }
+    help.push_str("[possible values: ");
+    for (index, value) in values.iter().enumerate() {
+        if index > 0 {
+            help.push_str(", ");
+        }
+        help.push_str(&display_bytes(value.as_bytes()));
+    }
+    help.push(']');
 }
 
 /// Renders one built-in action in an options table.
@@ -389,6 +413,7 @@ mod tests {
         help: None,
         required: false,
         variadic: true,
+        accepted_values: &[],
         allow_negative_numbers: false,
     };
     static GET: Command<'static> =
@@ -417,6 +442,7 @@ mod tests {
             help: None,
             longs: &["token"],
             env: Some("TOOL_TOKEN\n\u{1b}[31m"),
+            accepted_values: &["safe", "bad\n\u{1b}[31m"],
             ..Flag::VALUE
         };
         let flags = [&token];
@@ -425,7 +451,9 @@ mod tests {
 
         assert!(!help.contains("tool\n\u{1b}"));
         assert!(!help.contains("TOOL_TOKEN\n\u{1b}"));
+        assert!(!help.contains("bad\n\u{1b}"));
         assert!(!help.contains('\u{1b}'));
+        assert!(help.contains(r"bad\n"));
         assert!(help.contains(r"tool\n"));
         assert!(help.contains(r"[env: TOOL_TOKEN\n"));
     }

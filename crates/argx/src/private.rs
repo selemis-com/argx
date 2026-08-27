@@ -27,6 +27,7 @@ pub use crate::{
         },
         value::{
             RawValue, os_value, os_values, parsed_value, parsed_values, text_value, text_values,
+            value_enum_value, value_enum_values,
         },
     },
     type_contract::resolve::{

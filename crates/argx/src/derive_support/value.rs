@@ -62,6 +62,33 @@ where
     crate::binding::parsed_values(values, name)
 }
 
+/// Converts one raw value through a finite [`trait@crate::ValueEnum`] vocabulary.
+///
+/// # Errors
+///
+/// Returns an error for invalid UTF-8 or a value outside the enum's canonical vocabulary.
+pub fn value_enum_value<T>(value: RawValue, name: &'static str) -> Result<T, crate::Error>
+where
+    T: crate::ValueEnum,
+{
+    crate::binding::value_enum_value(value, name)
+}
+
+/// Converts repeated raw values through a finite [`trait@crate::ValueEnum`] vocabulary.
+///
+/// # Errors
+///
+/// Returns the first invalid UTF-8 value or value outside the enum's canonical vocabulary.
+pub fn value_enum_values<T>(
+    values: Vec<Vec<u8>>,
+    name: &'static str,
+) -> Result<Vec<T>, crate::Error>
+where
+    T: crate::ValueEnum,
+{
+    crate::binding::value_enum_values(values, name)
+}
+
 /// Converts one raw value into an operating-system-backed destination type.
 ///
 /// # Errors

@@ -32,11 +32,18 @@ pub(super) fn binding_generics(command: &model::Command, facade: &TokenStream) -
         }
         let value = field.value_binding();
         let ty = &value.ty;
+        let value_enum = field.argument().is_some_and(|argument| argument.value_enum);
         let rendered = quote!(#ty).to_string();
-        if bounded.contains(&rendered) {
+        let bound = if value_enum { format!("value-enum:{rendered}") } else { rendered };
+        if bounded.contains(&bound) {
             continue;
         }
-        bounded.push(rendered);
+        bounded.push(bound);
+
+        if value_enum {
+            generics.make_where_clause().predicates.push(parse_quote!(#ty: #facade::ValueEnum));
+            continue;
+        }
 
         match value.conversion {
             model::ValueConversion::Text => {}
@@ -197,22 +204,32 @@ pub(super) fn finish_field(
             __argx_default
         })
     });
-    let one = |value: TokenStream| match binding.conversion {
-        model::ValueConversion::Text => quote!(#facade::__private::text_value(#value, #name)?),
-        model::ValueConversion::Os => {
-            quote!(#facade::__private::os_value::<#ty>(#value, #name)?)
+    let one = |value: TokenStream| {
+        if argument.value_enum {
+            return quote!(#facade::__private::value_enum_value::<#ty>(#value, #name)?);
         }
-        model::ValueConversion::FromStr => {
-            quote!(#facade::__private::parsed_value::<#ty>(#value, #name)?)
+        match binding.conversion {
+            model::ValueConversion::Text => quote!(#facade::__private::text_value(#value, #name)?),
+            model::ValueConversion::Os => {
+                quote!(#facade::__private::os_value::<#ty>(#value, #name)?)
+            }
+            model::ValueConversion::FromStr => {
+                quote!(#facade::__private::parsed_value::<#ty>(#value, #name)?)
+            }
         }
     };
-    let many = |value: TokenStream| match binding.conversion {
-        model::ValueConversion::Text => quote!(#facade::__private::text_values(#value, #name)?),
-        model::ValueConversion::Os => {
-            quote!(#facade::__private::os_values::<#ty>(#value, #name)?)
+    let many = |value: TokenStream| {
+        if argument.value_enum {
+            return quote!(#facade::__private::value_enum_values::<#ty>(#value, #name)?);
         }
-        model::ValueConversion::FromStr => {
-            quote!(#facade::__private::parsed_values::<#ty>(#value, #name)?)
+        match binding.conversion {
+            model::ValueConversion::Text => quote!(#facade::__private::text_values(#value, #name)?),
+            model::ValueConversion::Os => {
+                quote!(#facade::__private::os_values::<#ty>(#value, #name)?)
+            }
+            model::ValueConversion::FromStr => {
+                quote!(#facade::__private::parsed_values::<#ty>(#value, #name)?)
+            }
         }
     };
 

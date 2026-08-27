@@ -254,6 +254,7 @@ fn option_contract(flag: &StaticFlag<'_>, value_type: Option<TypeContractValue>)
         global: flag.global,
         required: flag.required || flag.required_if_env_unset,
         value_type,
+        accepted_values: flag.accepted_values.iter().map(|value| (*value).to_owned()).collect(),
         repeatable: flag.repeatable,
         environment: flag.env.map(str::to_owned),
         has_default: flag.has_default,
@@ -270,6 +271,7 @@ fn arg_contract(arg: &StaticArg<'_>, value_type: TypeContractValue) -> Positiona
         required: arg.required,
         variadic: arg.variadic,
         value_type,
+        accepted_values: arg.accepted_values.iter().map(|value| (*value).to_owned()).collect(),
         allow_negative_numbers: arg.allow_negative_numbers,
     }
 }

@@ -1,5 +1,11 @@
 use cli_args::Parser as _;
 
+#[derive(cli_args::ValueEnum)]
+enum Mode {
+    Fast,
+    DryRun,
+}
+
 #[derive(cli_args::Parser)]
 struct Cli {
     #[argx(long)]
@@ -37,4 +43,5 @@ fn main() {
     assert_eq!(cli.value, "value");
     let _ = Common;
     let _ = Command::Run;
+    assert_eq!(<Mode as cli_args::ValueEnum>::VALUES, &["fast", "dry-run"]);
 }

@@ -255,6 +255,9 @@ pub struct PositionalContract {
     /// This describes the bound Rust value, not a custom `FromStr` or OS-string lexical encoding.
     #[serde(rename = "type")]
     pub value_type: TypeContractValue,
+    /// Canonical lexical values accepted when this positional uses `#[argx(value_enum)]`.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub accepted_values: Vec<String>,
     /// Whether negative numbers may bind while ordinary flag parsing remains enabled.
     #[serde(skip_serializing_if = "is_false")]
     pub allow_negative_numbers: bool,
@@ -284,6 +287,9 @@ pub struct OptionContract {
     /// field describes the bound Rust value, not a custom `FromStr` or OS-string lexical encoding.
     #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
     pub value_type: Option<TypeContractValue>,
+    /// Canonical lexical values accepted when this option uses `#[argx(value_enum)]`.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub accepted_values: Vec<String>,
     /// Whether the option may occur more than once.
     #[serde(skip_serializing_if = "is_false")]
     pub repeatable: bool,

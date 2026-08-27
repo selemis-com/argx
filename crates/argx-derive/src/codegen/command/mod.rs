@@ -84,6 +84,12 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
         let global = argument.global;
         let env = option_str(argument.env.as_deref());
         let takes_value = !field.is_switch();
+        let accepted_values = if argument.value_enum {
+            let ty = &field.value_binding().ty;
+            quote!(<#ty as #facade::ValueEnum>::VALUES)
+        } else {
+            quote!(&[])
+        };
         let repeatable = argument.shape == model::Shape::Many;
         let required = argument.shape == model::Shape::Required
             && argument.env.is_none()
@@ -106,6 +112,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                 global: #global,
                 env: #env,
                 takes_value: #takes_value,
+                accepted_values: #accepted_values,
                 repeatable: #repeatable,
                 required: #required,
                 required_if_env_unset: #required_if_env_unset,
@@ -126,6 +133,12 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
         let help = option_str(argument.help.as_deref());
         let required = matches!(argument.shape, model::Shape::Bool | model::Shape::Required);
         let variadic = argument.shape == model::Shape::Many;
+        let accepted_values = if argument.value_enum {
+            let ty = &field.value_binding().ty;
+            quote!(<#ty as #facade::ValueEnum>::VALUES)
+        } else {
+            quote!(&[])
+        };
         let allow_negative_numbers = argument.allow_negative_numbers;
         quote! {
             static #table: #facade::__private::Arg<'static> =
@@ -135,6 +148,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                     help: #help,
                     required: #required,
                     variadic: #variadic,
+                    accepted_values: #accepted_values,
                     allow_negative_numbers: #allow_negative_numbers,
                 };
         }

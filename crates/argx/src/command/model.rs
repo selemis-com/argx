@@ -175,6 +175,8 @@ pub struct Flag<'a> {
     pub env: Option<&'a str>,
     /// Whether one occurrence consumes a value.
     pub takes_value: bool,
+    /// Canonical finite values accepted by this option, when declared as a `ValueEnum`.
+    pub accepted_values: &'a [&'a str],
     /// Whether this named argument may occur more than once.
     pub repeatable: bool,
     /// Whether this flag must occur at least once.
@@ -203,6 +205,7 @@ impl Flag<'static> {
         global: false,
         env: None,
         takes_value: false,
+        accepted_values: &[],
         repeatable: false,
         required: false,
         required_if_env_unset: false,
@@ -228,6 +231,8 @@ pub struct Arg<'a> {
     pub required: bool,
     /// Whether this positional may receive multiple values.
     pub variadic: bool,
+    /// Canonical finite values accepted by this positional, when declared as a `ValueEnum`.
+    pub accepted_values: &'a [&'a str],
     /// Whether a negative number may bind here while flag parsing remains enabled.
     pub allow_negative_numbers: bool,
 }
@@ -240,6 +245,7 @@ impl Arg<'static> {
         help: None,
         required: true,
         variadic: false,
+        accepted_values: &[],
         allow_negative_numbers: false,
     };
 }

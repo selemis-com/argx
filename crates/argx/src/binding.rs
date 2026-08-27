@@ -10,7 +10,7 @@ use std::{ffi::OsString, fmt, str::FromStr};
 
 use crate::{
     __private::{ActionKind, CommandArgs, RawValue},
-    Error, InvalidValue,
+    Error, InvalidValue, ValueEnum, ValueEnumError,
     argv::{Error as RawError, Event},
     error::display_bytes,
     help,
@@ -170,6 +170,62 @@ where
                 reason: reason.to_string(),
             }))
         })?);
+    }
+    Ok(parsed)
+}
+
+/// Converts one raw value through a finite [`trait@ValueEnum`] vocabulary.
+///
+/// # Errors
+///
+/// Returns an error when the value is not UTF-8 or is not one of the enum's canonical values.
+pub(crate) fn value_enum_value<T>(value: RawValue, name: &'static str) -> Result<T, Error>
+where
+    T: ValueEnum,
+{
+    let reason = || ValueEnumError::new(T::VALUES).to_string();
+    match value {
+        RawValue::Argv(value) => {
+            let text = text_bytes(value, name)?;
+            T::from_value(&text).ok_or_else(|| {
+                Error::InvalidValue(Box::new(InvalidValue { name, value: text, reason: reason() }))
+            })
+        }
+        RawValue::Environment { name: environment, value } => {
+            let text = environment_text(value, name, environment)?;
+            T::from_value(&text).ok_or_else(|| Error::InvalidEnvironmentValue {
+                name,
+                environment,
+                value: OsString::from(text.as_str()),
+                reason: reason(),
+            })
+        }
+    }
+}
+
+/// Converts repeated raw values through a finite [`trait@ValueEnum`] vocabulary.
+///
+/// # Errors
+///
+/// Returns the first invalid UTF-8 value or value outside the enum's canonical vocabulary.
+pub(crate) fn value_enum_values<T>(
+    values: Vec<Vec<u8>>,
+    name: &'static str,
+) -> Result<Vec<T>, Error>
+where
+    T: ValueEnum,
+{
+    let mut parsed = Vec::with_capacity(values.len());
+    for value in values {
+        let text = text_bytes(value, name)?;
+        let Some(value) = T::from_value(&text) else {
+            return Err(Error::InvalidValue(Box::new(InvalidValue {
+                name,
+                value: text,
+                reason: ValueEnumError::new(T::VALUES).to_string(),
+            })));
+        };
+        parsed.push(value);
     }
     Ok(parsed)
 }

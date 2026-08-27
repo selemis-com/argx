@@ -25,9 +25,29 @@ mod tests {
             ("contract", "argx"),
             ("contract_renamed", "cli_args"),
             ("execution_contract", "argx"),
+            ("value_enum", "argx"),
         ] {
             support::assert_ui_success(fixture, dependency);
         }
+    }
+
+    #[test]
+    fn invalid_value_enum_declarations_are_rejected_deterministically() {
+        support::assert_ui_failure(
+            "invalid_value_enum",
+            "argx",
+            snapbox::str![[r#"
+error: ValueEnum can only be derived for enums
+error: ValueEnum does not support generic enums
+error: ValueEnum requires at least one variant
+error: ValueEnum variants cannot contain fields
+error: duplicate ValueEnum spelling `foo`
+error: `value_enum` is only valid on value-taking arguments
+error: `value_enum` cannot depend on the containing struct's generic parameters; use a concrete ValueEnum type
+error: `value_enum` takes no value
+
+"#]],
+        );
     }
 
     #[test]

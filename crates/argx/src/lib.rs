@@ -163,6 +163,7 @@
 //! | `conflicts = ["a", "b"]` | reject use with multiple arguments |
 //! | `allow_hyphen_values` | allow arbitrary flag-like detached values for a named value option |
 //! | `allow_negative_numbers` | accept negative-number values without accepting other flags |
+//! | `value_enum` | use a finite [`trait@ValueEnum`] vocabulary for parsing, help, and contracts |
 //! | `help = "..."` | override the field's documentation-derived one-line help text |
 //! | `flatten` | compose one direct [`Args`] field into the current command |
 //! | `subcommand` | select one direct derived `Subcommand` enum |
@@ -203,9 +204,17 @@
 //!
 //! Value conversion depends on the direct value type:
 //!
+//! - a field marked `#[argx(value_enum)]` parses through its finite [`trait@ValueEnum`] vocabulary;
 //! - `String` consumes UTF-8 text;
 //! - `OsString` and `PathBuf` preserve operating-system strings;
 //! - other value types are converted through [`std::str::FromStr`].
+//!
+//! `#[derive(ValueEnum)]` supports non-generic enums with unit variants. Canonical values use the
+//! same kebab-case conversion as inferred command-line names, and parsing is exact and
+//! case-sensitive. The derive also implements [`std::str::FromStr`] for ordinary Rust use.
+//! The marker works through Argx's existing scalar, `Option`, `Vec`, and `Option<Vec<_>>` field
+//! shapes and applies the vocabulary to the logical element value. Generated help lists those
+//! values automatically.
 //!
 //! Type-shape inference is intentionally syntactic. Special treatment for `bool`, `Option`, `Vec`,
 //! `String`, `OsString`, and `PathBuf` requires a recognized standard spelling to appear directly
@@ -328,8 +337,10 @@
 //! use the same version and semantic type model.
 //!
 //! Attached semantic types describe Rust values at the command boundary. For invocation values they
-//! do not define the lexical encoding accepted by an arbitrary [`std::str::FromStr`]. For an
-//! execution binding, the handler's concrete `Result<Success, Error>` is the declared command
+//! do not define the lexical encoding accepted by an arbitrary [`std::str::FromStr`]. Fields marked
+//! `#[argx(value_enum)]` are the finite exception: their canonical accepted values are projected
+//! explicitly from the same metadata used by parsing and help. For an execution binding, the
+//! handler's concrete `Result<Success, Error>` is the declared command
 //! contract; Argx describes both branches but does not prescribe how applications serialize or
 //! transport them. A unit branch explicitly means that outcome carries no semantic payload.
 //!
@@ -354,6 +365,8 @@
 //!   or collection wrappers;
 //! - subcommand variants support only unit variants or one unnamed direct `Args` payload;
 //! - nested `Option` / `Vec` wrappers outside the recognized shapes are unsupported;
+//! - `value_enum` fields cannot depend on the containing command's generic parameters because their
+//!   vocabulary is part of static command metadata;
 //! - reserved built-in help/version spellings and invalid composed layouts are rejected during
 //!   derivation or const-time composition.
 //!
@@ -368,9 +381,9 @@
 //!
 //! # Cargo features
 //!
-//! The default `derive` feature exports the `Parser`, `Args`, and `Subcommand` procedural macros.
-//! Disabling it removes those macros while retaining Argx's runtime traits, error types, and
-//! machine-contract data types.
+//! The default `derive` feature exports the `Parser`, `Args`, `Subcommand`, `Contract`, and
+//! `ValueEnum` derives plus the `contract` attribute macro. Disabling it removes those macros while
+//! retaining Argx's runtime traits, error types, and machine-contract data types.
 
 #![doc(
     html_logo_url = "https://raw.githubusercontent.com/selemis-com/argx/master/.github/assets/logo.jpg",
@@ -387,6 +400,7 @@ mod derive_support;
 mod error;
 mod help;
 pub mod type_contract;
+mod value_enum;
 
 use std::ffi::{OsStr, OsString};
 
@@ -405,6 +419,7 @@ pub use type_contract::{
     ContractType, PrimitiveType, TypeContract, TypeContractValue, TypeDefinition,
     TypeDefinitionKind, TypeFieldContract, TypeVariantContract, TypeVariantKind,
 };
+pub use value_enum::{ValueEnum, ValueEnumError};
 
 /// Compiler-facing marker for command trees that can produce a complete machine contract.
 ///
@@ -448,7 +463,7 @@ pub use derive_support::traits::ExecutionContractSource;
 extern crate self as argx;
 
 #[cfg(feature = "derive")]
-pub use argx_derive::{Args, Contract, Parser, Subcommand, contract};
+pub use argx_derive::{Args, Contract, Parser, Subcommand, ValueEnum, contract};
 
 /// Marks a reusable argument group derived with `#[derive(Args)]`.
 ///

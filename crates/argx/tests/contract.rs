@@ -162,28 +162,16 @@ mod tests {
     }
 
     /// Domain value shared by multiple invocation bindings.
-    #[derive(Debug, PartialEq, Eq, argx::Contract)]
+    #[derive(Debug, PartialEq, Eq, argx::Contract, argx::ValueEnum)]
     enum OutputFormat {
         Json,
         Text,
     }
 
-    impl std::str::FromStr for OutputFormat {
-        type Err = &'static str;
-
-        fn from_str(value: &str) -> Result<Self, Self::Err> {
-            match value {
-                "json" => Ok(Self::Json),
-                "text" => Ok(Self::Text),
-                _ => Err("expected `json` or `text`"),
-            }
-        }
-    }
-
     /// Reusable typed values used to verify semantic projection through flattening.
     #[derive(argx::Args)]
     struct FormatArgs {
-        #[argx(long)]
+        #[argx(long, value_enum)]
         format: Option<OutputFormat>,
     }
 
@@ -193,6 +181,7 @@ mod tests {
     struct TypedContractCli {
         #[argx(flatten)]
         format: FormatArgs,
+        #[argx(value_enum)]
         fallback: OutputFormat,
     }
 
@@ -454,13 +443,25 @@ mod tests {
                 if variants.iter().map(|variant| variant.name.as_str()).eq(["Json", "Text"])
         ));
 
-        let invocation = contract.command.invocation.expect("root command should be detailed");
+        let invocation =
+            contract.command.invocation.as_ref().expect("root command should be detailed");
         let context = &invocation[0];
         let option_type = context.options[0].value_type.as_ref().expect("format takes a value");
         let positional_type = &context.positionals[0].value_type;
         let expected = TypeContractValue::Reference { index: 0 };
         assert_eq!(option_type, &expected);
         assert_eq!(positional_type, &expected);
+        assert_eq!(
+            context.options[0].accepted_values,
+            [String::from("json"), String::from("text")],
+        );
+        assert_eq!(
+            context.positionals[0].accepted_values,
+            [String::from("json"), String::from("text")],
+        );
+
+        let json = contract.to_json().expect("typed invocation contract should serialize");
+        assert!(json.contains(r#""acceptedValues":["json","text"]"#));
     }
 
     #[test]

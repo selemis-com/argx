@@ -21,6 +21,7 @@ mod execution_contract;
 mod key;
 mod model;
 mod type_contract;
+mod value_enum;
 
 use proc_macro::TokenStream;
 use syn::{DeriveInput, parse_macro_input};
@@ -68,6 +69,18 @@ pub fn derive_args(input: TokenStream) -> TokenStream {
 pub fn derive_contract(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     type_contract::contract(&input).unwrap_or_else(syn::Error::into_compile_error).into()
+}
+
+/// Derives a finite canonical command-line value vocabulary for an enum.
+///
+/// Every unit variant is accepted using Argx's normal kebab-case spelling. The derive implements
+/// both `argx::ValueEnum` and `FromStr`; parsing is exact and case-sensitive. Generic enums and
+/// variants carrying fields are rejected. Use `#[argx(value_enum)]` on a parser field to project
+/// the same vocabulary into parsing metadata, generated help, and machine contracts.
+#[proc_macro_derive(ValueEnum)]
+pub fn derive_value_enum(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    value_enum::value_enum(&input).unwrap_or_else(syn::Error::into_compile_error).into()
 }
 
 /// Attaches one canonical execution result contract to an invocable command type.

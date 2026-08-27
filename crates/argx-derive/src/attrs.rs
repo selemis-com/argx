@@ -79,6 +79,8 @@ pub(crate) struct FieldAttrs {
     pub allow_hyphen_values: bool,
     /// Whether negative numbers may be consumed while other flag-like values are refused.
     pub allow_negative_numbers: bool,
+    /// Whether this value-bearing field uses a finite `ValueEnum` vocabulary.
+    pub value_enum: bool,
     /// Explicit one-line argument description.
     pub help: Option<String>,
 }
@@ -227,6 +229,15 @@ pub(crate) fn field(attributes: &[Attribute]) -> syn::Result<FieldAttrs> {
                     return Err(meta.error("duplicate `allow_negative_numbers` attribute"));
                 }
                 parsed.allow_negative_numbers = true;
+                Ok(())
+            } else if meta.path.is_ident("value_enum") {
+                if parsed.value_enum {
+                    return Err(meta.error("duplicate `value_enum` attribute"));
+                }
+                if meta.input.peek(Token![=]) || meta.input.peek(syn::token::Paren) {
+                    return Err(meta.error("`value_enum` takes no value"));
+                }
+                parsed.value_enum = true;
                 Ok(())
             } else if meta.path.is_ident("help") {
                 if parsed.help.is_some() {
