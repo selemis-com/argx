@@ -9,6 +9,7 @@
 //! ```text
 //! cargo run --example completions -- bash
 //! cargo run --example completions -- fish
+//! cargo run --example completions -- nushell
 //! cargo run --example completions -- zsh
 //! ```
 //!
