@@ -1,17 +1,18 @@
 //! Projection from generated static command metadata into the public contract model.
 
 use super::{
-    ActionContract, ActionContractKind, CONTRACT_VERSION, CommandContextContract, CommandContract,
-    ConstraintContract, ConstraintContractKind, Contract, ContractDepth, ContractError,
-    ContractRequest, ExecutionContract, OptionContract, PositionalContract,
+    ActionContract, ActionContractKind, CommandContextContract, CommandContract,
+    ConstraintContract, ConstraintContractKind, Contract, ContractError, ContractRequest,
+    ExecutionContract, OptionContract, PositionalContract,
 };
 use crate::{
     __private::{
         Action as StaticAction, ActionKind as StaticActionKind, Arg as StaticArg,
         Command as StaticCommand, CommandArgs as StaticCommandArgs, CommandExecutionTypes,
-        CommandValueTypes, ConstraintKind, Flag as StaticFlag, Key,
+        CommandTypes, ConstraintKind, Flag as StaticFlag, Key,
         ResolveCommandTypeContract as SemanticCommandContract, TypeResolver,
     },
+    CONTRACT_VERSION,
     type_contract::TypeContractValue,
 };
 
@@ -42,64 +43,48 @@ where
 
     let mut resolver = TypeResolver::default();
     let command =
-        command_contract::<T>(selected, path, &contexts, request.depth, true, &mut resolver);
+        command_contract::<T>(selected, path, &contexts, request.recursive, &mut resolver);
     let types = resolver.finish();
 
     Ok(Contract { version: CONTRACT_VERSION, root: root.name.to_owned(), command, types })
 }
 
-/// Builds one command node at the requested discovery depth.
+/// Builds one detailed command node and the descendants requested by the caller.
 fn command_contract<T>(
     command: &'static StaticCommand<'static>,
     path: Vec<String>,
     contexts: &[&'static StaticCommand<'static>],
-    depth: ContractDepth,
-    detailed: bool,
+    recursive: bool,
     resolver: &mut TypeResolver,
 ) -> CommandContract
 where
     T: StaticCommandArgs + SemanticCommandContract,
 {
-    let (invocation, execution) = if detailed {
-        let (invocation, execution) = invocation_contract::<T>(contexts, resolver);
-        let execution = execution.map(|execution| ExecutionContract {
-            success: execution.success,
-            error: execution.error,
-        });
-        assert_eq!(
-            command.subcommands.is_empty(),
-            execution.is_some(),
-            "generated invocable command and execution contract projections must remain aligned",
-        );
-        (Some(invocation), execution)
-    } else {
-        (None, None)
-    };
+    let (invocation, execution) = invocation_contract::<T>(contexts, resolver);
+    let execution = execution
+        .map(|execution| ExecutionContract { success: execution.success, error: execution.error });
+    assert_eq!(
+        command.subcommands.is_empty(),
+        execution.is_some(),
+        "generated invocable command and execution contract projections must remain aligned",
+    );
 
-    let child_detailed = depth == ContractDepth::Recursive;
-    let subcommands = if depth == ContractDepth::Shallow && !detailed {
-        Vec::new()
-    } else {
-        command
-            .subcommands
-            .iter()
-            .copied()
-            .map(|child| {
-                let mut child_path = path.clone();
-                child_path.push(child.name.to_owned());
+    let subcommands = command
+        .subcommands
+        .iter()
+        .copied()
+        .map(|child| {
+            let mut child_path = path.clone();
+            child_path.push(child.name.to_owned());
+            if recursive {
                 let mut child_contexts = contexts.to_vec();
                 child_contexts.push(child);
-                command_contract::<T>(
-                    child,
-                    child_path,
-                    &child_contexts,
-                    depth,
-                    child_detailed,
-                    resolver,
-                )
-            })
-            .collect()
-    };
+                command_contract::<T>(child, child_path, &child_contexts, true, resolver)
+            } else {
+                command_summary(child, child_path)
+            }
+        })
+        .collect();
 
     CommandContract {
         path,
@@ -107,9 +92,23 @@ where
         about: command.about.map(str::to_owned),
         aliases: command.aliases.iter().copied().map(str::to_owned).collect(),
         invocable: command.subcommands.is_empty(),
-        invocation,
+        invocation: Some(invocation),
         execution,
         subcommands,
+    }
+}
+
+/// Builds one shallow child summary without resolving semantic types.
+fn command_summary(command: &'static StaticCommand<'static>, path: Vec<String>) -> CommandContract {
+    CommandContract {
+        path,
+        name: command.name.to_owned(),
+        about: command.about.map(str::to_owned),
+        aliases: command.aliases.iter().copied().map(str::to_owned).collect(),
+        invocable: command.subcommands.is_empty(),
+        invocation: None,
+        execution: None,
+        subcommands: Vec::new(),
     }
 }
 
@@ -139,12 +138,13 @@ where
         .iter()
         .enumerate()
         .map(|(index, context)| {
-            let semantic = T::contract_types(&branch_indices[..index], resolver)
-                .expect("generated contract command path must resolve semantic types");
+            let CommandTypes { flags, args, execution } =
+                T::contract_types(&branch_indices[..index], resolver)
+                    .expect("generated contract command path must resolve semantic types");
             if index == last_index {
-                selected_execution = semantic.execution;
+                selected_execution = execution;
             }
-            command_context(context, &contexts[..=index], semantic.values)
+            command_context(context, &contexts[..=index], flags, args)
         })
         .collect();
 
@@ -155,16 +155,17 @@ where
 fn command_context(
     command: &'static StaticCommand<'static>,
     contexts: &[&'static StaticCommand<'static>],
-    value_types: CommandValueTypes,
+    flag_types: Vec<Option<TypeContractValue>>,
+    arg_types: Vec<TypeContractValue>,
 ) -> CommandContextContract {
     assert_eq!(
         command.flags.len(),
-        value_types.flags.len(),
+        flag_types.len(),
         "generated flag contract and semantic type projections must remain aligned",
     );
     assert_eq!(
         command.args.len(),
-        value_types.args.len(),
+        arg_types.len(),
         "generated positional contract and semantic type projections must remain aligned",
     );
 
@@ -173,14 +174,14 @@ fn command_context(
     let positionals = command
         .args
         .iter()
-        .zip(value_types.args)
+        .zip(arg_types)
         .map(|(arg, value_type)| arg_contract(arg, value_type))
         .collect();
     let options = command
         .flags
         .iter()
         .copied()
-        .zip(value_types.flags)
+        .zip(flag_types)
         .map(|(flag, value_type)| option_contract(flag, value_type))
         .collect();
     let constraints = command

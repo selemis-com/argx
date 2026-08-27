@@ -6,8 +6,7 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
     use argx::{
-        ContractType as _, PrimitiveType, TYPE_CONTRACT_VERSION, TypeContractValue,
-        TypeDefinitionKind, TypeVariantKind,
+        ContractType as _, PrimitiveType, TypeContractValue, TypeDefinitionKind, TypeVariantKind,
     };
 
     /// A documented reusable leaf.
@@ -104,12 +103,9 @@ mod tests {
         assert_eq!(std::ffi::OsString::type_contract().root, TypeContractValue::OsString);
         assert_eq!(std::path::PathBuf::type_contract().root, TypeContractValue::Path);
         let infallible = std::convert::Infallible::type_contract();
-        assert_eq!(
-            infallible.root,
-            TypeContractValue::Reference { definition: "type-0".to_owned() },
-        );
+        assert_eq!(infallible.root, TypeContractValue::Reference { index: 0 },);
         assert!(matches!(
-            &infallible.definitions[0].kind,
+            &infallible.types[0].kind,
             TypeDefinitionKind::Enum { variants } if variants.is_empty()
         ));
         assert_eq!(
@@ -139,12 +135,11 @@ mod tests {
     #[test]
     fn derived_structs_use_named_definitions_and_terminate_recursion() {
         let contract = Node::type_contract();
-        assert_eq!(contract.version, TYPE_CONTRACT_VERSION);
-        assert_eq!(contract.root, TypeContractValue::Reference { definition: "type-0".to_owned() },);
-        assert_eq!(contract.definitions.len(), 2);
+        assert_eq!(contract.version, argx::CONTRACT_VERSION);
+        assert_eq!(contract.root, TypeContractValue::Reference { index: 0 },);
+        assert_eq!(contract.types.len(), 2);
 
-        let node = &contract.definitions[0];
-        assert_eq!(node.id, "type-0");
+        let node = &contract.types[0];
         assert_eq!(node.name, "Node");
         assert_eq!(node.description.as_deref(), Some("One recursive tree node."));
         let TypeDefinitionKind::Struct { fields } = &node.kind else {
@@ -156,18 +151,18 @@ mod tests {
         assert_eq!(
             fields[0].value_type,
             TypeContractValue::Sequence {
-                element: Box::new(TypeContractValue::Reference { definition: "type-0".to_owned() }),
+                element: Box::new(TypeContractValue::Reference { index: 0 }),
             },
         );
         assert_eq!(fields[1].name.as_deref(), Some("identity"));
         assert_eq!(
             fields[1].value_type,
             TypeContractValue::Optional {
-                value: Box::new(TypeContractValue::Reference { definition: "type-1".to_owned() }),
+                value: Box::new(TypeContractValue::Reference { index: 1 }),
             },
         );
 
-        let identity = &contract.definitions[1];
+        let identity = &contract.types[1];
         assert_eq!(identity.name, "Identity");
         assert_eq!(identity.description.as_deref(), Some("A documented reusable leaf."));
     }
@@ -175,15 +170,15 @@ mod tests {
     #[test]
     fn mutually_recursive_definitions_are_reserved_before_descent() {
         let contract = Left::type_contract();
-        assert_eq!(contract.definitions.len(), 2);
-        assert_eq!(contract.definitions[0].name, "Left");
-        assert_eq!(contract.definitions[1].name, "Right");
+        assert_eq!(contract.types.len(), 2);
+        assert_eq!(contract.types[0].name, "Left");
+        assert_eq!(contract.types[1].name, "Right");
     }
 
     #[test]
     fn enum_contracts_preserve_variant_and_field_shapes() {
         let contract = Event::type_contract();
-        let TypeDefinitionKind::Enum { variants } = &contract.definitions[0].kind else {
+        let TypeDefinitionKind::Enum { variants } = &contract.types[0].kind else {
             panic!("Event must resolve to an enum definition");
         };
         assert_eq!(variants.len(), 3);
@@ -210,8 +205,8 @@ mod tests {
         }
 
         let contract = Root::type_contract();
-        assert_eq!(contract.definitions.iter().filter(|item| item.name == "Identity").count(), 1);
-        assert_eq!(contract.definitions.iter().filter(|item| item.name == "Wrapper").count(), 2);
+        assert_eq!(contract.types.iter().filter(|item| item.name == "Identity").count(), 1);
+        assert_eq!(contract.types.iter().filter(|item| item.name == "Wrapper").count(), 2);
     }
 
     #[test]
@@ -225,7 +220,7 @@ mod tests {
 
         let contract = Root::type_contract();
         let projected =
-            contract.definitions.iter().filter(|item| item.name == "Projected").collect::<Vec<_>>();
+            contract.types.iter().filter(|item| item.name == "Projected").collect::<Vec<_>>();
         assert_eq!(projected.len(), 2);
 
         let TypeDefinitionKind::Struct { fields: vector_fields } = &projected[0].kind else {
@@ -251,13 +246,12 @@ mod tests {
         }
 
         let contract = Root::type_contract();
-        let fixed =
-            contract.definitions.iter().filter(|item| item.name == "Fixed").collect::<Vec<_>>();
+        let fixed = contract.types.iter().filter(|item| item.name == "Fixed").collect::<Vec<_>>();
         assert_eq!(fixed.len(), 2);
     }
 
     #[test]
-    fn definition_ids_disambiguate_equal_short_rust_names() {
+    fn equal_short_rust_names_remain_distinct_definitions() {
         mod first {
             #[derive(argx::Contract)]
             pub(super) struct Duplicate {
@@ -285,14 +279,18 @@ mod tests {
         assert_eq!(second_value.value, 0);
 
         let contract = Root::type_contract();
+        let TypeDefinitionKind::Struct { fields } = &contract.types[0].kind else {
+            panic!("Root must resolve to a struct definition");
+        };
+        assert_ne!(fields[0].value_type, fields[1].value_type);
+
         let duplicates = contract
-            .definitions
+            .types
             .iter()
             .filter(|definition| definition.name == "Duplicate")
             .collect::<Vec<_>>();
 
         assert_eq!(duplicates.len(), 2);
-        assert_ne!(duplicates[0].id, duplicates[1].id);
         assert!(matches!(
             &duplicates[0].kind,
             TypeDefinitionKind::Struct { fields } if fields[0].value_type == TypeContractValue::String
@@ -319,8 +317,8 @@ mod tests {
         assert!(serialized.get("wireName").is_some());
 
         let contract = Payload::type_contract();
-        assert_eq!(contract.definitions[0].name, "Payload");
-        let TypeDefinitionKind::Struct { fields } = &contract.definitions[0].kind else {
+        assert_eq!(contract.types[0].name, "Payload");
+        let TypeDefinitionKind::Struct { fields } = &contract.types[0].kind else {
             panic!("Payload must resolve to a struct definition");
         };
         assert_eq!(fields[0].name.as_deref(), Some("rust_name"));
@@ -358,11 +356,10 @@ mod tests {
   "version": 1,
   "root": {
     "kind": "reference",
-    "definition": "type-0"
+    "index": 0
   },
-  "definitions": [
+  "types": [
     {
-      "id": "type-0",
       "name": "Payload",
       "kind": "struct",
       "fields": [
@@ -418,7 +415,7 @@ mod tests {
     fn serialized_contract_uses_document_local_references() {
         let json = Node::type_contract().to_json().expect("type contract must serialize");
         assert!(json.contains("\"version\":1"));
-        assert!(json.contains("\"definition\":\"type-0\""));
+        assert!(json.contains("\"index\":0"));
         assert!(!json.contains("type_contract::tests::Node"));
     }
 }

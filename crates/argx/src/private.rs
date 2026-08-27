@@ -21,10 +21,9 @@ pub use crate::{
     derive_support::{
         traits::{
             CommandArgs, CommandExecutionTypes, CommandTypeContract, CommandTypes,
-            CommandValueTypes, ExecutionContractSource, ExecutionResult, InvocableCommandContract,
-            NoTypeProjection, ResolveCommandTypeContract, ResolveExecutionContract,
-            ResolveSubcommandTree, ResolveSubcommands, ResolveValueFields, SubcommandTypeContract,
-            Subcommands,
+            ExecutionContractSource, ExecutionResult, InvocableCommandContract,
+            ResolveCommandTypeContract, ResolveExecutionContract, ResolveSubcommandTree,
+            ResolveSubcommands, ResolveValueFields, SubcommandTypeContract, Subcommands,
         },
         value::{
             RawValue, os_value, os_values, parsed_value, parsed_values, text_value, text_values,

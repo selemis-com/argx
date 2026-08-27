@@ -11,9 +11,12 @@ use std::{
     sync::Arc,
 };
 
-use crate::type_contract::{
-    ContractType, PrimitiveType, TYPE_CONTRACT_VERSION, TypeContract, TypeContractValue,
-    TypeDefinition, TypeDefinitionKind,
+use crate::{
+    CONTRACT_VERSION,
+    type_contract::{
+        ContractType, PrimitiveType, TypeContract, TypeContractValue, TypeDefinition,
+        TypeDefinitionKind,
+    },
 };
 
 /// Rust type identity used only while deduplicating named definitions in one discovery run.
@@ -68,10 +71,10 @@ pub trait TypeContractSource {
 /// Mutable state for one type-contract discovery run.
 #[derive(Debug, Default)]
 pub struct TypeResolver {
-    /// Definitions reserved in deterministic first-discovery order.
-    definitions: Vec<Option<TypeDefinition>>,
-    /// Previously reserved definition indices keyed by private Rust type identity.
-    definitions_by_type: HashMap<TypeKey, usize>,
+    /// Types reserved in deterministic first-discovery order.
+    types: Vec<Option<TypeDefinition>>,
+    /// Previously reserved type indices keyed by private Rust type identity.
+    types_by_key: HashMap<TypeKey, usize>,
 }
 
 impl TypeResolver {
@@ -89,23 +92,22 @@ impl TypeResolver {
     where
         F: FnOnce(&mut Self) -> TypeDefinitionKind,
     {
-        if let Some(index) = self.definitions_by_type.get(&key).copied() {
-            return TypeContractValue::Reference { definition: definition_id(index) };
+        if let Some(index) = self.types_by_key.get(&key).copied() {
+            return TypeContractValue::Reference { index };
         }
 
-        let index = self.definitions.len();
-        self.definitions_by_type.insert(key, index);
-        self.definitions.push(None);
+        let index = self.types.len();
+        self.types_by_key.insert(key, index);
+        self.types.push(None);
 
         let kind = build(self);
-        self.definitions[index] = Some(TypeDefinition {
-            id: definition_id(index),
+        self.types[index] = Some(TypeDefinition {
             name: name.to_owned(),
             description: description.map(str::to_owned),
             kind,
         });
 
-        TypeContractValue::Reference { definition: definition_id(index) }
+        TypeContractValue::Reference { index }
     }
 
     /// Completes a discovery run after all reserved definitions have been populated.
@@ -114,7 +116,7 @@ impl TypeResolver {
     ///
     /// Panics if an internal reservation was not populated before discovery completed.
     pub(crate) fn finish(self) -> Vec<TypeDefinition> {
-        self.definitions
+        self.types
             .into_iter()
             .map(|definition| {
                 definition.expect("reserved type definitions are populated before discovery ends")
@@ -131,12 +133,7 @@ where
 {
     let mut resolver = TypeResolver::default();
     let root = T::resolve_type(&mut resolver);
-    TypeContract { version: TYPE_CONTRACT_VERSION, root, definitions: resolver.finish() }
-}
-
-/// Returns the stable document-local spelling for one definition index.
-fn definition_id(index: usize) -> String {
-    format!("type-{index}")
+    TypeContract { version: CONTRACT_VERSION, root, types: resolver.finish() }
 }
 
 /// Declares private markers for exact built-in Rust type forms.

@@ -11,11 +11,13 @@
 //! Shallow discovery includes the selected command in full and direct children as summaries. A
 //! summary still exposes command identity, aliases, and invocability, but omits invocation and
 //! execution detail. Recursive discovery expands the complete selected subtree. The shared type
-//! definition table contains only definitions referenced by detailed nodes returned in that result.
+//! table contains only definitions referenced by detailed nodes returned in that result.
 //!
-//! The serialized representation carries [`CONTRACT_VERSION`] so consumers can identify the wire
-//! format they received. It is intentionally sparse: optional empty collections and default-false
-//! argument properties are omitted where absence is unambiguous, while command `invocable` remains
+//! All serialized Argx contract documents carry [`crate::CONTRACT_VERSION`]. CLI contracts and
+//! standalone [`crate::TypeContract`] values share one version because they use the same semantic
+//! type model and evolve as one public contract surface. The representation is intentionally
+//! sparse: optional empty collections and default-false argument properties are omitted where
+//! absence is unambiguous, while command `invocable` remains
 //! explicit. Each detailed command context also exposes the built-in terminal actions accepted in
 //! that lexical scope. Positional multiplicity is expressed directly through `required` and
 //! `variadic`; a named option's `type` is present exactly when each occurrence consumes one value,
@@ -35,48 +37,24 @@ mod discovery;
 
 pub(crate) use discovery::discover;
 
-/// Current serialized Argx contract protocol version.
-pub const CONTRACT_VERSION: u32 = 1;
-
-/// Controls how much descendant detail contract discovery returns.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub enum ContractDepth {
-    /// Include the selected command in full and its direct children as summaries.
-    #[default]
-    Shallow,
-    /// Include the selected command and its complete descendant subtree in full.
-    Recursive,
-}
-
 /// One contract discovery request.
 ///
-/// A request selects a command path relative to the root and controls how deeply child commands
-/// are expanded. Path segments may use canonical command names or declared aliases.
-///
-/// # Examples
-///
-/// ```
-/// use argx::{ContractDepth, ContractRequest};
-///
-/// let request = ContractRequest::new(["admin", "users"]).recursive();
-/// assert_eq!(request.path().len(), 2);
-/// assert_eq!(request.path()[0], "admin");
-/// assert_eq!(request.path()[1], "users");
-/// assert_eq!(request.depth(), ContractDepth::Recursive);
-/// ```
+/// A request selects a command path relative to the root. Discovery is shallow by default;
+/// [`Self::recursive`] expands the complete selected subtree. Path segments may use canonical
+/// command names or declared aliases.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct ContractRequest {
     /// Child-command path relative to the root command.
     path: Vec<String>,
-    /// Descendant detail requested by the caller.
-    depth: ContractDepth,
+    /// Whether descendants below the selected command are returned in full.
+    recursive: bool,
 }
 
 impl ContractRequest {
     /// Creates a shallow request for the root command.
     #[must_use]
     pub const fn root() -> Self {
-        Self { path: Vec::new(), depth: ContractDepth::Shallow }
+        Self { path: Vec::new(), recursive: false }
     }
 
     /// Creates a shallow request for one command path relative to the root command.
@@ -86,26 +64,14 @@ impl ContractRequest {
         I: IntoIterator<Item = S>,
         S: Into<String>,
     {
-        Self { path: path.into_iter().map(Into::into).collect(), depth: ContractDepth::Shallow }
+        Self { path: path.into_iter().map(Into::into).collect(), recursive: false }
     }
 
     /// Requests full recursive detail below the selected command.
     #[must_use]
     pub const fn recursive(mut self) -> Self {
-        self.depth = ContractDepth::Recursive;
+        self.recursive = true;
         self
-    }
-
-    /// Returns the requested command path relative to the root command.
-    #[must_use]
-    pub fn path(&self) -> &[String] {
-        &self.path
-    }
-
-    /// Returns the requested descendant detail level.
-    #[must_use]
-    pub const fn depth(&self) -> ContractDepth {
-        self.depth
     }
 }
 
@@ -113,7 +79,7 @@ impl ContractRequest {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Contract {
-    /// Serialized protocol version.
+    /// Serialized Argx contract protocol version; currently [`crate::CONTRACT_VERSION`].
     pub version: u32,
     /// Canonical root command name.
     pub root: String,
@@ -121,9 +87,9 @@ pub struct Contract {
     pub command: CommandContract,
     /// Shared semantic Rust type definitions referenced by invocation and execution contracts.
     ///
-    /// References resolve by document-local definition ID. Definition names are descriptive and
-    /// are not required to be unique. Omitted when the returned command detail references no named
-    /// semantic types.
+    /// References resolve by zero-based index into this table. Definition names are descriptive
+    /// and are not required to be unique. Omitted when the returned command detail references no
+    /// named semantic types.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub types: Vec<TypeDefinition>,
 }

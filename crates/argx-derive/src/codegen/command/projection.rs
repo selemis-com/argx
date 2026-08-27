@@ -53,7 +53,7 @@ pub(super) fn semantic_projection(
                 ..
             }) if field.is_switch() => {
                 has_fields = true;
-                field_steps.push(quote!(values.flags.push(::std::option::Option::None);));
+                field_steps.push(quote!(flags.push(::std::option::Option::None);));
             }
             model::FieldSemantics::Argument(model::Argument {
                 kind: model::ArgumentKind::Flag { .. },
@@ -70,7 +70,7 @@ pub(super) fn semantic_projection(
                     <T as #shape_ident>::#associated: #facade::__private::TypeContractSource
                 ));
                 field_steps.push(quote! {
-                    values.flags.push(::std::option::Option::Some(
+                    flags.push(::std::option::Option::Some(
                         <<T as #shape_ident>::#associated as
                             #facade::__private::TypeContractSource>::resolve_type(resolver),
                     ));
@@ -91,7 +91,7 @@ pub(super) fn semantic_projection(
                     <T as #shape_ident>::#associated: #facade::__private::TypeContractSource
                 ));
                 field_steps.push(quote! {
-                    values.args.push(
+                    args.push(
                         <<T as #shape_ident>::#associated as
                             #facade::__private::TypeContractSource>::resolve_type(resolver),
                     );
@@ -116,7 +116,7 @@ pub(super) fn semantic_projection(
                 field_steps.push(quote! {
                     <<<T as #shape_ident>::#associated as
                         #facade::__private::CommandTypeContract>::Fields as
-                        #facade::__private::ResolveValueFields>::append(resolver, values);
+                        #facade::__private::ResolveValueFields>::append(resolver, flags, args);
                 });
             }
             model::FieldSemantics::Subcommand => {
@@ -224,11 +224,7 @@ pub(super) fn semantic_projection(
         (quote!((#(#partial_types,)*)), None, TokenStream::new())
     };
 
-    let fields = if has_fields {
-        quote!(#fields_ident<Self>)
-    } else {
-        quote!(#facade::__private::NoTypeProjection)
-    };
+    let fields = if has_fields { quote!(#fields_ident<Self>) } else { quote!(()) };
     let field_declaration = has_fields.then(|| {
         let field_where = if needs_shape {
             quote! {
@@ -264,7 +260,10 @@ pub(super) fn semantic_projection(
             {
                 fn append(
                     resolver: &mut #facade::__private::TypeResolver,
-                    values: &mut #facade::__private::CommandValueTypes,
+                    flags: &mut ::std::vec::Vec<
+                        ::std::option::Option<#facade::TypeContractValue>,
+                    >,
+                    args: &mut ::std::vec::Vec<#facade::TypeContractValue>,
                 ) {
                     #(#field_steps)*
                 }
@@ -274,7 +273,7 @@ pub(super) fn semantic_projection(
 
     let directly_invocable = subcommand_projection.is_none();
     let (subcommands, subcommand_declaration) = subcommand_projection.map_or_else(
-        || (quote!(#facade::__private::NoTypeProjection), None),
+        || (quote!(()), None),
         |associated| {
             let projection = quote!(#subcommands_ident<Self>);
             let declaration = quote! {
@@ -351,7 +350,7 @@ pub(super) fn semantic_projection(
             }),
         )
     } else {
-        (quote!(#facade::__private::NoTypeProjection), None)
+        (quote!(()), None)
     };
 
     SemanticProjection {

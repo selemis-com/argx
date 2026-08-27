@@ -318,14 +318,14 @@
 //! semantic Rust value types and multiplicity, global scope, environment/default sources,
 //! built-in terminal help/version actions, normalized `requires` / `conflicts` relationships, and
 //! semantic success/error types for invocable commands.
-//! Named semantic types share one definition table across the returned document. Command paths
-//! supplied in a [`ContractRequest`] may use aliases; returned paths always use canonical command
-//! names.
+//! Named semantic types share one type table across the returned document. Command paths supplied
+//! in a [`ContractRequest`] may use aliases; returned paths always use canonical command names.
 //!
-//! [`ContractDepth::Shallow`] includes the selected command in full and direct children as
-//! summaries. [`ContractDepth::Recursive`] expands the selected command's complete descendant
-//! subtree. [`Contract::to_json`] and [`Contract::to_json_pretty`] serialize the public protocol,
-//! whose current version is [`CONTRACT_VERSION`].
+//! Discovery is shallow by default: the selected command is returned in full and direct children
+//! are summaries. Calling [`ContractRequest::recursive`] expands the selected command's complete
+//! descendant subtree. [`Contract::to_json`] and [`Contract::to_json_pretty`] serialize the public
+//! protocol, whose current version is [`CONTRACT_VERSION`]. Standalone [`TypeContract`] documents
+//! use the same version and semantic type model.
 //!
 //! Attached semantic types describe Rust values at the command boundary. For invocation values they
 //! do not define the lexical encoding accepted by an arbitrary [`std::str::FromStr`]. For an
@@ -390,15 +390,20 @@ pub mod type_contract;
 
 use std::ffi::{OsStr, OsString};
 
+/// Current serialized Argx contract protocol version.
+///
+/// This versions both [`struct@Contract`] and [`TypeContract`] documents.
+pub const CONTRACT_VERSION: u32 = 1;
+
 pub use contract::{
-    ActionContract, ActionContractKind, CONTRACT_VERSION, CommandContextContract, CommandContract,
-    ConstraintContract, ConstraintContractKind, Contract, ContractDepth, ContractError,
-    ContractRequest, ExecutionContract, OptionContract, PositionalContract,
+    ActionContract, ActionContractKind, CommandContextContract, CommandContract,
+    ConstraintContract, ConstraintContractKind, Contract, ContractError, ContractRequest,
+    ExecutionContract, OptionContract, PositionalContract,
 };
 pub use error::{Error, InvalidValue};
 pub use type_contract::{
-    ContractType, PrimitiveType, TYPE_CONTRACT_VERSION, TypeContract, TypeContractValue,
-    TypeDefinition, TypeDefinitionKind, TypeFieldContract, TypeVariantContract, TypeVariantKind,
+    ContractType, PrimitiveType, TypeContract, TypeContractValue, TypeDefinition,
+    TypeDefinitionKind, TypeFieldContract, TypeVariantContract, TypeVariantKind,
 };
 
 /// Compiler-facing marker for command trees that can produce a complete machine contract.
@@ -610,10 +615,10 @@ pub trait Parser: Sized + __private::CommandArgs {
     /// The handler's concrete `Result<T, E>` is the execution contract, so both `T` and `E` must
     /// implement [`ContractType`]. Semantic contracts describe Rust-level shapes; they do not infer
     /// an application's `serde` representation or a custom [`std::str::FromStr`] lexical grammar.
-    /// Named definitions are referenced by document-local IDs; their short Rust names are
-    /// descriptive and need not be unique. These requirements apply only when contract discovery
-    /// is used and do not affect parsing support. Contract discovery does not parse process
-    /// arguments or evaluate environment fallbacks.
+    /// Named definitions are referenced by index into the returned type table; their short Rust
+    /// names are descriptive and need not be unique. These requirements apply only when contract
+    /// discovery is used and do not affect parsing support. Contract discovery does not parse
+    /// process arguments or evaluate environment fallbacks.
     ///
     /// # Examples
     ///

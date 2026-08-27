@@ -1,10 +1,9 @@
 //! Machine-readable semantic contracts for Rust value types.
 //!
 //! Primitive and container shapes are represented inline. Named structs and enums are represented
-//! by [`TypeContractValue::Reference`] values into a document-local definition table. This gives
-//! repeated and recursive declarations one uniform representation. Definition IDs are deterministic
-//! within one discovery result but have no identity outside that document; short Rust declaration
-//! names are descriptive metadata and may repeat.
+//! by [`TypeContractValue::Reference`] values into a document-local type table. This gives repeated
+//! and recursive declarations one uniform representation. References are zero-based table indices;
+//! short Rust declaration names are descriptive metadata and may repeat.
 //!
 //! Ownership-only wrappers such as references, `Box`, `Rc`, and `Arc` are semantically transparent.
 //! Standard sequence, set, and map implementations collapse to their common semantic container
@@ -15,25 +14,21 @@ pub(crate) mod resolve;
 
 use serde::Serialize;
 
-/// Current serialized Argx Rust type-contract protocol version.
-pub const TYPE_CONTRACT_VERSION: u32 = 1;
-
 /// One versioned machine-readable contract for a Rust value type.
 ///
 /// This describes Rust-level semantic shape, not an application's serialization format. In
-/// particular, Argx does not inspect `serde` attributes or infer JSON Schema. Definition
-/// identifiers are local to this document. Consumers must not persist or compare them across
-/// independently generated contracts.
+/// particular, Argx does not inspect `serde` attributes or infer JSON Schema. References are local
+/// to this document and resolve by index into [`Self::types`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TypeContract {
-    /// Serialized type-contract protocol version.
+    /// Serialized Argx contract protocol version; currently [`crate::CONTRACT_VERSION`].
     pub version: u32,
     /// Semantic shape of the requested root type.
     pub root: TypeContractValue,
     /// Named Rust declarations referenced by the root, in deterministic discovery order.
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub definitions: Vec<TypeDefinition>,
+    pub types: Vec<TypeDefinition>,
 }
 
 impl TypeContract {
@@ -109,8 +104,8 @@ pub enum TypeContractValue {
     },
     /// A reference to one named definition in this contract document.
     Reference {
-        /// Document-local definition identifier.
-        definition: String,
+        /// Zero-based index into the document's type table.
+        index: usize,
     },
 }
 
@@ -171,11 +166,10 @@ pub enum PrimitiveType {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TypeDefinition {
-    /// Identifier used by [`TypeContractValue::Reference`] within this document.
-    pub id: String,
     /// Rust declaration name without module or generic-argument qualification.
     ///
-    /// This is descriptive metadata, not a unique identifier. Resolve references through `id`.
+    /// This is descriptive metadata, not a unique identifier. References resolve by position in
+    /// the containing type table.
     pub name: String,
     /// First paragraph of Rust documentation attached to this declaration.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -263,6 +257,9 @@ pub enum TypeVariantKind {
 /// metadata. Manual implementations are not part of Argx's stable extension surface.
 pub trait ContractType: crate::__private::TypeContractSource {
     /// Discovers the complete semantic contract for this Rust type.
+    ///
+    /// Each call owns a fresh type table. References are indices into that table and therefore have
+    /// meaning only within the returned document.
     #[must_use]
     fn type_contract() -> TypeContract {
         crate::__private::discover_type_contract::<Self>()

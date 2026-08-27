@@ -11,15 +11,6 @@ use crate::{
     type_contract::{TypeContractValue, resolve::TypeResolver},
 };
 
-/// Resolved semantic value types for one command context.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CommandValueTypes {
-    /// Value types for named arguments in static command order; switches have no value.
-    pub flags: Vec<Option<TypeContractValue>>,
-    /// Value types for positional arguments in static command order.
-    pub args: Vec<TypeContractValue>,
-}
-
 /// Resolved semantic success and error types for one executable command.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommandExecutionTypes {
@@ -30,17 +21,15 @@ pub struct CommandExecutionTypes {
 }
 
 /// Complete generated semantic projection for one command context.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Default)]
 pub struct CommandTypes {
-    /// Semantic types of values consumed by this command context.
-    pub values: CommandValueTypes,
+    /// Value types for named arguments in static command order; switches have no value.
+    pub flags: Vec<Option<TypeContractValue>>,
+    /// Value types for positional arguments in static command order.
+    pub args: Vec<TypeContractValue>,
     /// Execution result types when this command is directly invocable.
     pub execution: Option<CommandExecutionTypes>,
 }
-
-/// Empty generated semantic contract projection.
-#[derive(Debug, Clone, Copy)]
-pub struct NoTypeProjection;
 
 /// Generated type-level semantic projection for one derived command declaration.
 pub trait CommandTypeContract {
@@ -48,9 +37,9 @@ pub trait CommandTypeContract {
     ///
     /// Value-less switches still occupy their static flag slot and resolve to no semantic value.
     type Fields;
-    /// Execution projection for this command, or [`NoTypeProjection`] when it has subcommands.
+    /// Execution projection for this command, or `()` when it has subcommands.
     type Execution;
-    /// Nested subcommand projection, or [`NoTypeProjection`] when absent.
+    /// Nested subcommand projection, or `()` when absent.
     type Subcommands;
 }
 
@@ -98,7 +87,7 @@ pub trait ResolveExecutionContract {
     fn resolve(resolver: &mut TypeResolver) -> Option<CommandExecutionTypes>;
 }
 
-impl ResolveExecutionContract for NoTypeProjection {
+impl ResolveExecutionContract for () {
     fn resolve(_resolver: &mut TypeResolver) -> Option<CommandExecutionTypes> {
         None
     }
@@ -121,9 +110,10 @@ where
 {
     fn contract_types(path: &[usize], resolver: &mut TypeResolver) -> Option<CommandTypes> {
         let Some((index, rest)) = path.split_first() else {
-            let mut values = CommandValueTypes { flags: Vec::new(), args: Vec::new() };
-            T::Fields::append(resolver, &mut values);
-            return Some(CommandTypes { values, execution: T::Execution::resolve(resolver) });
+            let mut flags = Vec::new();
+            let mut args = Vec::new();
+            T::Fields::append(resolver, &mut flags, &mut args);
+            return Some(CommandTypes { flags, args, execution: T::Execution::resolve(resolver) });
         };
 
         T::Subcommands::resolve(*index, rest, resolver)
@@ -132,12 +122,21 @@ where
 
 /// Appends one generated field projection to a command context.
 pub trait ResolveValueFields {
-    /// Resolves this projection into `values` in static command order.
-    fn append(resolver: &mut TypeResolver, values: &mut CommandValueTypes);
+    /// Resolves this projection into field-type vectors in static command order.
+    fn append(
+        resolver: &mut TypeResolver,
+        flags: &mut Vec<Option<TypeContractValue>>,
+        args: &mut Vec<TypeContractValue>,
+    );
 }
 
-impl ResolveValueFields for NoTypeProjection {
-    fn append(_resolver: &mut TypeResolver, _values: &mut CommandValueTypes) {}
+impl ResolveValueFields for () {
+    fn append(
+        _resolver: &mut TypeResolver,
+        _flags: &mut Vec<Option<TypeContractValue>>,
+        _args: &mut Vec<TypeContractValue>,
+    ) {
+    }
 }
 
 /// Resolves a generated nested subcommand projection.
@@ -146,7 +145,7 @@ pub trait ResolveSubcommands {
     fn resolve(index: usize, rest: &[usize], resolver: &mut TypeResolver) -> Option<CommandTypes>;
 }
 
-impl ResolveSubcommands for NoTypeProjection {
+impl ResolveSubcommands for () {
     fn resolve(
         _index: usize,
         _rest: &[usize],

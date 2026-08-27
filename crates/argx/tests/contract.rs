@@ -1,9 +1,10 @@
 //! Native machine-contract discovery and wire-protocol tests.
 //!
 //! This layer owns the public projection produced by `Parser::contract`: canonical paths, aliases,
-//! invocation contexts, multiplicity, value sources, relationships, discovery depth, and serialized
-//! protocol spelling. Parsing the representative fixture is useful only as a cross-check that the
-//! declaration backing the contract remains invocable; detailed parser semantics live elsewhere.
+//! invocation contexts, multiplicity, value sources, relationships, shallow/recursive discovery,
+//! and serialized protocol spelling. Parsing the representative fixture is useful only as a
+//! cross-check that the declaration backing the contract remains invocable; detailed parser
+//! semantics live elsewhere.
 
 #[cfg(test)]
 #[cfg(feature = "derive")]
@@ -11,8 +12,8 @@ mod tests {
     #![expect(dead_code, reason = "contract fixtures include metadata-only handler functions")]
 
     use argx::{
-        ActionContractKind, ConstraintContractKind, ContractDepth, ContractRequest, Parser as _,
-        PrimitiveType, TypeContractValue, TypeDefinitionKind,
+        ActionContractKind, ConstraintContractKind, ContractRequest, Parser as _, PrimitiveType,
+        TypeContractValue, TypeDefinitionKind,
     };
 
     /// Reusable authentication arguments.
@@ -400,9 +401,6 @@ mod tests {
     #[test]
     fn contract_projects_short_only_options_optional_positionals_and_positional_constraints() {
         let request = ContractRequest::root();
-        assert!(request.path().is_empty());
-        assert_eq!(request.depth(), ContractDepth::Shallow);
-
         let contract = ProjectionCli::contract(request).expect("root contract should exist");
         let invocation =
             contract.command.invocation.as_ref().expect("root command should be detailed");
@@ -449,7 +447,6 @@ mod tests {
             .expect("typed invocation contract should exist");
         assert_eq!(contract.types.len(), 1);
         let definition = &contract.types[0];
-        assert_eq!(definition.id, "type-0");
         assert_eq!(definition.name, "OutputFormat");
         assert!(matches!(
             &definition.kind,
@@ -461,7 +458,7 @@ mod tests {
         let context = &invocation[0];
         let option_type = context.options[0].value_type.as_ref().expect("format takes a value");
         let positional_type = &context.positionals[0].value_type;
-        let expected = TypeContractValue::Reference { definition: "type-0".to_owned() };
+        let expected = TypeContractValue::Reference { index: 0 };
         assert_eq!(option_type, &expected);
         assert_eq!(positional_type, &expected);
     }
@@ -475,14 +472,8 @@ mod tests {
         let contract = ExecutionCli::contract(ContractRequest::root())
             .expect("execution contract should exist");
         let execution = contract.command.execution.expect("root command is invocable");
-        assert_eq!(
-            execution.success,
-            TypeContractValue::Reference { definition: "type-0".to_owned() },
-        );
-        assert_eq!(
-            execution.error,
-            TypeContractValue::Reference { definition: "type-1".to_owned() },
-        );
+        assert_eq!(execution.success, TypeContractValue::Reference { index: 0 },);
+        assert_eq!(execution.error, TypeContractValue::Reference { index: 1 },);
         assert_eq!(contract.types.len(), 2);
         assert_eq!(contract.types[0].name, "ExecutionOutput");
         assert_eq!(contract.types[1].name, "ExecutionError");
@@ -514,10 +505,7 @@ mod tests {
             ),
         ] {
             let execution = contract.command.execution.as_ref().expect("root command is invocable");
-            assert_eq!(
-                execution.success,
-                TypeContractValue::Reference { definition: "type-0".to_owned() },
-            );
+            assert_eq!(execution.success, TypeContractValue::Reference { index: 0 },);
             assert_eq!(contract.types.len(), 1);
             assert_eq!(contract.types[0].name, "GenericOutput");
             let TypeDefinitionKind::Struct { fields } = &contract.types[0].kind else {
@@ -553,11 +541,11 @@ mod tests {
                 .as_ref()
                 .expect("selected command should expose execution")
                 .success,
-            TypeContractValue::Reference { definition: "type-1".to_owned() },
+            TypeContractValue::Reference { index: 1 },
         );
         let invocation = selected.command.invocation.expect("selected command should be detailed");
         let value_type = &invocation[1].positionals[0].value_type;
-        assert_eq!(value_type, &TypeContractValue::Reference { definition: "type-0".to_owned() },);
+        assert_eq!(value_type, &TypeContractValue::Reference { index: 0 },);
 
         let recursive = TypedNestedCli::contract(ContractRequest::root().recursive())
             .expect("recursive nested contract should exist");
@@ -693,7 +681,6 @@ mod tests {
     #[test]
     fn recursive_discovery_expands_the_complete_selected_subtree() {
         let request = ContractRequest::root().recursive();
-        assert_eq!(request.depth(), ContractDepth::Recursive);
         let contract = Cli::contract(request).expect("recursive root contract should exist");
 
         let objects = &contract.command.subcommands[0];
@@ -866,17 +853,16 @@ mod tests {
     "execution": {
       "success": {
         "kind": "reference",
-        "definition": "type-0"
+        "index": 0
       },
       "error": {
         "kind": "reference",
-        "definition": "type-1"
+        "index": 1
       }
     }
   },
   "types": [
     {
-      "id": "type-0",
       "name": "GetOutput",
       "description": "Successful result of retrieving one object.",
       "kind": "struct",
@@ -890,7 +876,6 @@ mod tests {
       ]
     },
     {
-      "id": "type-1",
       "name": "GetError",
       "description": "Retrieval failure exposed by the command.",
       "kind": "enum",
@@ -929,8 +914,6 @@ mod tests {
     #[test]
     fn unknown_root_command_paths_report_without_a_parent_path() {
         let request = ContractRequest::new(["missing"]);
-        assert!(request.path().iter().map(String::as_str).eq(["missing"]));
-
         let error = Cli::contract(request).expect_err("unknown root command should fail");
         assert_eq!(error.to_string(), "unknown contract command `missing`");
     }
@@ -998,17 +981,16 @@ mod tests {
     "execution": {
       "success": {
         "kind": "reference",
-        "definition": "type-0"
+        "index": 0
       },
       "error": {
         "kind": "reference",
-        "definition": "type-1"
+        "index": 1
       }
     }
   },
   "types": [
     {
-      "id": "type-0",
       "name": "EchoOutput",
       "description": "Successful result of echoing one value.",
       "kind": "struct",
@@ -1022,7 +1004,6 @@ mod tests {
       ]
     },
     {
-      "id": "type-1",
       "name": "EchoError",
       "description": "Echo failure exposed by the command.",
       "kind": "enum",

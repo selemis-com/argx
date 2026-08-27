@@ -138,12 +138,13 @@ assert!(contract.command.execution.is_some());
 
 Contracts describe invocation semantics and semantic Rust input/output types. They are not JSON
 Schema, do not interpret `serde` attributes, and do not describe the lexical grammar of custom
-`FromStr` implementations. Named types use document-local references so repeated and recursive
-shapes have one consistent representation.
+`FromStr` implementations. Standalone type contracts and combined CLI contracts share one wire
+version, and named types use document-local references so repeated and recursive shapes have one
+consistent representation.
 
 See [`Parser::contract`](https://docs.rs/argx/latest/argx/trait.Parser.html#method.contract), the
 [`contract` module](https://docs.rs/argx/latest/argx/contract/), and the
-[`type_contract` module](https://docs.rs/argx/latest/argx/type_contract/) for discovery depth,
+[`type_contract` module](https://docs.rs/argx/latest/argx/type_contract/) for discovery behavior,
 execution requirements, wire fields, and type-contract semantics.
 
 ## Examples
