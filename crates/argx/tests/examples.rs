@@ -14,6 +14,7 @@ mod tests {
     const PUBLIC_EXAMPLES: &[&str] = &[
         "aliases",
         "basic",
+        "completions",
         "constraints",
         "defaults",
         "environment",
@@ -78,6 +79,32 @@ mod tests {
     fn assert_advertised_behavior(name: &str, binary: &Path) {
         let mut command = Command::new(binary);
         command.env("NO_COLOR", "1");
+
+        if name == "completions" {
+            command.arg("bash");
+            let output = command
+                .output()
+                .unwrap_or_else(|error| panic!("failed to execute {name}: {error}"));
+            assert!(
+                output.status.success(),
+                "{name} representative invocation exited with {}\nstderr:\n{}",
+                output.status,
+                String::from_utf8_lossy(&output.stderr),
+            );
+            assert!(output.stderr.is_empty(), "{name} wrote to stderr");
+
+            let stdout = String::from_utf8(output.stdout)
+                .unwrap_or_else(|error| panic!("{name} stdout was not UTF-8: {error}"));
+            assert!(
+                stdout.contains("complete -F _argx_complete_completions 'completions'"),
+                "{name} did not register its Bash completion function:\n{stdout}",
+            );
+            assert!(
+                stdout.contains("ARGX_COMPLETE_LINE="),
+                "{name} did not emit the Argx completion protocol adapter:\n{stdout}",
+            );
+            return;
+        }
 
         let (expected_stdout, expected_stderr) = match name {
             "aliases" => {

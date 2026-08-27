@@ -167,16 +167,7 @@ impl<'t, 'a, 'v> ArgvParser<'t, 'a, 'v> {
             return self.step();
         }
 
-        let declared_numeric_short = matches!(token, [b'-', short]
-        if short.is_ascii_digit()
-            && matches!(
-                resolve_short(self.command, &self.ancestors, *short),
-                Some(Named::Flag { .. })
-            ));
-        if !declared_numeric_short
-            && is_negative_number(token)
-            && self.next_arg().is_some_and(|argument| argument.allow_negative_numbers)
-        {
+        if routes_negative_number_to_arg(self.command, &self.ancestors, self.next_arg(), token) {
             return Some(self.word(token));
         }
 
@@ -280,10 +271,7 @@ impl<'t, 'a, 'v> ArgvParser<'t, 'a, 'v> {
         let Some(value) = self.argv.get(self.position).copied().map(bytes) else {
             return Err(Error::MissingFlagValue { flag });
         };
-        if !flag.allow_hyphen_values
-            && is_flag_like(value)
-            && !(flag.allow_negative_numbers && is_negative_number(value))
-        {
+        if !accepts_detached_flag_value(flag, value) {
             return Err(Error::MissingFlagValue { flag });
         }
         self.position += 1;
@@ -315,7 +303,7 @@ impl<'t, 'a, 'v> ArgvParser<'t, 'a, 'v> {
     }
 
     /// Returns the positional argument that would receive the next word.
-    fn next_arg(&self) -> Option<&'t Arg<'t>> {
+    pub(crate) fn next_arg(&self) -> Option<&'t Arg<'t>> {
         self.command.args.get(self.arg_position).copied()
     }
 
@@ -327,8 +315,28 @@ impl<'t, 'a, 'v> ArgvParser<'t, 'a, 'v> {
         })
     }
 
+    /// Returns the currently selected command.
+    pub(crate) const fn command(&self) -> &'t Command<'t> {
+        self.command
+    }
+
+    /// Returns the selected command ancestors from root to current parent.
+    pub(crate) fn ancestors(&self) -> &[&'t Command<'t>] {
+        &self.ancestors
+    }
+
+    /// Reports whether `--` has stopped flag interpretation.
+    pub(crate) const fn flags_stopped(&self) -> bool {
+        self.flags_stopped
+    }
+
+    /// Reports whether every supplied argv token has been consumed.
+    pub(crate) const fn at_end(&self) -> bool {
+        self.position == self.argv.len() && self.bundle.is_empty()
+    }
+
     /// Returns the selected command chain from the root through the current command.
-    pub(crate) fn command_path(&self) -> impl Iterator<Item = &'t Command<'t>> + '_ {
+    pub(crate) fn command_path(&self) -> impl DoubleEndedIterator<Item = &'t Command<'t>> + '_ {
         self.ancestors.iter().copied().chain(std::iter::once(self.command))
     }
 }
@@ -352,6 +360,38 @@ fn bytes(value: &OsStr) -> &[u8] {
 /// A lone `-` remains a value, conventionally representing standard input.
 const fn is_flag_like(token: &[u8]) -> bool {
     matches!(token, [b'-', rest @ ..] if !rest.is_empty())
+}
+
+/// Reports whether one detached token can be consumed as a value for `flag`.
+///
+/// Value completion shares this exact lexical policy so it never suggests a detached finite value
+/// that ordinary parsing would reject as another flag.
+pub(crate) fn accepts_detached_flag_value(flag: &Flag<'_>, value: &[u8]) -> bool {
+    flag.allow_hyphen_values
+        || !is_flag_like(value)
+        || (flag.allow_negative_numbers && is_negative_number(value))
+}
+
+/// Reports whether one negative-number token routes to the next positional argument.
+///
+/// An exact declared numeric short flag takes precedence over positional negative-number routing.
+/// Keeping this decision shared prevents completion and ordinary parsing from disagreeing about a
+/// token such as `-1`.
+pub(crate) fn routes_negative_number_to_arg<'t>(
+    command: &'t Command<'t>,
+    ancestors: &[&'t Command<'t>],
+    next_arg: Option<&'t Arg<'t>>,
+    token: &[u8],
+) -> bool {
+    let declared_numeric_short = matches!(token, [b'-', short]
+    if short.is_ascii_digit()
+        && matches!(
+            resolve_short(command, ancestors, *short),
+            Some(Named::Flag { .. })
+        ));
+    !declared_numeric_short
+        && is_negative_number(token)
+        && next_arg.is_some_and(|argument| argument.allow_negative_numbers)
 }
 
 /// Reports whether a flag-like token has the supported negative-number shape.

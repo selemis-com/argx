@@ -18,6 +18,80 @@ mod tests {
     }
 
     #[test]
+    fn parse_entry_point_answers_generated_completion_protocol() {
+        support::example_command("basic")
+            .env("ARGX_COMPLETE", "1")
+            .env("ARGX_COMPLETE_LINE", "cli --")
+            .env_remove("ARGX_COMPLETE_WORDS")
+            .arg("__argx_complete__")
+            .assert()
+            .success()
+            .stdout_eq("--help\tPrint help\n")
+            .stderr_eq("");
+    }
+
+    #[test]
+    fn parse_entry_point_answers_nushell_span_protocol() {
+        support::example_command("basic")
+            .env("ARGX_COMPLETE", "1")
+            .env("ARGX_COMPLETE_WORDS", r#"["cli","--"]"#)
+            .env_remove("ARGX_COMPLETE_LINE")
+            .arg("__argx_complete__")
+            .assert()
+            .success()
+            .stdout_eq("--help\tPrint help\n")
+            .stderr_eq("");
+    }
+
+    #[test]
+    fn private_completion_argv_is_not_reserved_without_the_protocol_marker() {
+        support::example_command("basic")
+            .env_remove("ARGX_COMPLETE")
+            .env_remove("ARGX_COMPLETE_LINE")
+            .env_remove("ARGX_COMPLETE_WORDS")
+            .args(["__argx_complete__", "--line", "cli --"])
+            .assert()
+            .failure()
+            .stdout_eq("");
+    }
+
+    #[test]
+    fn malformed_current_completion_requests_are_consumed_silently() {
+        support::example_command("basic")
+            .env("ARGX_COMPLETE", "1")
+            .env("ARGX_COMPLETE_LINE", "cli --")
+            .args(["__argx_complete__", "unexpected"])
+            .assert()
+            .success()
+            .stdout_eq("")
+            .stderr_eq("");
+    }
+
+    #[test]
+    fn malformed_nushell_span_requests_are_consumed_silently() {
+        support::example_command("basic")
+            .env("ARGX_COMPLETE", "1")
+            .env("ARGX_COMPLETE_WORDS", "not-json")
+            .env_remove("ARGX_COMPLETE_LINE")
+            .arg("__argx_complete__")
+            .assert()
+            .success()
+            .stdout_eq("")
+            .stderr_eq("");
+    }
+
+    #[test]
+    fn stale_completion_protocol_versions_do_not_reserve_private_argv() {
+        support::example_command("basic")
+            .env("ARGX_COMPLETE", "0")
+            .env("ARGX_COMPLETE_LINE", "cli --")
+            .arg("__argx_complete__")
+            .assert()
+            .failure()
+            .stdout_eq("");
+    }
+
+    #[test]
     fn parse_entry_point_reports_errors_and_exits_unsuccessfully() {
         support::example_command("basic")
             .arg("--unknown")

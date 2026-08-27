@@ -1,9 +1,9 @@
 //! Derive-first command-line argument parsing from Rust data types.
 //!
 //! Argx derives a static command model from Rust structs and enums. The same model drives raw argv
-//! parsing, typed value binding, generated help and version output, diagnostics, and
-//! machine-readable contracts. Normal applications therefore define the command once
-//! rather than maintaining separate parser, help, and discovery schemas.
+//! parsing, typed value binding, generated help and version output, diagnostics, dynamic shell
+//! completion, and machine-readable contracts. Normal applications therefore define the command
+//! once rather than maintaining separate parser, help, and discovery schemas.
 //!
 //! # Quick start
 //!
@@ -163,7 +163,7 @@
 //! | `conflicts = ["a", "b"]` | reject use with multiple arguments |
 //! | `allow_hyphen_values` | allow arbitrary flag-like detached values for a named value option |
 //! | `allow_negative_numbers` | accept negative-number values without accepting other flags |
-//! | `value_enum` | use a finite [`trait@ValueEnum`] vocabulary for parsing, help, and contracts |
+//! | `value_enum` | use a finite [`trait@ValueEnum`] vocabulary for parsing, help, completion, and contracts |
 //! | `help = "..."` | override the field's documentation-derived one-line help text |
 //! | `flatten` | compose one direct [`Args`] field into the current command |
 //! | `subcommand` | select one direct derived `Subcommand` enum |
@@ -214,7 +214,7 @@
 //! Arbitrary [`std::str::FromStr`] implementations are intentionally opaque to Argx. When a value
 //! has a finite command-line vocabulary, derive [`ValueEnum`] and mark the field with
 //! `#[argx(value_enum)]`. The enum declaration then becomes the source of truth for parsing, help,
-//! and machine contracts, so accepted values do not need to be repeated in field documentation.
+//! completion, and machine contracts, so accepted values do not need to be repeated elsewhere.
 //!
 //! ```
 //! #[derive(Debug, argx::ValueEnum)]
@@ -314,6 +314,37 @@
 //! represented as [`Error::DisplayHelp`] and [`Error::DisplayVersion`] terminal actions. The
 //! process-oriented parsing methods print those actions to stdout and exit successfully. Other
 //! parse/binding errors go to stderr and exit with status 2.
+//!
+//! # Shell completions
+//!
+//! Argx generates dynamic completion adapters for Bash, Fish, Nushell, and Zsh through the
+//! [`completion`] module. Bash, Fish, and Zsh send the command line through the cursor back to the
+//! executable, while Nushell forwards the tokenized spans its external-completer API already
+//! provides. Argx normalizes either form and walks completed argv words through the same raw argv
+//! parser used for ordinary invocation. Command selection, aliases, global scope, lexical
+//! shadowing, option repeatability, conflicts, negative-number routing, and `--` therefore do not
+//! have a second shell-specific implementation.
+//!
+//! ```
+//! use argx::{Parser as _, completion::Shell};
+//!
+//! # #[derive(argx::Parser)]
+//! # #[argx(name = "acme")]
+//! # struct Cli;
+//! let script = Cli::render_completion(Shell::Zsh)?;
+//! assert!(script.contains("#compdef acme"));
+//! # Ok::<(), argx::completion::ScriptError>(())
+//! ```
+//!
+//! [`Parser::parse`] handles requests from generated adapters automatically. A binary that uses
+//! any other parser entry point for its current process should call [`Parser::handle_completion`]
+//! first and return when it yields `true`.
+//!
+//! Completion includes canonical values for fields marked `#[argx(value_enum)]`, using the same
+//! finite vocabulary already shared by parsing, help, and contracts. Argx does not infer finite
+//! choices from arbitrary [`std::str::FromStr`] implementations, enumerate filesystem paths, or
+//! expose custom value completers. Hidden aliases remain accepted while reconstructing scope but
+//! are never suggested.
 //!
 //! # Machine-readable contracts
 //!
@@ -415,6 +446,7 @@
 mod argv;
 mod binding;
 mod command;
+pub mod completion;
 pub mod contract;
 mod derive_support;
 mod error;
@@ -476,9 +508,12 @@ pub use derive_support::traits::ExecutionContractSource;
 
 // Generated absolute paths must also work when a derive is used inside this crate. Integration
 // targets already receive this name through Cargo; the library target needs the self alias.
-#[expect(
-    unused_extern_crates,
-    reason = "proc-macro expansions refer to this crate through `::argx`"
+#[cfg_attr(
+    not(test),
+    expect(
+        unused_extern_crates,
+        reason = "proc-macro expansions refer to this crate through `::argx`"
+    )
 )]
 extern crate self as argx;
 
@@ -524,6 +559,9 @@ pub trait Parser: Sized + __private::CommandArgs {
     /// Help and version requests are printed to standard output and terminate successfully. Parse
     /// failures are printed to standard error and terminate the process with status 2.
     fn parse() -> Self {
+        if completion::handle_process::<Self>() {
+            std::process::exit(0);
+        }
         Self::try_parse().unwrap_or_else(|error| error.exit())
     }
 
@@ -707,6 +745,34 @@ pub trait Parser: Sized + __private::CommandArgs {
         Self: ContractCommand,
     {
         contract::discover::<Self>(request)
+    }
+
+    /// Handles a dynamic shell-completion request for the current process.
+    ///
+    /// Generated completion adapters use a private, versioned invocation protocol that is
+    /// intercepted before ordinary argv parsing. [`Self::parse`] calls this automatically. Binaries
+    /// that use another parser entry point for their current process should call this method first
+    /// and return from `main` when it yields `true`.
+    ///
+    /// Ordinary invocations return `false` without writing output or changing parser state. Call
+    /// this before expensive application startup or writing to standard output, because generated
+    /// adapters invoke the process for every completion request.
+    #[must_use]
+    fn handle_completion() -> bool {
+        completion::handle_process::<Self>()
+    }
+
+    /// Generates a dynamic completion adapter for this parser's configured root command name.
+    ///
+    /// Use [`completion::script`] instead when the installed executable name intentionally differs
+    /// from the root command name.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`completion::ScriptError::InvalidCommandName`] when the configured command name
+    /// cannot be safely registered by every supported shell adapter.
+    fn render_completion(shell: completion::Shell) -> Result<String, completion::ScriptError> {
+        completion::script(Self::COMMAND.name, shell)
     }
 
     /// Renders generated help for this root command.
