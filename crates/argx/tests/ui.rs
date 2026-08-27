@@ -121,7 +121,7 @@ error[E0277]: the trait bound `Output: ContractType` is not satisfied
             "unit_subcommand_execution_contract",
             "argx",
             snapbox::str![[r#"
-error[E0277]: the trait bound `CommandsStatusNeedsArgsPayloadForContractDiscoveryH[..]: UnitSubcommandContractRequiresArgsPayload` is not satisfied
+error[E0277]: the trait bound `CommandsStatusNeedsArgsPayloadForContractDiscoveryH[..]: argx::UnitSubcommandContractRequiresArgsPayload` is not satisfied
 
 "#]],
         );
