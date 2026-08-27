@@ -235,13 +235,7 @@ mod tests {
         );
         assert_eq!(
             *rest,
-            Arg {
-                key: rest.key,
-                name: "rest",
-                required: false,
-                variadic: true,
-                ..Arg::REQUIRED
-            },
+            Arg { key: rest.key, name: "rest", required: false, variadic: true, ..Arg::REQUIRED },
         );
     }
 
