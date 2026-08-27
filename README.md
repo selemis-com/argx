@@ -94,29 +94,6 @@ argument relationships, structured help, and version actions. See the
 [crate documentation](https://docs.rs/argx/latest/argx/)
 for the complete grammar, precedence rules, derive restrictions, and error behavior.
 
-## Finite values
-
-`ValueEnum` keeps a finite command-line vocabulary in one declaration so parsing and generated help
-cannot drift apart. Variants use Argx's normal kebab-case spelling and parsing is exact.
-
-```rust
-#[derive(Debug, argx::ValueEnum)]
-enum Output {
-    HumanReadable,
-    Json,
-}
-
-#[derive(argx::Parser)]
-struct Cli {
-    /// Output format.
-    #[argx(long, value_enum)]
-    output: Output,
-}
-```
-
-Generated help includes `human-readable` and `json` automatically. The same accepted values are
-also included in machine contracts when contract discovery is used.
-
 ## Machine-readable contracts
 
 Argx can expose the same command model to tools and agents without maintaining a second schema
@@ -165,10 +142,9 @@ assert!(contract.command.execution.is_some());
 ```
 
 Contracts describe invocation semantics and semantic Rust input/output types. They are not JSON
-Schema and do not interpret `serde` attributes. Arbitrary custom `FromStr` grammars remain opaque;
-finite vocabularies declared with `ValueEnum` are exposed explicitly. Standalone type contracts and
-combined CLI contracts share one wire version, and named types use document-local references so
-repeated and recursive shapes have one consistent representation.
+Schema and do not interpret `serde` attributes. Arbitrary custom `FromStr` grammars remain opaque.
+Standalone type contracts and combined CLI contracts share one wire version, and named types use
+document-local references so repeated and recursive shapes have one consistent representation.
 
 See [`Parser::contract`](https://docs.rs/argx/latest/argx/trait.Parser.html#method.contract), the
 [`contract` module](https://docs.rs/argx/latest/argx/contract/), and the

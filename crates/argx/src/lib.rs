@@ -209,12 +209,32 @@
 //! - `OsString` and `PathBuf` preserve operating-system strings;
 //! - other value types are converted through [`std::str::FromStr`].
 //!
-//! `#[derive(ValueEnum)]` supports non-generic enums with unit variants. Canonical values use the
-//! same kebab-case conversion as inferred command-line names, and parsing is exact and
-//! case-sensitive. The derive also implements [`std::str::FromStr`] for ordinary Rust use.
-//! The marker works through Argx's existing scalar, `Option`, `Vec`, and `Option<Vec<_>>` field
-//! shapes and applies the vocabulary to the logical element value. Generated help lists those
-//! values automatically.
+//! ## Finite values
+//!
+//! Arbitrary [`std::str::FromStr`] implementations are intentionally opaque to Argx. When a value
+//! has a finite command-line vocabulary, derive [`ValueEnum`] and mark the field with
+//! `#[argx(value_enum)]`. The enum declaration then becomes the source of truth for parsing, help,
+//! and machine contracts, so accepted values do not need to be repeated in field documentation.
+//!
+//! ```
+//! #[derive(Debug, argx::ValueEnum)]
+//! enum Output {
+//!     HumanReadable,
+//!     Json,
+//! }
+//!
+//! #[derive(argx::Parser)]
+//! struct Cli {
+//!     /// Output format.
+//!     #[argx(long, value_enum)]
+//!     output: Output,
+//! }
+//! ```
+//!
+//! Derived variants use Argx's normal kebab-case spelling, and parsing is exact and case-sensitive.
+//! The derive also implements [`std::str::FromStr`] for ordinary Rust use. The marker works through
+//! Argx's scalar, `Option`, `Vec`, and `Option<Vec<_>>` field shapes and applies the vocabulary to
+//! the logical element value.
 //!
 //! Type-shape inference is intentionally syntactic. Special treatment for `bool`, `Option`, `Vec`,
 //! `String`, `OsString`, and `PathBuf` requires a recognized standard spelling to appear directly
