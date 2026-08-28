@@ -3,23 +3,25 @@
 #[cfg(test)]
 #[cfg(feature = "derive")]
 mod tests {
+
+    use argx::argx;
     #[derive(argx::Args)]
     struct RunArgs {
         value: String,
     }
 
-    #[argx::schema]
+    #[argx(schema)]
     struct Output {
         value: String,
     }
 
-    #[argx::schema]
+    #[argx(schema)]
     #[derive(Debug)]
     enum RunError {
         Failed,
     }
 
-    #[argx::handler(RunArgs)]
+    #[argx(handler = RunArgs)]
     fn run(args: RunArgs) -> Result<Output, RunError> {
         if args.value.is_empty() { Err(RunError::Failed) } else { Ok(Output { value: args.value }) }
     }

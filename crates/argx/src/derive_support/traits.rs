@@ -41,7 +41,7 @@ where
     }
 }
 
-/// Schema source attached to an invocable command by `#[argx::handler(CommandType)]`.
+/// Schema source attached to an invocable command by `#[argx(handler = CommandType)]`.
 pub trait HandlerSchemaSource: crate::InvocableHandlerCommand {
     /// Generates the handler-specific result and error schemas.
     #[doc(hidden)]

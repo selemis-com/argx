@@ -5,7 +5,7 @@
 mod tests {
     #![expect(dead_code, reason = "schema fixtures are exercised through generated metadata")]
 
-    use argx::Parser as _;
+    use argx::{Parser as _, argx};
     use serde_json::Value;
 
     #[derive(argx::Args)]
@@ -14,18 +14,18 @@ mod tests {
         id: String,
     }
 
-    #[argx::schema]
+    #[argx(schema)]
     struct GetOutput {
         /// Returned object identifier.
         id: String,
     }
 
-    #[argx::schema]
+    #[argx(schema)]
     enum GetError {
         Missing,
     }
 
-    #[argx::handler(GetCommand)]
+    #[argx(handler = GetCommand)]
     fn get(command: GetCommand) -> Result<GetOutput, GetError> {
         Ok(GetOutput { id: command.id })
     }
@@ -45,17 +45,17 @@ mod tests {
     #[derive(argx::Args)]
     struct StatusCommand;
 
-    #[argx::schema]
+    #[argx(schema)]
     struct StatusOutput {
         healthy: bool,
     }
 
-    #[argx::schema]
+    #[argx(schema)]
     enum StatusError {
         Unavailable,
     }
 
-    #[argx::handler(run)]
+    #[argx(handler = run)]
     impl StatusCommand {
         const fn run(self) -> Result<StatusOutput, StatusError> {
             Ok(StatusOutput { healthy: true })
@@ -86,17 +86,17 @@ mod tests {
         value: String,
     }
 
-    #[argx::schema]
+    #[argx(schema)]
     struct DirectOutput {
         value: String,
     }
 
-    #[argx::schema]
+    #[argx(schema)]
     enum DirectError {
         Failed,
     }
 
-    #[argx::handler(Direct)]
+    #[argx(handler = Direct)]
     fn direct(command: Direct) -> Result<DirectOutput, DirectError> {
         Ok(DirectOutput { value: command.value })
     }

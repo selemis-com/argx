@@ -1,7 +1,9 @@
+use argx::argx;
+
 #[derive(argx::Args)]
 struct RunArgs;
 
-#[argx::handler(RunArgs)]
+#[argx(handler = RunArgs)]
 fn run_handler() -> Result<(), ()> {
     Ok(())
 }
@@ -17,7 +19,7 @@ struct GroupArgs {
     command: Commands,
 }
 
-#[argx::handler(GroupArgs)]
+#[argx(handler = GroupArgs)]
 fn invalid_group_handler() -> Result<(), ()> {
     Ok(())
 }

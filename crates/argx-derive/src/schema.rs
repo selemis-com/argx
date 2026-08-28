@@ -1,4 +1,4 @@
-//! Thin Schemars routing for `#[argx::schema]`.
+//! Thin Schemars routing for `#[argx(schema)]`.
 
 use proc_macro2::TokenStream;
 use quote::quote;

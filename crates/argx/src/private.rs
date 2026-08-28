@@ -4,7 +4,7 @@
 //! is not part of Argx's stable user-facing API. The re-exports below are intentionally narrow:
 //! they form the generated-code surface shared between the derive crate and the runtime crate.
 
-/// Schemars re-export used by `#[argx::schema]` expansions.
+/// Schemars re-export used by `#[argx(schema)]` expansions.
 #[doc(hidden)]
 pub use schemars;
 

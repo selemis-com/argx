@@ -1,3 +1,5 @@
+use cli_args::argx;
+
 #[derive(cli_args::ValueEnum)]
 enum Mode {
     Fast,
@@ -36,12 +38,12 @@ fn main() {
     assert_eq!(output.value, "ok");
 }
 
-#[cli_args::schema]
+#[argx(schema)]
 struct Output {
     value: String,
 }
 
-#[cli_args::handler(Common)]
+#[argx(handler = Common)]
 fn handler() -> Result<Output, ()> {
     Ok(Output { value: String::from("ok") })
 }

@@ -95,12 +95,14 @@ for the complete grammar, precedence rules, derive restrictions, and error behav
 
 ## Handler schemas
 
-Argx exposes `#[argx::schema]` as a thin Schemars-backed attribute. It derives Schemars'
+Argx exposes `#[argx(schema)]` as a thin Schemars-backed attribute. It derives Schemars'
 `JsonSchema` through Argx, so downstream users do not need to depend on Schemars directly.
-Schema-enabled command trees keep structural traversal separate from executable handlers:
+Import the standalone attribute once with `use argx::argx;`; derive helper attributes keep the same
+`#[argx(...)]` spelling. Schema-enabled command trees keep structural traversal separate from
+executable handlers:
 
 ```rust
-use argx::Parser as _;
+use argx::{Parser as _, argx};
 
 #[derive(argx::Parser)]
 #[argx(name = "acme", schema)]
@@ -119,25 +121,25 @@ struct GetCommand {
     id: String,
 }
 
-#[argx::schema]
+#[argx(schema)]
 struct GetOutput {
     id: String,
 }
 
-#[argx::schema]
+#[argx(schema)]
 enum GetError {
     NotFound,
 }
 
-#[argx::handler(GetCommand)]
+#[argx(handler = GetCommand)]
 fn get(command: GetCommand) -> Result<GetOutput, GetError> {
     Ok(GetOutput { id: command.id })
 }
 ```
 
-`#[argx::schema]` delegates Rust data-model schema generation to Schemars. Argx owns invocation
+`#[argx(schema)]` delegates Rust data-model schema generation to Schemars. Argx owns invocation
 schema projection and static command topology. `CommandSchema` is used only on structural command
-groups; executable leaves are associated with their result and error schemas by `#[argx::handler]`.
+groups; executable leaves are associated with their result and error schemas by `#[argx(handler = ...)]`.
 For a zero-argument executable command, use an empty `Args` struct rather than a unit subcommand
 variant so the leaf has a concrete Rust type.
 
@@ -156,7 +158,7 @@ short-lived local registry; Argx does not use linker inventory or global registr
 The handler may also stay on the inherent implementation that owns execution:
 
 ```rust
-#[argx::handler(run)]
+#[argx(handler = run)]
 impl GetCommand {
     fn run(self) -> Result<GetOutput, GetError> {
         Ok(GetOutput { id: self.id })

@@ -10,6 +10,7 @@ mod support;
 
 #[cfg(test)]
 mod tests {
+
     use super::support;
 
     #[test]
@@ -222,10 +223,7 @@ error[E0308]: mismatched types
             "invalid_handler",
             "argx",
             &[
-                (
-                    "#[argx::handler] requires a command type or inherent handler method",
-                    "#[argx::handler]",
-                ),
+                ("`handler` requires `= <command type or method>`", "#[argx(handler)]"),
                 ("Argx handlers must be non-generic", "fn generic_handler<T>()"),
                 (
                     "Argx handlers require a concrete Result<Success, Error> return type",
@@ -237,11 +235,11 @@ error[E0308]: mismatched types
                 ),
                 (
                     "unsupported Argx handler arguments; expected one command type",
-                    "#[argx::handler(UnsupportedArguments, error = ())]",
+                    "#[argx(handler = UnsupportedArguments, error = ())]",
                 ),
                 (
-                    "#[argx::handler(...)] can only be applied to a free function or inherent impl",
-                    "#[argx::handler(NotAFunction)]",
+                    "#[argx(handler = ...)] can only be applied to a free function or inherent impl",
+                    "#[argx(handler = NotAFunction)]",
                 ),
             ],
         );

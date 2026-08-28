@@ -28,7 +28,7 @@ fn command_group(input: &DeriveInput) -> syn::Result<TokenStream> {
     else {
         return Err(syn::Error::new_spanned(
             &input.ident,
-            "CommandSchema on a struct requires a `#[argx(subcommand)]` field; executable leaves use #[argx::handler(...)]",
+            "CommandSchema on a struct requires a `#[argx(subcommand)]` field; executable leaves use #[argx(handler = ...)]",
         ));
     };
 

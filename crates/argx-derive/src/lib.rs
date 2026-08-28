@@ -25,7 +25,11 @@ mod schema;
 mod value_enum;
 
 use proc_macro::TokenStream;
-use syn::{DeriveInput, parse_macro_input};
+use syn::{
+    DeriveInput, Token,
+    parse::{Parse, ParseStream},
+    parse_macro_input,
+};
 
 /// Derives the root Argx parser facade for a struct.
 ///
@@ -71,40 +75,64 @@ pub fn derive_value_enum(input: TokenStream) -> TokenStream {
     value_enum::value_enum(&input).unwrap_or_else(syn::Error::into_compile_error).into()
 }
 
-/// Marks a Rust type for JSON Schema generation through Schemars.
-///
-/// The macro only injects Schemars' `JsonSchema` derive and routes its generated crate paths
-/// through Argx, so downstream users do not need to depend on Schemars directly.
-#[proc_macro_attribute]
-pub fn schema(attribute: TokenStream, input: TokenStream) -> TokenStream {
-    if !attribute.is_empty() {
-        return syn::Error::new(
-            proc_macro2::Span::call_site(),
-            "#[argx::schema] takes no arguments",
-        )
-        .into_compile_error()
-        .into();
-    }
-    schema::schema(proc_macro2::TokenStream::from(input))
-        .unwrap_or_else(syn::Error::into_compile_error)
-        .into()
+/// One standalone Argx item attribute.
+enum StandaloneAttribute {
+    /// Derive JSON Schema through Schemars.
+    Schema,
+    /// Associate one handler target with the annotated function or inherent impl.
+    Handler(proc_macro2::TokenStream),
 }
 
-/// Associates a handler with one directly invocable command type.
+impl Parse for StandaloneAttribute {
+    fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
+        let kind: syn::Ident = input.parse()?;
+        if kind == "schema" {
+            if !input.is_empty() {
+                return Err(input.error("`schema` takes no value"));
+            }
+            return Ok(Self::Schema);
+        }
+        if kind == "handler" {
+            if !input.peek(Token![=]) {
+                return Err(syn::Error::new(
+                    kind.span(),
+                    "`handler` requires `= <command type or method>`",
+                ));
+            }
+            input.parse::<Token![=]>()?;
+            if input.is_empty() {
+                return Err(input.error("`handler` requires a command type or method name"));
+            }
+            let value: proc_macro2::TokenStream = input.parse()?;
+            return Ok(Self::Handler(value));
+        }
+
+        Err(syn::Error::new(kind.span(), "unsupported standalone Argx attribute"))
+    }
+}
+
+/// Applies one standalone Argx item attribute.
 ///
-/// On a free function, the attribute names the command type: `#[argx::handler(GetCommand)]`. On an
-/// inherent impl, it names the method containing the execution path: `#[argx::handler(run)]`.
-/// The concrete `Result<Success, Error>` return type defines the command's result and error JSON
-/// Schemas; both types must implement Schemars' `JsonSchema` trait. The attribute records schema
-/// association only and does not dispatch the handler.
+/// `#[argx(schema)]` marks a Rust type for JSON Schema generation through Schemars.
+/// `#[argx(handler = CommandType)]` associates a free function with one invocable command type,
+/// while `#[argx(handler = method)]` associates an inherent impl with its execution method.
 #[proc_macro_attribute]
-pub fn handler(attribute: TokenStream, input: TokenStream) -> TokenStream {
-    handler::handler(
-        proc_macro2::TokenStream::from(attribute),
-        proc_macro2::TokenStream::from(input),
-    )
-    .unwrap_or_else(syn::Error::into_compile_error)
-    .into()
+pub fn argx(attribute: TokenStream, input: TokenStream) -> TokenStream {
+    let attribute = proc_macro2::TokenStream::from(attribute);
+    let input = proc_macro2::TokenStream::from(input);
+
+    standalone_attribute(attribute, input).unwrap_or_else(syn::Error::into_compile_error).into()
+}
+
+/// Dispatches the standalone `#[argx(...)]` attribute forms.
+fn standalone_attribute(
+    attribute: proc_macro2::TokenStream,
+    input: proc_macro2::TokenStream,
+) -> syn::Result<proc_macro2::TokenStream> {
+    match syn::parse2::<StandaloneAttribute>(attribute)? {
+        StandaloneAttribute::Schema => schema::schema(input),
+        StandaloneAttribute::Handler(handler) => handler::handler(handler, input),
+    }
 }
 
 /// Derives a subcommand set for an enum.
@@ -123,7 +151,7 @@ pub fn derive_subcommand(input: TokenStream) -> TokenStream {
 ///
 /// On a struct, `CommandSchema` requires one `#[argx(subcommand)]` field. On an enum it mirrors a
 /// `Subcommand` declaration and requires every variant to carry one concrete `Args` payload. Leaf
-/// commands do not derive this trait; `#[argx::handler(...)]` supplies their schema association.
+/// commands do not derive this trait; `#[argx(handler = ...)]` supplies their schema association.
 #[proc_macro_derive(CommandSchema, attributes(argx))]
 pub fn derive_command_schema(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);

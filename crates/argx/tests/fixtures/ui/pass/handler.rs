@@ -1,17 +1,19 @@
+use argx::argx;
+
 #[derive(argx::Args)]
 struct Command;
 
-#[argx::schema]
+#[argx(schema)]
 struct Output {
     value: String,
 }
 
-#[argx::schema]
+#[argx(schema)]
 enum Error {
     Failed,
 }
 
-#[argx::handler(Command)]
+#[argx(handler = Command)]
 fn handler() -> Result<Output, Error> {
     Ok(Output { value: String::from("ok") })
 }

@@ -1,12 +1,14 @@
+use argx::argx;
+
 #[derive(argx::Args)]
 struct Command;
 
-#[argx::handler(Command)]
+#[argx(handler = Command)]
 fn first() -> Result<(), ()> {
     Ok(())
 }
 
-#[argx::handler(Command)]
+#[argx(handler = Command)]
 fn second() -> Result<(), ()> {
     Ok(())
 }

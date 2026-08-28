@@ -21,7 +21,7 @@ impl Parse for HandlerArguments {
         if input.is_empty() {
             return Err(syn::Error::new(
                 Span::call_site(),
-                "#[argx::handler] requires a command type or inherent handler method",
+                "#[argx(handler = ...)] requires a command type or inherent handler method",
             ));
         }
 
@@ -47,19 +47,19 @@ pub(crate) fn handler(attribute: TokenStream, input: TokenStream) -> syn::Result
     match syn::parse2::<Item>(input).map_err(|_| {
         syn::Error::new(
             Span::call_site(),
-            "#[argx::handler(...)] can only be applied to a free function or inherent impl",
+            "#[argx(handler = ...)] can only be applied to a free function or inherent impl",
         )
     })? {
         Item::Fn(function) => free_handler(attribute, &function),
         Item::Impl(item_impl) => impl_handler(attribute, &item_impl),
         _ => Err(syn::Error::new(
             attribute_span,
-            "#[argx::handler(...)] can only be applied to a free function or inherent impl",
+            "#[argx(handler = ...)] can only be applied to a free function or inherent impl",
         )),
     }
 }
 
-/// Expands `#[argx::handler(CommandType)] fn ...`.
+/// Expands `#[argx(handler = CommandType)] fn ...`.
 fn free_handler(attribute: TokenStream, function: &ItemFn) -> syn::Result<TokenStream> {
     let arguments = syn::parse2::<HandlerArguments>(attribute)?;
     validate_signature(&function.sig)?;
@@ -70,12 +70,12 @@ fn free_handler(attribute: TokenStream, function: &ItemFn) -> syn::Result<TokenS
     expand_association(&item, &arguments.command_type, &output, &conditional)
 }
 
-/// Expands `#[argx::handler(method)] impl CommandType { ... }`.
+/// Expands `#[argx(handler = method)] impl CommandType { ... }`.
 fn impl_handler(attribute: TokenStream, item_impl: &ItemImpl) -> syn::Result<TokenStream> {
     let method = syn::parse2::<syn::Ident>(attribute).map_err(|_| {
         syn::Error::new(
             Span::call_site(),
-            "handler impls require one method name, for example #[argx::handler(run)]",
+            "handler impls require one method name, for example #[argx(handler = run)]",
         )
     })?;
     if item_impl.trait_.is_some() {
