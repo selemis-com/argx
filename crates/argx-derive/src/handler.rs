@@ -1,4 +1,4 @@
-//! Execution-contract attribute expansion.
+//! Handler attribute expansion.
 
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
@@ -10,18 +10,18 @@ use syn::{
 
 use crate::crate_name;
 
-/// Parsed arguments to `#[argx::contract(...)]`.
-struct ContractArguments {
-    /// Invocable command identity receiving this contract.
+/// Parsed arguments to `#[argx::handler(...)]`.
+struct HandlerArguments {
+    /// Invocable command identity receiving this handler.
     command_type: Type,
 }
 
-impl Parse for ContractArguments {
+impl Parse for HandlerArguments {
     fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
         if input.is_empty() {
             return Err(syn::Error::new(
                 Span::call_site(),
-                "#[argx::contract] requires an invocable command type, for example #[argx::contract(GetArgs)]",
+                "#[argx::handler] requires an invocable command type, for example #[argx::handler(GetArgs)]",
             ));
         }
 
@@ -31,7 +31,7 @@ impl Parse for ContractArguments {
         }
         if !input.is_empty() {
             return Err(input.error(
-                "unsupported Argx execution contract arguments; expected only #[argx::contract(CommandType)]",
+                "unsupported Argx handler arguments; expected only #[argx::handler(CommandType)]",
             ));
         }
 
@@ -39,13 +39,13 @@ impl Parse for ContractArguments {
     }
 }
 
-/// Expands one canonical command execution contract around a free handler function.
-pub(crate) fn contract(attribute: TokenStream, input: TokenStream) -> syn::Result<TokenStream> {
-    let arguments = syn::parse2::<ContractArguments>(attribute)?;
+/// Expands one canonical command handler around a free handler function.
+pub(crate) fn handler(attribute: TokenStream, input: TokenStream) -> syn::Result<TokenStream> {
+    let arguments = syn::parse2::<HandlerArguments>(attribute)?;
     let function = syn::parse2::<ItemFn>(input).map_err(|_| {
         syn::Error::new(
             Span::call_site(),
-            "#[argx::contract(CommandType)] can only be applied to a free function",
+            "#[argx::handler(CommandType)] can only be applied to a free function",
         )
     })?;
 
@@ -55,7 +55,7 @@ pub(crate) fn contract(attribute: TokenStream, input: TokenStream) -> syn::Resul
         ReturnType::Default => {
             return Err(syn::Error::new_spanned(
                 &function.sig,
-                "Argx execution contracts require a concrete Result<Success, Error> return type",
+                "Argx handlers require a concrete Result<Success, Error> return type",
             ));
         }
         ReturnType::Type(_, output) => output.as_ref(),
@@ -63,14 +63,14 @@ pub(crate) fn contract(attribute: TokenStream, input: TokenStream) -> syn::Resul
     if matches!(output, Type::ImplTrait(_)) {
         return Err(syn::Error::new_spanned(
             output,
-            "Argx execution contracts do not support opaque `impl Trait` return types",
+            "Argx handlers do not support opaque `impl Trait` return types",
         ));
     }
 
     let facade = crate_name::facade_path();
     let command_type = arguments.command_type;
     let resolution = quote! {
-        <#output as #facade::__private::ExecutionResult>::resolve_execution(resolver)
+        <#output as #facade::__private::HandlerResult>::schemas()
     };
     let conditional = function
         .attrs
@@ -82,10 +82,8 @@ pub(crate) fn contract(attribute: TokenStream, input: TokenStream) -> syn::Resul
         #function
 
         #(#conditional)*
-        impl #facade::ExecutionContractSource for #command_type {
-            fn resolve_execution(
-                resolver: &mut #facade::__private::TypeResolver,
-            ) -> #facade::__private::CommandExecutionTypes {
+        impl #facade::HandlerSchemaSource for #command_type {
+            fn schemas() -> #facade::__private::HandlerSchemas {
                 #resolution
             }
         }
@@ -98,7 +96,7 @@ fn validate_conditional_attributes(attributes: &[Attribute]) -> syn::Result<()> 
         if cfg_attr_controls_presence(attribute)? {
             return Err(syn::Error::new_spanned(
                 attribute,
-                "Argx execution contract handlers cannot use `cfg_attr` to add `cfg`; use an explicit `cfg` attribute",
+                "Argx handlers cannot use `cfg_attr` to add `cfg`; use an explicit `cfg` attribute",
             ));
         }
     }
@@ -137,18 +135,18 @@ fn meta_controls_presence(meta: &Meta) -> syn::Result<bool> {
     Ok(false)
 }
 
-/// Rejects handler signatures that cannot name one concrete execution result contract.
+/// Rejects handler signatures that cannot name one concrete result type.
 fn validate_signature(function: &ItemFn) -> syn::Result<()> {
     if !function.sig.generics.params.is_empty() || function.sig.generics.where_clause.is_some() {
         return Err(syn::Error::new_spanned(
             &function.sig.generics,
-            "Argx execution contract handlers must be non-generic",
+            "Argx handlers must be non-generic",
         ));
     }
     if function.sig.variadic.is_some() {
         return Err(syn::Error::new_spanned(
             &function.sig,
-            "Argx execution contract handlers do not support variadic parameters",
+            "Argx handlers do not support variadic parameters",
         ));
     }
     Ok(())
@@ -160,7 +158,7 @@ mod tests {
     use syn::{Attribute, Meta, parse_quote};
 
     use super::{
-        cfg_attr_controls_presence, contract, meta_controls_presence,
+        cfg_attr_controls_presence, handler, meta_controls_presence,
         validate_conditional_attributes,
     };
 
@@ -200,8 +198,8 @@ mod tests {
     }
 
     #[test]
-    fn contract_rejects_cfg_attr_presence_control_before_codegen() {
-        let error = contract(
+    fn handler_rejects_cfg_attr_presence_control_before_codegen() {
+        let error = handler(
             quote!(ConditionalPresence),
             quote! {
                 #[cfg_attr(feature = "extra", cfg(unix))]
@@ -213,7 +211,7 @@ mod tests {
         .expect_err("cfg_attr adding cfg must be rejected before code generation");
         assert_eq!(
             error.to_string(),
-            "Argx execution contract handlers cannot use `cfg_attr` to add `cfg`; use an explicit `cfg` attribute",
+            "Argx handlers cannot use `cfg_attr` to add `cfg`; use an explicit `cfg` attribute",
         );
     }
 
@@ -227,7 +225,7 @@ mod tests {
             .expect_err("cfg_attr adding cfg must be rejected");
         assert_eq!(
             error.to_string(),
-            "Argx execution contract handlers cannot use `cfg_attr` to add `cfg`; use an explicit `cfg` attribute",
+            "Argx handlers cannot use `cfg_attr` to add `cfg`; use an explicit `cfg` attribute",
         );
     }
 }

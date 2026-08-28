@@ -82,8 +82,6 @@ pub(crate) struct Subcommand {
 pub(crate) struct SubcommandBinding {
     /// Rust enum receiving the generated implementation.
     pub ident: syn::Ident,
-    /// Visibility of the derived declaration.
-    pub visibility: syn::Visibility,
     /// Generic parameters copied to generated implementations.
     pub generics: syn::Generics,
     /// Whole declaration token stream used to seed stable variant identities.

@@ -2,7 +2,7 @@
 //!
 //! Argx derives a static command model from Rust structs and enums. The same model drives raw argv
 //! parsing, typed value binding, generated help and version output, diagnostics, dynamic shell
-//! completion, and machine-readable contracts. Normal applications therefore define the command
+//! and completion. Normal applications therefore define the command
 //! once rather than maintaining separate parser, help, and discovery schemas.
 //!
 //! # Installation
@@ -114,7 +114,7 @@
 //!
 //! A field with `#[argx(flatten)]` composes one direct `Args` declaration into the current command.
 //! Flattening does not create a new command scope: its arguments participate in the containing
-//! command's parsing, validation, help, and machine contract. A flatten field's Rust documentation
+//! command's parsing, validation, and help. A flatten field's Rust documentation
 //! becomes a help-group heading when present.
 //!
 //! Named options are local to their declaring command unless marked `#[argx(global)]`. Global
@@ -152,7 +152,7 @@
 //!   command scope.
 //!
 //! Canonical names and aliases share one sibling namespace. Aliases are accepted by parsing and
-//! contract lookup but omitted from human help.
+//! dynamic lookup but omitted from human help.
 //!
 //! ## Argument fields
 //!
@@ -174,7 +174,7 @@
 //! | `conflicts = ["a", "b"]` | reject use with multiple arguments |
 //! | `allow_hyphen_values` | allow arbitrary flag-like detached values for a named value option |
 //! | `allow_negative_numbers` | accept negative-number values without accepting other flags |
-//! | `value_enum` | use a finite [`trait@ValueEnum`] vocabulary for parsing, help, completion, and contracts |
+//! | `value_enum` | use a finite [`trait@ValueEnum`] vocabulary for parsing, help, and completion |
 //! | `help = "..."` | override the field's documentation-derived one-line help text |
 //! | `flatten` | compose one direct [`Args`] field into the current command |
 //! | `subcommand` | select one direct derived `Subcommand` enum |
@@ -225,7 +225,7 @@
 //! Arbitrary [`std::str::FromStr`] implementations are intentionally opaque to Argx. When a value
 //! has a finite command-line vocabulary, derive [`ValueEnum`] and mark the field with
 //! `#[argx(value_enum)]`. The enum declaration then becomes the source of truth for parsing, help,
-//! completion, and machine contracts, so accepted values do not need to be repeated elsewhere.
+//! and completion, so accepted values do not need to be repeated elsewhere.
 //!
 //! ```
 //! #[derive(Debug, argx::ValueEnum)]
@@ -352,7 +352,7 @@
 //! first and return when it yields `true`.
 //!
 //! Completion includes canonical values for fields marked `#[argx(value_enum)]`, using the same
-//! finite vocabulary already shared by parsing, help, and contracts. Argx does not infer finite
+//! finite vocabulary already shared by parsing, help, and completion. Argx does not infer finite
 //! choices from arbitrary [`std::str::FromStr`] implementations, enumerate filesystem paths, or
 //! expose custom value completers. Hidden aliases remain accepted while reconstructing scope but
 //! are never suggested.
@@ -380,55 +380,6 @@
 //! Because these adapters call the current executable dynamically, changes to the command tree do
 //! not require regenerating a shell-specific copy of the CLI. Regenerate only when updating the
 //! adapter itself is appropriate for the application installation.
-//!
-//! # Machine-readable contracts
-//!
-//! [`Parser::contract`] exposes a versioned description of how the CLI can be invoked and what each
-//! invocable command returns. This is derived from Argx's internal command metadata and explicit
-//! execution bindings rather than from a separate reflection registry.
-//!
-//! ```
-//! use argx::{ContractRequest, Parser as _};
-//!
-//! # #[derive(argx::Args)]
-//! # struct GetArgs { id: String }
-//! # #[derive(argx::Subcommand)]
-//! # enum Command { Get(GetArgs) }
-//! # #[derive(argx::Parser)]
-//! # struct Cli { #[argx(subcommand)] command: Command }
-//! # #[derive(argx::Contract)]
-//! # struct GetOutput { id: String }
-//! # #[derive(argx::Contract)]
-//! # enum GetError { NotFound }
-//! # #[argx::contract(GetArgs)]
-//! # fn get(args: GetArgs) -> Result<GetOutput, GetError> { Ok(GetOutput { id: args.id }) }
-//! let contract = Cli::contract(ContractRequest::new(["get"]).recursive())?;
-//! assert_eq!(contract.version, argx::CONTRACT_VERSION);
-//! assert_eq!(contract.command.path, ["get"]);
-//! # Ok::<(), argx::ContractError>(())
-//! ```
-//!
-//! A [`struct@Contract`] contains the canonical root and selected command, command aliases, direct
-//! invocability, the root-to-selected invocation contexts, positional and named arguments,
-//! semantic Rust value types and multiplicity, global scope, environment/default sources,
-//! built-in terminal help/version actions, normalized `requires` / `conflicts` relationships, and
-//! semantic success/error types for invocable commands.
-//! Named semantic types share one type table across the returned document. Command paths supplied
-//! in a [`ContractRequest`] may use aliases; returned paths always use canonical command names.
-//!
-//! Discovery is shallow by default: the selected command is returned in full and direct children
-//! are summaries. Calling [`ContractRequest::recursive`] expands the selected command's complete
-//! descendant subtree. [`Contract::to_json`] and [`Contract::to_json_pretty`] serialize the public
-//! protocol, whose current version is [`CONTRACT_VERSION`]. Standalone [`TypeContract`] documents
-//! use the same version and semantic type model.
-//!
-//! Attached semantic types describe Rust values at the command boundary. For invocation values they
-//! do not define the lexical encoding accepted by an arbitrary [`std::str::FromStr`]. Fields marked
-//! `#[argx(value_enum)]` are the finite exception: their canonical accepted values are projected
-//! explicitly from the same metadata used by parsing and help. For an execution binding, the
-//! handler's concrete `Result<Success, Error>` is the declared command
-//! contract; Argx describes both branches but does not prescribe how applications serialize or
-//! transport them. A unit branch explicitly means that outcome carries no semantic payload.
 //!
 //! # Failure model
 //!
@@ -467,9 +418,8 @@
 //!
 //! # Cargo features
 //!
-//! The default `derive` feature exports the `Parser`, `Args`, `Subcommand`, `Contract`, and
-//! `ValueEnum` derives plus the `contract` attribute macro. Disabling it removes those macros while
-//! retaining Argx's runtime traits, error types, and machine-contract data types.
+//! The default `derive` feature exports the `Parser`, `Args`, `Subcommand`, and `ValueEnum` derives
+//! plus the `handler` and `schema` attribute macros.
 
 #![doc(
     html_logo_url = "https://raw.githubusercontent.com/selemis-com/argx/master/.github/assets/logo.jpg",
@@ -482,64 +432,23 @@ mod argv;
 mod binding;
 mod command;
 pub mod completion;
-pub mod contract;
 mod derive_support;
 mod error;
 mod help;
-pub mod type_contract;
 mod value_enum;
 
 use std::ffi::{OsStr, OsString};
 
-/// Current serialized Argx contract protocol version.
-///
-/// This versions both [`struct@Contract`] and [`TypeContract`] documents.
-pub const CONTRACT_VERSION: u32 = 1;
-
-pub use contract::{
-    ActionContract, ActionContractKind, CommandContextContract, CommandContract,
-    ConstraintContract, ConstraintContractKind, Contract, ContractError, ContractRequest,
-    ExecutionContract, OptionContract, PositionalContract,
-};
 pub use error::{Error, InvalidValue};
-pub use type_contract::{
-    ContractType, PrimitiveType, TypeContract, TypeContractValue, TypeDefinition,
-    TypeDefinitionKind, TypeFieldContract, TypeVariantContract, TypeVariantKind,
-};
 pub use value_enum::{ValueEnum, ValueEnumError};
 
-/// Compiler-facing marker for command trees that can produce a complete machine contract.
-///
-/// This trait is implemented by Argx's generated contract projection and is not an application
-/// extension point. It is public so Rust diagnostics can describe contract-discovery failures in
-/// Argx vocabulary instead of exposing `__private` projection traits.
-#[doc(hidden)]
-pub trait ContractCommand: __private::ResolveCommandTypeContract {}
-
-impl<T> ContractCommand for T where T: __private::ResolveCommandTypeContract {}
-
 /// Compiler-facing marker for command declarations that are directly invocable.
-///
-/// This trait is implemented from generated command metadata and is not an application extension
-/// point. It exists at the facade boundary to keep execution-contract diagnostics user-facing.
 #[doc(hidden)]
-pub trait InvocableContractCommand: __private::InvocableCommandContract {}
+pub trait InvocableHandlerCommand: __private::InvocableCommandHandler {}
 
-/// Diagnostic marker for unit subcommands that cannot participate in machine-contract discovery.
-///
-/// Unit variants have no payload type to serve as an execution-contract identity. This trait has
-/// no implementations; generated projections use it only so the compiler explains that an `Args`
-/// payload is required when contract discovery reaches a unit subcommand declaration.
+/// Schema source generated by `#[argx::handler(CommandType)]`.
 #[doc(hidden)]
-pub trait UnitSubcommandContractRequiresArgsPayload {}
-
-/// Generated execution-contract source attached by `#[argx::contract(CommandType)]`.
-///
-/// Applications should use the attribute macro rather than implementing this trait directly.
-/// It is re-exported at the facade boundary so coherence and trait-bound diagnostics do not
-/// mention Argx's private generated-code module.
-#[doc(hidden)]
-pub use derive_support::traits::ExecutionContractSource;
+pub use derive_support::traits::HandlerSchemaSource;
 
 // Generated absolute paths must also work when a derive is used inside this crate. Integration
 // targets already receive this name through Cargo; the library target needs the self alias.
@@ -553,7 +462,7 @@ pub use derive_support::traits::ExecutionContractSource;
 extern crate self as argx;
 
 #[cfg(feature = "derive")]
-pub use argx_derive::{Args, Contract, Parser, Subcommand, ValueEnum, contract};
+pub use argx_derive::{Args, Parser, Subcommand, ValueEnum, handler, schema};
 
 /// Marks a reusable argument group derived with `#[derive(Args)]`.
 ///
@@ -705,81 +614,6 @@ pub trait Parser: Sized + __private::CommandArgs {
         let owned: Vec<OsString> = argv.into_iter().map(Into::into).collect();
         let refs: Vec<&OsStr> = owned.iter().map(OsString::as_os_str).collect();
         binding::parse_refs::<Self>(&refs)
-    }
-
-    /// Discovers the machine-readable invocation and execution contract for this CLI.
-    ///
-    /// Command paths are relative to the root command and may use canonical names or aliases.
-    /// Returned paths always use canonical command names. Custom consumed values and execution
-    /// success/error types anywhere in the command tree must implement [`ContractType`], normally
-    /// through `#[derive(argx::Contract)]`. Every directly invocable command must also have exactly
-    /// one `#[argx::contract(CommandType)]` handler declaration.
-    ///
-    /// Unit subcommand variants do not provide a distinct Rust type to which an execution contract
-    /// can be attached. CLIs using machine-contract discovery should represent such commands with
-    /// an empty `Args` payload instead. The payload type is the execution identity, so branches
-    /// that need different execution contracts must use distinct payload types.
-    ///
-    /// The handler's concrete `Result<T, E>` is the execution contract, so both `T` and `E` must
-    /// implement [`ContractType`]. Semantic contracts describe Rust-level shapes; they do not infer
-    /// an application's `serde` representation or a custom [`std::str::FromStr`] lexical grammar.
-    /// Named definitions are referenced by index into the returned type table; their short Rust
-    /// names are descriptive and need not be unique. These requirements apply only when contract
-    /// discovery is used and do not affect parsing support. Contract discovery does not parse
-    /// process arguments or evaluate environment fallbacks.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use argx::{ContractRequest, Parser as _};
-    ///
-    /// #[derive(argx::Args)]
-    /// struct GetArgs {
-    ///     id: String,
-    /// }
-    ///
-    /// #[derive(argx::Subcommand)]
-    /// enum Command {
-    ///     Get(GetArgs),
-    /// }
-    ///
-    /// #[derive(argx::Parser)]
-    /// struct Cli {
-    ///     #[argx(subcommand)]
-    ///     command: Command,
-    /// }
-    ///
-    /// #[derive(argx::Contract)]
-    /// struct GetOutput {
-    ///     id: String,
-    /// }
-    ///
-    /// #[derive(argx::Contract)]
-    /// enum GetError {
-    ///     NotFound,
-    /// }
-    ///
-    /// #[argx::contract(GetArgs)]
-    /// fn get(args: GetArgs) -> Result<GetOutput, GetError> {
-    ///     Ok(GetOutput { id: args.id })
-    /// }
-    ///
-    /// let contract = Cli::contract(ContractRequest::new(["get"]))?;
-    /// assert_eq!(contract.command.path.len(), 1);
-    /// assert_eq!(contract.command.path[0], "get");
-    /// assert!(contract.command.invocation.is_some());
-    /// assert!(contract.command.execution.is_some());
-    /// # Ok::<(), argx::ContractError>(())
-    /// ```
-    ///
-    /// # Errors
-    ///
-    /// Returns [`ContractError::UnknownCommand`] when one requested path segment does not resolve.
-    fn contract(request: ContractRequest) -> Result<Contract, ContractError>
-    where
-        Self: ContractCommand,
-    {
-        contract::discover::<Self>(request)
     }
 
     /// Handles a dynamic shell-completion request for the current process.

@@ -17,10 +17,10 @@ mod attrs;
 mod case;
 mod codegen;
 mod crate_name;
-mod execution_contract;
+mod handler;
 mod key;
 mod model;
-mod type_contract;
+mod schema;
 mod value_enum;
 
 use proc_macro::TokenStream;
@@ -58,41 +58,46 @@ pub fn derive_args(input: TokenStream) -> TokenStream {
     expand_command(&input, false).unwrap_or_else(syn::Error::into_compile_error).into()
 }
 
-/// Derives a standalone machine-readable semantic contract for a Rust struct or enum.
-///
-/// The generated contract preserves Rust declaration, field, and variant names. It is independent
-/// of serialization frameworks and does not interpret attributes such as `serde(rename = ...)`.
-/// When `Contract` is co-derived with `Parser` or `Args`, their CLI helper attributes remain
-/// available but do not rename semantic type-contract fields. `Contract` by itself does not
-/// register `#[argx(...)]` as meaningful type-contract metadata.
-#[proc_macro_derive(Contract)]
-pub fn derive_contract(input: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(input as DeriveInput);
-    type_contract::contract(&input).unwrap_or_else(syn::Error::into_compile_error).into()
-}
-
 /// Derives a finite canonical command-line value vocabulary for an enum.
 ///
 /// Every unit variant is accepted using Argx's normal kebab-case spelling. The derive implements
 /// both `argx::ValueEnum` and `FromStr`; parsing is exact and case-sensitive. Generic enums and
 /// variants carrying fields are rejected. Use `#[argx(value_enum)]` on a parser field to project
-/// the same vocabulary into parsing metadata, generated help, and machine contracts.
+/// the same vocabulary into parsing metadata, generated help, and completion.
 #[proc_macro_derive(ValueEnum)]
 pub fn derive_value_enum(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     value_enum::value_enum(&input).unwrap_or_else(syn::Error::into_compile_error).into()
 }
 
-/// Attaches one canonical execution result contract to an invocable command type.
+/// Marks a Rust type for JSON Schema generation through Schemars.
 ///
-/// The annotated free function remains ordinary Rust. Its parameters are runtime-only and do not
-/// participate in the machine contract. Its concrete `Result<Success, Error>` return type is the
-/// command's semantic execution contract: both `Success` and `Error` must implement Argx's type
-/// contract. The attribute records contract metadata only; it does not register, wrap, or invoke
-/// the function for dispatch.
+/// The macro only injects Schemars' `JsonSchema` derive and routes its generated crate paths
+/// through Argx, so downstream users do not need to depend on Schemars directly.
 #[proc_macro_attribute]
-pub fn contract(attribute: TokenStream, input: TokenStream) -> TokenStream {
-    execution_contract::contract(
+pub fn schema(attribute: TokenStream, input: TokenStream) -> TokenStream {
+    if !attribute.is_empty() {
+        return syn::Error::new(
+            proc_macro2::Span::call_site(),
+            "#[argx::schema] takes no arguments",
+        )
+        .into_compile_error()
+        .into();
+    }
+    schema::schema(proc_macro2::TokenStream::from(input))
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
+
+/// Associates a handler with one directly invocable command type.
+///
+/// The handler remains an ordinary Rust function. Its concrete `Result<Success, Error>` return
+/// type defines the command's success and error JSON Schemas; both types must implement
+/// Schemars' `JsonSchema` trait. The attribute records metadata only and does not dispatch the
+/// function.
+#[proc_macro_attribute]
+pub fn handler(attribute: TokenStream, input: TokenStream) -> TokenStream {
+    handler::handler(
         proc_macro2::TokenStream::from(attribute),
         proc_macro2::TokenStream::from(input),
     )

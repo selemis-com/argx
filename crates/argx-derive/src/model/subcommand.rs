@@ -113,7 +113,6 @@ impl Subcommand {
         Ok(Self {
             binding: SubcommandBinding {
                 ident: input.ident.clone(),
-                visibility: input.vis.clone(),
                 generics: input.generics.clone(),
                 fingerprint: input.to_token_stream().to_string(),
             },

@@ -1,8 +1,8 @@
 #[derive(argx::Args)]
 struct RunArgs;
 
-#[argx::contract(RunArgs)]
-fn run_contract() -> Result<(), ()> {
+#[argx::handler(RunArgs)]
+fn run_handler() -> Result<(), ()> {
     Ok(())
 }
 
@@ -17,8 +17,8 @@ struct GroupArgs {
     command: Commands,
 }
 
-#[argx::contract(GroupArgs)]
-fn invalid_group_contract() -> Result<(), ()> {
+#[argx::handler(GroupArgs)]
+fn invalid_group_handler() -> Result<(), ()> {
     Ok(())
 }
 

@@ -1,10 +1,10 @@
 //! Code generation for `Parser` and `Args` structs.
 //!
-//! One normalized command produces three coordinated projections: static command metadata, typed
-//! partial-state binding code, and semantic contract types. Flattened `Args` children are composed
-//! into static metadata while retaining nested Rust values in typed state. Generated nominal
-//! witnesses keep private composed types out of the public derive ABI. Semantics are decided in
-//! `model`; this module only coordinates the individual code-generation projections.
+//! One normalized command produces static command metadata and typed partial-state binding code.
+//! Flattened `Args` children are composed into static metadata while retaining nested Rust values
+//! in typed state. Generated nominal witnesses keep private composed types out of the public derive
+//! ABI. Semantics are decided in `model`; this module only coordinates the individual
+//! code-generation projections.
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
@@ -18,7 +18,7 @@ mod projection;
 
 use binding::{apply_arm, argument_state_branch, binding_generics, finish_field};
 use metadata::{command_tables, constraint_tables};
-use projection::semantic_projection;
+use projection::partial_projection;
 
 /// Generates static parse metadata and typed binding for one command struct.
 pub(crate) fn command(command: &model::Command) -> TokenStream {
@@ -26,8 +26,6 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
     let ident = &command.binding.ident;
     let binding_generics = binding_generics(command, &facade);
     let (impl_generics, ty_generics, where_clause) = binding_generics.split_for_impl();
-    let (semantic_impl_generics, semantic_ty_generics, semantic_where_clause) =
-        command.binding.generics.split_for_impl();
 
     // Preserve source field indices while partitioning CLI arguments. Generated partial state is
     // still one tuple in Rust declaration order, whereas static tables are grouped by CLI kind.
@@ -68,7 +66,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
     let command_key = key::ident("COMMAND", None);
 
     // Static command metadata is generated once from the normalized argument model and is shared
-    // by parsing, help generation, and machine-contract discovery.
+    // by parsing and help generation.
     let flag_tables = flags.iter().enumerate().map(|(index, (_, field))| {
         let table = format_ident!("ARGX_FLAG_{index}");
         let key = key::ident("FLAG", Some(index));
@@ -166,20 +164,17 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
     let command_constraints = &tables.constraints;
     let command_help_groups = &tables.help_groups;
     let constraint_tables = constraint_tables(command, &facade, command_flags, command_args);
-    let semantic_projection = semantic_projection(command, &facade);
-    let semantic_declarations = &semantic_projection.declarations;
-    let partial_type = &semantic_projection.partial;
-    let semantic_fields = &semantic_projection.fields;
-    let semantic_execution = &semantic_projection.execution;
-    let semantic_subcommands = &semantic_projection.subcommands;
-    let invocable_contract_impl = subcommand.is_none().then(|| {
+    let partial_projection = partial_projection(command, &facade);
+    let partial_declarations = &partial_projection.declarations;
+    let partial_type = &partial_projection.partial;
+    let invocable_handler_impl = subcommand.is_none().then(|| {
         quote! {
-            impl #impl_generics #facade::__private::InvocableCommandContract
+            impl #impl_generics #facade::__private::InvocableCommandHandler
                 for #ident #ty_generics #where_clause
             {}
 
             #[doc(hidden)]
-            impl #impl_generics #facade::InvocableContractCommand
+            impl #impl_generics #facade::InvocableHandlerCommand
                 for #ident #ty_generics #where_clause
             {}
         }
@@ -206,7 +201,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
             _ => quote!((::std::option::Option::None, false)),
         })
         .collect::<Vec<_>>();
-    let partial_value = semantic_projection.partial_constructor.as_ref().map_or_else(
+    let partial_value = partial_projection.partial_constructor.as_ref().map_or_else(
         || {
             if command.fields.is_empty() {
                 TokenStream::new()
@@ -536,7 +531,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
     // A private const namespace keeps all generated statics and assertions local to the derived
     // declaration while still allowing trait associated constants to point at `'static` tables.
     quote! {
-        #semantic_declarations
+        #partial_declarations
 
         #[doc(hidden)]
         const _: () = {
@@ -572,15 +567,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
             );
             #flattened_checks
 
-            impl #semantic_impl_generics #facade::__private::CommandTypeContract
-                for #ident #semantic_ty_generics #semantic_where_clause
-            {
-                type Fields = #semantic_fields;
-                type Execution = #semantic_execution;
-                type Subcommands = #semantic_subcommands;
-            }
-
-            #invocable_contract_impl
+            #invocable_handler_impl
 
             impl #impl_generics #facade::__private::CommandArgs
                 for #ident #ty_generics #where_clause

@@ -16,8 +16,7 @@
 </p>
 
 Argx is a derive-first command-line argument parser for Rust. Rust structs and enums define the
-command tree while generated static metadata drives parsing, typed binding, help, diagnostics, and
-machine-readable contracts.
+command tree while generated static metadata drives parsing, typed binding, help, and diagnostics.
 
 ```sh
 cargo add argx
@@ -94,62 +93,36 @@ argument relationships, structured help, and version actions. See the
 [crate documentation](https://docs.rs/argx/latest/argx/)
 for the complete grammar, precedence rules, derive restrictions, and error behavior.
 
-## Machine-readable contracts
+## Handler schemas
 
-Argx can expose the same command model to tools and agents without maintaining a second schema
-registry. [`#[derive(argx::Contract)]`](https://docs.rs/argx/latest/argx/derive.Contract.html)
-describes semantic Rust value types, while
-[`#[argx::contract(CommandType)]`](https://docs.rs/argx/latest/argx/attr.contract.html) binds an
-invocable command to the success and error types returned by its handler.
+Argx exposes `#[argx::schema]` as a thin Schemars-backed attribute. It derives Schemars'
+`JsonSchema` through Argx, so downstream users do not need to depend on Schemars directly.
 
 ```rust
-use argx::{ContractRequest, Parser as _};
-
 #[derive(argx::Args)]
 struct GetArgs {
     id: String,
 }
 
-#[derive(argx::Subcommand)]
-enum Command {
-    Get(GetArgs),
-}
-
-#[derive(argx::Parser)]
-struct Cli {
-    #[argx(subcommand)]
-    command: Command,
-}
-
-#[derive(argx::Contract)]
+#[argx::schema]
 struct GetOutput {
     id: String,
 }
 
-#[derive(argx::Contract)]
+#[argx::schema]
 enum GetError {
     NotFound,
 }
 
-#[argx::contract(GetArgs)]
+#[argx::handler(GetArgs)]
 fn get(args: GetArgs) -> Result<GetOutput, GetError> {
     Ok(GetOutput { id: args.id })
 }
-
-let contract = Cli::contract(ContractRequest::new(["get"]))
-    .expect("get command must exist");
-assert!(contract.command.execution.is_some());
 ```
 
-Contracts describe invocation semantics and semantic Rust input/output types. They are not JSON
-Schema and do not interpret `serde` attributes. Arbitrary custom `FromStr` grammars remain opaque.
-Standalone type contracts and combined CLI contracts share one wire version, and named types use
-document-local references so repeated and recursive shapes have one consistent representation.
-
-See [`Parser::contract`](https://docs.rs/argx/latest/argx/trait.Parser.html#method.contract), the
-[`contract` module](https://docs.rs/argx/latest/argx/contract/), and the
-[`type_contract` module](https://docs.rs/argx/latest/argx/type_contract/) for discovery behavior,
-execution requirements, wire fields, and type-contract semantics.
+`#[argx::schema]` delegates schema generation to Schemars, including its Serde integration and
+`#[schemars(...)]` customization. Argx only owns the association between an invocable command and
+its handler result types. Public schema discovery is intentionally separate from this layer.
 
 ## Examples
 

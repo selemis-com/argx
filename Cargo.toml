@@ -165,6 +165,7 @@ zero_sized_map_values = "warn"
 proc-macro-crate = "3.5.0"
 proc-macro2 = "1.0.107"
 quote = "1.0.47"
+schemars = "1.2.2"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 snapbox = { version = "1.2.2", features = ["cmd", "examples"] }

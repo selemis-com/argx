@@ -4,8 +4,8 @@ This page lists the licenses of the projects used in `argx`.
 
 ## Overview of licenses
 
-- [Apache License 2.0](#Apache-2.0) (37)
-- [MIT License](#MIT) (4)
+- [Apache License 2.0](#Apache-2.0) (42)
+- [MIT License](#MIT) (6)
 - [Unicode License v3](#Unicode-3.0) (1)
 
 ## Additional notices
@@ -1341,14 +1341,19 @@ Apache License 2.0
 #### Used by
 - [argx]( https://github.com/selemis-com/argx ) 0.1.0
 - [argx-derive]( https://github.com/selemis-com/argx ) 0.1.0
+- [dyn-clone]( https://github.com/dtolnay/dyn-clone ) 1.0.20
 - [itoa]( https://github.com/dtolnay/itoa ) 1.0.18
 - [libc]( https://github.com/rust-lang/libc ) 0.2.189
 - [proc-macro2]( https://github.com/dtolnay/proc-macro2 ) 1.0.107
 - [quote]( https://github.com/dtolnay/quote ) 1.0.47
+- [ref-cast-impl]( https://github.com/dtolnay/ref-cast ) 1.0.25
+- [ref-cast]( https://github.com/dtolnay/ref-cast ) 1.0.25
 - [serde]( https://github.com/serde-rs/serde ) 1.0.229
 - [serde_core]( https://github.com/serde-rs/serde ) 1.0.229
 - [serde_derive]( https://github.com/serde-rs/serde ) 1.0.229
+- [serde_derive_internals]( https://github.com/serde-rs/serde ) 0.30.0
 - [serde_json]( https://github.com/serde-rs/json ) 1.0.151
+- [syn]( https://github.com/dtolnay/syn ) 2.0.118
 - [syn]( https://github.com/dtolnay/syn ) 3.0.4
 - [unicode-ident]( https://github.com/dtolnay/unicode-ident ) 1.0.24
 - [utf8parse]( https://github.com/alacritty/vte ) 0.2.2
@@ -1428,6 +1433,38 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
+
+```
+### MIT
+MIT License
+
+#### Used by
+- [schemars]( https://github.com/GREsau/schemars ) 1.2.2
+- [schemars_derive]( https://github.com/GREsau/schemars ) 1.2.2
+
+#### License
+```
+MIT License
+
+Copyright (c) 2019 Graham Esau
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 ```
 ### MIT
