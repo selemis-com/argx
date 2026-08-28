@@ -14,21 +14,10 @@ pub struct HandlerSchemas {
     pub error: schemars::Schema,
 }
 
-/// JSON Schemas associated with one directly invocable command.
-#[derive(Debug, Clone)]
-pub struct CommandSchemas {
-    /// Explicit invocation values accepted by the command.
-    pub invocation: schemars::Schema,
-    /// Value returned when command execution succeeds.
-    pub result: schemars::Schema,
-    /// Value returned when command execution fails.
-    pub error: schemars::Schema,
-}
-
-/// Resolves a concrete handler result into success and error JSON Schemas.
+/// Resolves a concrete handler result into result and error subschemas.
 pub trait HandlerResult {
-    /// Generates both schemas using Schemars.
-    fn schemas() -> HandlerSchemas;
+    /// Generates both schemas with one shared Schemars generator.
+    fn schemas(generator: &mut schemars::SchemaGenerator) -> HandlerSchemas;
 }
 
 impl<T, E> HandlerResult for Result<T, E>
@@ -36,26 +25,28 @@ where
     T: schemars::JsonSchema,
     E: schemars::JsonSchema,
 {
-    fn schemas() -> HandlerSchemas {
-        HandlerSchemas { result: schemars::schema_for!(T), error: schemars::schema_for!(E) }
+    fn schemas(generator: &mut schemars::SchemaGenerator) -> HandlerSchemas {
+        let mut result = generator.subschema_for::<T>();
+        result
+            .ensure_object()
+            .entry("title".to_owned())
+            .or_insert_with(|| serde_json::Value::String(T::schema_name().into_owned()));
+
+        let mut error = generator.subschema_for::<E>();
+        error
+            .ensure_object()
+            .entry("title".to_owned())
+            .or_insert_with(|| serde_json::Value::String(E::schema_name().into_owned()));
+
+        HandlerSchemas { result, error }
     }
 }
 
 /// Schema source attached to an invocable command by `#[argx(handler = CommandType)]`.
 pub trait HandlerSchemaSource: crate::InvocableHandlerCommand {
-    /// Generates the handler-specific result and error schemas.
+    /// Generates the handler-specific result and error schemas into one shared schema document.
     #[doc(hidden)]
-    fn handler_schemas() -> HandlerSchemas;
-
-    /// Generates invocation, result, and error schemas for this command.
-    fn schemas() -> CommandSchemas {
-        let handler = Self::handler_schemas();
-        CommandSchemas {
-            invocation: crate::invocation_schema::invocation_schema(<Self as CommandArgs>::COMMAND),
-            result: handler.result,
-            error: handler.error,
-        }
-    }
+    fn handler_schemas(generator: &mut schemars::SchemaGenerator) -> HandlerSchemas;
 }
 
 /// Marker implemented by generated command declarations that can execute directly.

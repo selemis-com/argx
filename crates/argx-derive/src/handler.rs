@@ -124,7 +124,7 @@ fn expand_association(
 ) -> syn::Result<TokenStream> {
     let facade = crate_name::facade_path();
     let resolution = quote! {
-        <#output as #facade::__private::HandlerResult>::schemas()
+        <#output as #facade::__private::HandlerResult>::schemas(generator)
     };
 
     Ok(quote! {
@@ -132,7 +132,9 @@ fn expand_association(
 
         #(#conditional)*
         impl #facade::HandlerSchemaSource for #command_type {
-            fn handler_schemas() -> #facade::__private::HandlerSchemas {
+            fn handler_schemas(
+                generator: &mut #facade::__private::schemars::SchemaGenerator,
+            ) -> #facade::__private::HandlerSchemas {
                 #resolution
             }
         }
@@ -239,12 +241,9 @@ fn validate_signature(signature: &syn::Signature) -> syn::Result<()> {
 #[cfg(test)]
 mod tests {
     use quote::quote;
-    use syn::{Attribute, Meta, parse_quote};
+    use syn::parse_quote;
 
-    use super::{
-        cfg_attr_controls_presence, handler, meta_controls_presence,
-        validate_conditional_attributes,
-    };
+    use super::*;
 
     #[test]
     fn cfg_attr_presence_detection_handles_direct_nested_and_unrelated_attributes() {

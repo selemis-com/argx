@@ -10,8 +10,7 @@ mod support;
 
 #[cfg(test)]
 mod tests {
-
-    use super::support;
+    use super::*;
 
     #[test]
     fn supported_derive_shapes_compile_downstream() {

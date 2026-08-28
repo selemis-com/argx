@@ -333,14 +333,26 @@ fn candidates<'t>(position: &Position<'t>, prefix: &str) -> Vec<Candidate<'t>> {
 
     if flags_possible(position, prefix) {
         if position.schema_enabled {
-            push_option(
-                &mut candidates,
-                &mut seen,
-                prefix,
-                "--",
-                "schema",
-                Some(SCHEMA_ACTION.help),
-            );
+            for &long in SCHEMA_ACTION.longs {
+                push_option(
+                    &mut candidates,
+                    &mut seen,
+                    prefix,
+                    "--",
+                    long,
+                    Some(SCHEMA_ACTION.help),
+                );
+            }
+            for &short in SCHEMA_ACTION.shorts {
+                let spelling = format!("-{}", char::from(short));
+                push_owned_candidate(
+                    &mut candidates,
+                    &mut seen,
+                    prefix,
+                    spelling,
+                    Some(SCHEMA_ACTION.help),
+                );
+            }
         }
         for &action in position.command.actions {
             for &long in action.longs {
@@ -776,6 +788,13 @@ mod tests {
             .collect()
     }
 
+    fn schema_values(line: &str) -> Vec<String> {
+        complete_line_with_schema(<Cli as CommandArgs>::COMMAND, line, true)
+            .into_iter()
+            .map(|candidate| candidate.value)
+            .collect()
+    }
+
     #[test]
     fn split_reconstructs_quoted_completed_words_and_current_prefix() {
         assert_eq!(
@@ -849,6 +868,13 @@ mod tests {
             .collect::<Vec<_>>();
         assert!(candidates.contains(&"--json".into()));
         assert!(candidates.contains(&"--help".into()));
+    }
+
+    #[test]
+    fn schema_completion_offers_short_and_long_actions() {
+        let candidates = schema_values("tool -");
+        assert!(candidates.contains(&"-S".into()));
+        assert!(candidates.contains(&"--schema".into()));
     }
 
     #[test]

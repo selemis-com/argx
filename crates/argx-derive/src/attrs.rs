@@ -409,7 +409,7 @@ fn first_paragraph(lines: &[String]) -> Option<String> {
 mod tests {
     use syn::{DeriveInput, parse_quote};
 
-    use super::{doc_help, doc_summary};
+    use super::*;
 
     #[test]
     fn doc_summary_uses_only_the_first_paragraph() {

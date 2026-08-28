@@ -1,11 +1,12 @@
-//! Machine-readable discovery over the statically derived Argx command topology.
+//! Machine-readable JSON Schema discovery over the statically derived Argx command topology.
 //!
 //! Handler associations are collected into a short-lived local registry by generated trait calls
 //! over the concrete command types. The registry is neither global registration nor linker
 //! inventory.
 
-use std::ffi::OsStr;
+use std::{borrow::Cow, ffi::OsStr, fmt::Write as _};
 
+use schemars::{SchemaGenerator, generate::SchemaSettings};
 use serde_json::{Map, Value};
 
 use crate::{
@@ -20,7 +21,7 @@ struct Entry {
     /// Stable semantic identity of the command table.
     key: Key,
     /// Result/error schema generator supplied by the handler association.
-    schemas: fn() -> HandlerSchemas,
+    schemas: fn(&mut SchemaGenerator) -> HandlerSchemas,
 }
 
 /// Ephemeral handler associations for one schema-enabled CLI.
@@ -44,19 +45,21 @@ impl Registry {
     pub fn register(
         &mut self,
         command: &'static Command<'static>,
-        schemas: fn() -> HandlerSchemas,
+        schemas: fn(&mut SchemaGenerator) -> HandlerSchemas,
     ) {
         self.entries.push(Entry { key: command.key, schemas });
     }
 
-    /// Resolves one selected command's handler schemas.
-    fn handler(&self, command: &Command<'_>) -> Option<HandlerSchemas> {
-        self.entries.iter().find(|entry| entry.key == command.key).map(|entry| (entry.schemas)())
-    }
-
-    /// Reports whether one command is an executable schema leaf.
-    fn contains(&self, command: &Command<'_>) -> bool {
-        self.entries.iter().any(|entry| entry.key == command.key)
+    /// Resolves one selected command's handler schemas into a shared generator.
+    fn handler(
+        &self,
+        command: &Command<'_>,
+        generator: &mut SchemaGenerator,
+    ) -> Option<HandlerSchemas> {
+        self.entries
+            .iter()
+            .find(|entry| entry.key == command.key)
+            .map(|entry| (entry.schemas)(generator))
     }
 }
 
@@ -118,73 +121,112 @@ pub(crate) fn pseudo_command(
     Some(display_schema(&path, registry))
 }
 
-/// Builds a successful terminal schema action for one selected command path.
+/// Builds a successful terminal JSON Schema action for one selected command path.
 pub(crate) fn display_schema(path: &[&Command<'_>], registry: &Registry) -> Error {
+    let schema = command_schema(path, registry, &[]);
+    let mut rendered =
+        serde_json::to_string_pretty(&schema).expect("schema document must serialize");
+    rendered.push('\n');
+    Error::DisplaySchema { schema: rendered }
+}
+
+/// Builds one schema-compliant command document.
+///
+/// The selected command's explicit invocation values form the root schema. Handler result and error
+/// schemas are bundled under `$defs`, along with any Schemars-generated type definitions.
+/// Structural commands bundle child command schemas under `$defs.subcommands.$defs`.
+fn command_schema(path: &[&Command<'_>], registry: &Registry, location: &[String]) -> Value {
     let command = path.last().copied().expect("schema discovery always has a root command");
-
-    let mut document = Map::new();
-    document.insert("command".to_owned(), command_document(path, command, registry));
-    document.insert(
-        "invocation".to_owned(),
+    let mut schema =
         serde_json::to_value(crate::invocation_schema::invocation_schema_for_path(path))
-            .expect("Schemars invocation schemas must serialize"),
-    );
+            .expect("invocation schema must serialize");
+    let object = schema.as_object_mut().expect("invocation schemas are objects");
 
-    if let Some(handler) = registry.handler(command) {
-        document.insert(
-            "result".to_owned(),
-            serde_json::to_value(handler.result).expect("Schemars result schemas must serialize"),
-        );
-        document.insert(
-            "error".to_owned(),
-            serde_json::to_value(handler.error).expect("Schemars error schemas must serialize"),
-        );
+    if !location.is_empty() {
+        object.remove("$schema");
+    }
+
+    let mut definitions = Map::new();
+
+    let mut generator = schema_generator(location);
+    if let Some(handler) = registry.handler(command, &mut generator) {
+        definitions.insert("result".to_owned(), schema_value(handler.result));
+        definitions.insert("error".to_owned(), schema_value(handler.error));
+
+        let types = generator.take_definitions(false);
+        if !types.is_empty() {
+            definitions.insert("types".to_owned(), definitions_schema(types));
+        }
     }
 
     if !command.subcommands.is_empty() {
-        let parent_path = path.iter().skip(1).map(|command| command.name).collect::<Vec<_>>();
-        let children = command
-            .subcommands
-            .iter()
-            .map(|child| subcommand_summary(&parent_path, child, registry))
-            .collect();
-        document.insert("subcommands".to_owned(), Value::Array(children));
+        let mut subcommands = Map::new();
+        for &child in command.subcommands {
+            let mut child_path = path.to_vec();
+            child_path.push(child);
+
+            let mut child_location = location.to_vec();
+            child_location.extend([
+                "$defs".to_owned(),
+                "subcommands".to_owned(),
+                "$defs".to_owned(),
+                child.name.to_owned(),
+            ]);
+
+            subcommands.insert(
+                child.name.to_owned(),
+                command_schema(&child_path, registry, &child_location),
+            );
+        }
+        definitions.insert("subcommands".to_owned(), definitions_schema(subcommands));
     }
 
-    let mut schema = serde_json::to_string_pretty(&Value::Object(document))
-        .expect("schema document must serialize");
-    schema.push('\n');
-    Error::DisplaySchema { schema }
+    if !definitions.is_empty() {
+        object.insert("$defs".to_owned(), Value::Object(definitions));
+    }
+
+    schema
 }
 
-/// Builds stable command metadata for one selected schema document.
-fn command_document(path: &[&Command<'_>], command: &Command<'_>, registry: &Registry) -> Value {
-    let mut object = Map::new();
-    object.insert(
-        "path".to_owned(),
-        Value::Array(
-            path.iter().skip(1).map(|command| Value::String(command.name.to_owned())).collect(),
-        ),
-    );
-    object.insert("name".to_owned(), Value::String(command.name.to_owned()));
-    if let Some(about) = command.about {
-        object.insert("about".to_owned(), Value::String(about.to_owned()));
-    }
-    object.insert("invocable".to_owned(), Value::Bool(registry.contains(command)));
-    Value::Object(object)
+/// Creates a Draft 2020-12 generator whose references target this command's bundled type schemas.
+fn schema_generator(location: &[String]) -> SchemaGenerator {
+    SchemaSettings::draft2020_12()
+        .with(|settings| {
+            settings.meta_schema = None;
+            settings.definitions_path = Cow::Owned(definitions_path(location));
+        })
+        .into_generator()
 }
 
-/// Builds one immediate-child summary for structural discovery.
-fn subcommand_summary(parent: &[&str], command: &Command<'_>, registry: &Registry) -> Value {
-    let mut object = Map::new();
-    let mut path =
-        parent.iter().map(|segment| Value::String((*segment).to_owned())).collect::<Vec<_>>();
-    path.push(Value::String(command.name.to_owned()));
-    object.insert("path".to_owned(), Value::Array(path));
-    object.insert("name".to_owned(), Value::String(command.name.to_owned()));
-    if let Some(about) = command.about {
-        object.insert("about".to_owned(), Value::String(about.to_owned()));
+/// Returns the absolute JSON Pointer used for Schemars-generated type definitions.
+fn definitions_path(location: &[String]) -> String {
+    let mut segments = location.iter().map(|segment| pointer_token(segment)).collect::<Vec<_>>();
+    segments.extend(["$defs".to_owned(), "types".to_owned(), "$defs".to_owned()]);
+    format!("/{}", segments.join("/"))
+}
+
+/// Escapes one JSON Pointer token for use inside a URI fragment reference.
+fn pointer_token(token: &str) -> String {
+    let escaped = token.replace('~', "~0").replace('/', "~1");
+    let mut encoded = String::with_capacity(escaped.len());
+    for byte in escaped.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~' | b'$') {
+            encoded.push(char::from(byte));
+        } else {
+            write!(&mut encoded, "%{byte:02X}").expect("writing to String cannot fail");
+        }
     }
-    object.insert("invocable".to_owned(), Value::Bool(registry.contains(command)));
-    Value::Object(object)
+    encoded
+}
+
+/// Wraps one definition map in a schema-valued `$defs` container.
+fn definitions_schema(definitions: Map<String, Value>) -> Value {
+    let mut schema = Map::new();
+    schema.insert("$defs".to_owned(), Value::Object(definitions));
+    Value::Object(schema)
+}
+
+/// Converts one generated schema into its JSON representation.
+fn schema_value(schema: schemars::Schema) -> Value {
+    schema.to_value()
 }

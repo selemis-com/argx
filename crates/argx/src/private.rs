@@ -30,8 +30,7 @@ pub use crate::{
     },
     derive_support::{
         traits::{
-            CommandArgs, CommandSchemas, HandlerResult, HandlerSchemas, InvocableCommandHandler,
-            Subcommands,
+            CommandArgs, HandlerResult, HandlerSchemas, InvocableCommandHandler, Subcommands,
         },
         value::{
             RawValue, os_value, os_values, parsed_value, parsed_values, text_value, text_values,

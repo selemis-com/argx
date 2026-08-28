@@ -63,7 +63,7 @@ impl std::error::Error for ValueEnumError {}
 
 #[cfg(test)]
 mod tests {
-    use super::ValueEnumError;
+    use super::*;
 
     #[test]
     fn error_values_do_not_emit_terminal_controls() {

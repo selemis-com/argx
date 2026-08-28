@@ -10,7 +10,7 @@ mod support;
 
 #[cfg(test)]
 mod tests {
-    use super::support;
+    use super::*;
 
     #[test]
     fn basic_example_builds_and_runs() {

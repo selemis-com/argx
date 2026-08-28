@@ -541,6 +541,12 @@ fn validate_fields(fields: &[Field], has_version: bool, schema_enabled: bool) ->
                             "`-h` is reserved by Argx",
                         ));
                     }
+                    if schema_enabled && *short == b'S' {
+                        return Err(syn::Error::new(
+                            field.binding.span,
+                            "`-S` is reserved when schema discovery is enabled",
+                        ));
+                    }
                     if has_version && *short == b'V' {
                         return Err(syn::Error::new(
                             field.binding.span,

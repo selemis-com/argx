@@ -113,7 +113,7 @@ pub static SCHEMA_ACTION: Action<'static> = Action {
     diagnostic: "--schema",
     help: "Print machine-readable schema",
     longs: &["schema"],
-    shorts: b"",
+    shorts: b"S",
     kind: ActionKind::Schema,
 };
 
@@ -279,7 +279,7 @@ pub const fn key_base(module: &str, declaration: u32) -> Key {
 
 #[cfg(test)]
 mod tests {
-    use super::key_base;
+    use super::*;
 
     #[test]
     fn key_base_is_stable() {

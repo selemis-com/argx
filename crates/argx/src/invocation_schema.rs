@@ -16,11 +16,6 @@ use crate::command::{
 /// JSON Schema dialect used by Argx invocation schemas.
 const DRAFT_2020_12: &str = "https://json-schema.org/draft/2020-12/schema";
 
-/// Projects one normalized command context into a Draft 2020-12 JSON Schema.
-pub(crate) fn invocation_schema(command: &Command<'_>) -> schemars::Schema {
-    invocation_schema_for_path(&[command])
-}
-
 /// Projects one selected command path, including inherited globals visible in the selected scope.
 pub(crate) fn invocation_schema_for_path(path: &[&Command<'_>]) -> schemars::Schema {
     let Some(&command) = path.last() else {
@@ -231,8 +226,8 @@ fn conflict_schema(source: &str, target: &str) -> Value {
 
 #[cfg(test)]
 mod tests {
-    use super::{invocation_schema, invocation_schema_for_path};
-    use crate::command::model::{Arg, Command, Constraint, ConstraintKind, Flag};
+    use super::*;
+    use crate::command::model::{Arg, Constraint};
 
     #[test]
     fn projects_normalized_argv_semantics_into_json_schema() {
@@ -300,8 +295,8 @@ mod tests {
             ..Command::EMPTY
         };
 
-        let schema =
-            serde_json::to_value(invocation_schema(&command)).expect("schema should serialize");
+        let schema = serde_json::to_value(invocation_schema_for_path(&[&command]))
+            .expect("schema should serialize");
 
         assert_eq!(schema["$schema"], "https://json-schema.org/draft/2020-12/schema");
         assert_eq!(schema["title"], "run");

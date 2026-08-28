@@ -147,13 +147,16 @@ A parser with `#[argx(schema)]` exposes both discovery forms:
 
 ```text
 acme schema get
-acme get object-7 --schema
+acme get object-7 -S
+# or: acme get object-7 --schema
 ```
 
-Both emit the same command document with the invocation, result, and error schemas. Requesting a
-structural path such as `acme schema` emits the command's invocation schema and summaries of its
-immediate children. Handler associations are traversed statically from the command types into a
-short-lived local registry; Argx does not use linker inventory or global registration.
+Both emit the same Draft 2020-12 JSON Schema. The selected command's invocation is the root schema;
+handler result and error schemas are bundled under `$defs.result` and `$defs.error`, with any
+Schemars-generated type definitions under `$defs.types.$defs`. Structural paths such as `acme schema`
+bundle their subcommand schemas under `$defs.subcommands.$defs`. Handler associations are traversed
+statically from the command types into a short-lived local registry; Argx does not use linker
+inventory or global registration.
 
 The handler may also stay on the inherent implementation that owns execution:
 

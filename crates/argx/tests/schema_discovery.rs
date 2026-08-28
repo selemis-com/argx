@@ -6,7 +6,7 @@ mod tests {
     #![expect(dead_code, reason = "schema fixtures are exercised through generated metadata")]
 
     use argx::{Parser as _, argx};
-    use serde_json::Value;
+    use serde_json::{Map, Value};
 
     #[derive(argx::Args)]
     struct GetCommand {
@@ -18,6 +18,14 @@ mod tests {
     struct GetOutput {
         /// Returned object identifier.
         id: String,
+        /// Additional object details.
+        detail: GetDetail,
+    }
+
+    #[argx(schema)]
+    struct GetDetail {
+        /// Labels attached to the object.
+        labels: Vec<String>,
     }
 
     #[argx(schema)]
@@ -27,7 +35,7 @@ mod tests {
 
     #[argx(handler = GetCommand)]
     fn get(command: GetCommand) -> Result<GetOutput, GetError> {
-        Ok(GetOutput { id: command.id })
+        Ok(GetOutput { id: command.id, detail: GetDetail { labels: Vec::new() } })
     }
 
     #[derive(argx::Args, argx::CommandSchema)]
@@ -116,42 +124,75 @@ mod tests {
         serde_json::from_str(&schema).expect("schema discovery must emit JSON")
     }
 
-    #[test]
-    fn pseudo_command_and_selected_schema_action_are_equivalent() {
-        let by_command = discovered(["schema", "get"]);
-        let by_flag = discovered(["get", "example", "--schema"]);
-
-        assert_eq!(by_command, by_flag);
-        assert_eq!(by_command["command"]["path"], serde_json::json!(["get"]));
-        assert_eq!(by_command["command"]["invocable"], true);
-        assert_eq!(by_command["invocation"]["properties"]["id"]["type"], "string");
-        assert_eq!(by_command["invocation"]["properties"]["--profile"]["type"], "string",);
-        assert_eq!(by_command["result"]["properties"]["id"]["type"], "string");
-        assert!(by_command["error"].is_object());
+    fn schema_keyword_count(value: &Value) -> usize {
+        match value {
+            Value::Object(object) => {
+                usize::from(object.contains_key("$schema"))
+                    + object.values().map(schema_keyword_count).sum::<usize>()
+            }
+            Value::Array(values) => values.iter().map(schema_keyword_count).sum(),
+            _ => 0,
+        }
     }
 
     #[test]
-    fn structural_paths_expose_immediate_children_without_fake_handler_schemas() {
+    fn pseudo_command_and_selected_schema_action_are_equivalent() {
+        let by_command = discovered(["schema", "get"]);
+        let by_long = discovered(["get", "example", "--schema"]);
+        let by_short = discovered(["get", "example", "-S"]);
+
+        assert_eq!(by_command, by_long);
+        assert_eq!(by_command, by_short);
+        assert_eq!(by_command["$schema"], "https://json-schema.org/draft/2020-12/schema");
+        assert_eq!(schema_keyword_count(&by_command), 1);
+        assert_eq!(by_command["title"], "get");
+        assert_eq!(by_command["description"], "Retrieve one object.");
+        assert_eq!(by_command["properties"]["id"]["type"], "string");
+        assert_eq!(by_command["properties"]["--profile"]["type"], "string");
+        assert_eq!(by_command["$defs"]["result"]["$ref"], "#/$defs/types/$defs/GetOutput",);
+        assert_eq!(by_command["$defs"]["error"]["$ref"], "#/$defs/types/$defs/GetError",);
+        assert_eq!(
+            by_command["$defs"]["types"]["$defs"]["GetOutput"]["properties"]["detail"]["$ref"],
+            "#/$defs/types/$defs/GetDetail",
+        );
+        assert_eq!(
+            by_command["$defs"]["types"]["$defs"]["GetDetail"]["properties"]["labels"]["type"],
+            "array",
+        );
+    }
+
+    #[test]
+    fn structural_paths_bundle_subcommand_schemas_under_defs() {
         let root = discovered(["schema"]);
-        assert_eq!(root["command"]["path"], serde_json::json!([]));
-        assert_eq!(root["command"]["invocable"], false);
-        assert!(root.get("result").is_none());
-        assert_eq!(root["subcommands"].as_array().map(Vec::len), Some(2));
+        assert_eq!(root["$schema"], "https://json-schema.org/draft/2020-12/schema");
+        assert_eq!(schema_keyword_count(&root), 1);
+        assert_eq!(root["title"], "tool");
+        assert!(root["$defs"].get("result").is_none());
+        assert_eq!(root["$defs"]["subcommands"]["$defs"].as_object().map(Map::len), Some(2));
+
+        let get = &root["$defs"]["subcommands"]["$defs"]["get"];
+        assert_eq!(get["title"], "get");
+        assert_eq!(
+            get["$defs"]["result"]["$ref"],
+            "#/$defs/subcommands/$defs/get/$defs/types/$defs/GetOutput",
+        );
 
         let admin = discovered(["schema", "admin"]);
-        assert_eq!(admin["command"]["path"], serde_json::json!(["admin"]));
-        assert_eq!(admin["command"]["invocable"], false);
-        assert_eq!(admin["subcommands"][0]["name"], "status");
-        assert_eq!(admin["subcommands"][0]["invocable"], true);
+        assert_eq!(admin["title"], "admin");
+        assert!(admin["$defs"].get("result").is_none());
+        assert!(admin["$defs"]["subcommands"]["$defs"].get("status").is_some());
 
         let status = discovered(["schema", "admin", "status"]);
-        assert_eq!(status["command"]["invocable"], true);
-        assert_eq!(status["result"]["properties"]["healthy"]["type"], "boolean");
+        assert_eq!(status["title"], "status");
+        assert_eq!(
+            status["$defs"]["types"]["$defs"]["StatusOutput"]["properties"]["healthy"]["type"],
+            "boolean",
+        );
     }
 
     #[test]
     fn schema_enabled_help_advertises_the_virtual_action() {
-        assert!(Cli::render_help().contains("--schema"));
+        assert!(Cli::render_help().contains("-S, --schema"));
         let error = match Cli::try_parse_args(["get", "--help"]) {
             Err(error) => error,
             Ok(_) => panic!("help should be terminal"),
@@ -159,7 +200,7 @@ mod tests {
         let argx::Error::DisplayHelp { help } = error else {
             panic!("unexpected parser result: {error:?}");
         };
-        assert!(help.contains("--schema"));
+        assert!(help.contains("-S, --schema"));
     }
 
     #[test]
@@ -167,7 +208,7 @@ mod tests {
         let direct = Direct::try_parse_args(["schema"]).expect("schema is positional data here");
         assert_eq!(direct.value, "schema");
 
-        let error = match Direct::try_parse_args(["--schema"]) {
+        let error = match Direct::try_parse_args(["-S"]) {
             Err(error) => error,
             Ok(_) => panic!("schema action should be terminal"),
         };
@@ -175,7 +216,9 @@ mod tests {
             panic!("unexpected parser result: {error:?}");
         };
         let document: Value = serde_json::from_str(&schema).expect("schema must be JSON");
-        assert_eq!(document["command"]["path"], serde_json::json!([]));
-        assert_eq!(document["command"]["invocable"], true);
+        assert_eq!(document["$schema"], "https://json-schema.org/draft/2020-12/schema");
+        assert_eq!(document["title"], "echo");
+        assert!(document["$defs"].get("result").is_some());
+        assert!(document["$defs"].get("error").is_some());
     }
 }

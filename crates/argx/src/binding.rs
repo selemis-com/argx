@@ -326,7 +326,7 @@ fn os_string(value: Vec<u8>, name: &'static str) -> Result<OsString, Error> {
 
 #[cfg(test)]
 mod tests {
-    use super::render_version;
+    use super::*;
 
     #[test]
     fn version_command_name_does_not_emit_terminal_controls() {

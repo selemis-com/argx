@@ -272,7 +272,7 @@ impl<'ast> syn::visit::Visit<'ast> for GenericUse<'_> {
 mod tests {
     use syn::{DeriveInput, parse_quote};
 
-    use super::{ArgumentKind, Command, FieldSemantics, Shape, Subcommand, ValueConversion};
+    use super::*;
 
     #[expect(
         clippy::needless_pass_by_value,
@@ -728,11 +728,23 @@ mod tests {
         );
         assert_eq!(error, "`--schema` is reserved when schema discovery is enabled");
 
+        let error = command_error(
+            parse_quote! {
+                #[argx(schema)]
+                struct Cli {
+                    #[argx(short = 'S')]
+                    value: bool,
+                }
+            },
+            true,
+        );
+        assert_eq!(error, "`-S` is reserved when schema discovery is enabled");
+
         assert!(
             Command::from_input(
                 &parse_quote! {
                     struct Cli {
-                        #[argx(long = "schema")]
+                        #[argx(long = "schema", short = 'S')]
                         value: Option<String>,
                     }
                 },

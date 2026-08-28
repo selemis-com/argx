@@ -393,8 +393,8 @@ fn metavar(name: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::render;
-    use crate::__private::{Action, ActionKind, Arg, Command, Flag};
+    use super::*;
+    use crate::__private::ActionKind;
 
     static VERBOSE: Flag<'static> = Flag {
         key: 1,

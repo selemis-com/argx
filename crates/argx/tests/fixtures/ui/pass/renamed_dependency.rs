@@ -33,7 +33,6 @@ fn main() {
     let _ = Common;
     let _ = Command::Run;
     assert_eq!(<Mode as cli_args::ValueEnum>::VALUES, &["fast", "dry-run"]);
-    let _ = <Common as cli_args::HandlerSchemaSource>::schemas();
     let Ok(output) = handler() else { panic!("handler failed") };
     assert_eq!(output.value, "ok");
 }

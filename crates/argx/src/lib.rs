@@ -322,9 +322,9 @@
 //! replaces a field's derived one-line summary. Hidden flag and subcommand aliases are accepted by
 //! parsing but omitted from generated help so help presents one canonical interface.
 //!
-//! A parser marked `#[argx(schema)]` additionally exposes `--schema` in every selected command
-//! scope and the root `schema [COMMAND]...` pseudo-command. Structural command groups derive
-//! `CommandSchema`; executable leaves are associated with result and error schemas through
+//! A parser marked `#[argx(schema)]` additionally exposes `-S` and `--schema` in every selected
+//! command scope and the root `schema [COMMAND]...` pseudo-command. Structural command groups
+//! derive `CommandSchema`; executable leaves are associated with result and error schemas through
 //! `#[argx(handler = ...)]`.
 //!
 //! [`Parser::render_help`] renders the root scope directly. During parsing, help, version, and

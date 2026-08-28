@@ -288,7 +288,7 @@ pub(crate) fn display_bytes(value: &[u8]) -> String {
 mod tests {
     use std::ffi::OsString;
 
-    use super::{Error, ExitStream, InvalidValue, display_bytes};
+    use super::*;
 
     #[test]
     fn diagnostic_bytes_do_not_emit_control_characters() {

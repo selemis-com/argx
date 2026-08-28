@@ -248,6 +248,10 @@ impl<'t, 'a, 'v> ArgvParser<'t, 'a, 'v> {
     fn check_short_bundle(&self, token: &'v [u8]) -> Result<(), Error<'t, 'v>> {
         let mut remaining = &token[1..];
         while let Some((&short, tail)) = remaining.split_first() {
+            if self.schema_enabled && short == b'S' {
+                remaining = tail;
+                continue;
+            }
             match resolve_short(self.command, &self.ancestors, short) {
                 Some(Named::Flag { flag, .. }) if flag.takes_value => return Ok(()),
                 Some(Named::Action(_) | Named::Flag { .. }) => remaining = tail,
@@ -262,6 +266,10 @@ impl<'t, 'a, 'v> ArgvParser<'t, 'a, 'v> {
         let Some((&short, rest)) = self.bundle.split_first() else {
             return Err(Error::UnknownFlag { token: self.bundle_token });
         };
+        if self.schema_enabled && short == b'S' {
+            self.bundle = &[];
+            return Ok(Event::Action { action: &SCHEMA_ACTION, long: false });
+        }
         let flag = match resolve_short(self.command, &self.ancestors, short) {
             Some(Named::Action(action)) => {
                 self.bundle = &[];
@@ -450,7 +458,7 @@ fn is_number(token: &[u8]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_negative_number, is_number};
+    use super::*;
 
     #[test]
     fn recognizes_supported_number_shapes() {
