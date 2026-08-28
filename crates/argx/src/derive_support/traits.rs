@@ -69,6 +69,12 @@ pub trait CommandArgs: Sized {
     /// Private static command semantics projected from this declaration.
     const COMMAND: &'static Command<'static>;
 
+    /// Builds schema-discovery associations for a schema-enabled parser root.
+    #[doc(hidden)]
+    fn schema_registry() -> Option<crate::__private::SchemaRegistry> {
+        None
+    }
+
     /// Creates empty binding state for a new parse.
     fn start() -> Self::Partial;
 

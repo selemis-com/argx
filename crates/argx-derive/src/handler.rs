@@ -3,14 +3,14 @@
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use syn::{
-    Attribute, ItemFn, Meta, ReturnType, Token, Type,
+    Attribute, ImplItem, Item, ItemFn, ItemImpl, Meta, ReturnType, Token, Type,
     parse::{Parse, ParseStream, Parser},
     punctuated::Punctuated,
 };
 
 use crate::crate_name;
 
-/// Parsed arguments to `#[argx::handler(...)]`.
+/// Parsed arguments to the free-function handler form.
 struct HandlerArguments {
     /// Invocable command identity receiving this handler.
     command_type: Type,
@@ -21,7 +21,7 @@ impl Parse for HandlerArguments {
         if input.is_empty() {
             return Err(syn::Error::new(
                 Span::call_site(),
-                "#[argx::handler] requires an invocable command type, for example #[argx::handler(GetArgs)]",
+                "#[argx::handler] requires a command type or inherent handler method",
             ));
         }
 
@@ -30,31 +30,131 @@ impl Parse for HandlerArguments {
             input.parse::<Token![,]>()?;
         }
         if !input.is_empty() {
-            return Err(input.error(
-                "unsupported Argx handler arguments; expected only #[argx::handler(CommandType)]",
-            ));
+            return Err(
+                input.error("unsupported Argx handler arguments; expected one command type")
+            );
         }
 
         Ok(Self { command_type })
     }
 }
 
-/// Expands one canonical command handler around a free handler function.
+/// Expands one canonical command handler around a free function or inherent implementation.
 pub(crate) fn handler(attribute: TokenStream, input: TokenStream) -> syn::Result<TokenStream> {
-    let arguments = syn::parse2::<HandlerArguments>(attribute)?;
-    let function = syn::parse2::<ItemFn>(input).map_err(|_| {
+    let attribute_span =
+        attribute.clone().into_iter().next().map_or_else(Span::call_site, |token| token.span());
+
+    match syn::parse2::<Item>(input).map_err(|_| {
         syn::Error::new(
             Span::call_site(),
-            "#[argx::handler(CommandType)] can only be applied to a free function",
+            "#[argx::handler(...)] can only be applied to a free function or inherent impl",
+        )
+    })? {
+        Item::Fn(function) => free_handler(attribute, &function),
+        Item::Impl(item_impl) => impl_handler(attribute, &item_impl),
+        _ => Err(syn::Error::new(
+            attribute_span,
+            "#[argx::handler(...)] can only be applied to a free function or inherent impl",
+        )),
+    }
+}
+
+/// Expands `#[argx::handler(CommandType)] fn ...`.
+fn free_handler(attribute: TokenStream, function: &ItemFn) -> syn::Result<TokenStream> {
+    let arguments = syn::parse2::<HandlerArguments>(attribute)?;
+    validate_signature(&function.sig)?;
+    validate_conditional_attributes(&function.attrs)?;
+    let output = concrete_output(&function.sig)?;
+    let conditional = cfg_attributes(&function.attrs);
+    let item = quote!(#function);
+    expand_association(&item, &arguments.command_type, &output, &conditional)
+}
+
+/// Expands `#[argx::handler(method)] impl CommandType { ... }`.
+fn impl_handler(attribute: TokenStream, item_impl: &ItemImpl) -> syn::Result<TokenStream> {
+    let method = syn::parse2::<syn::Ident>(attribute).map_err(|_| {
+        syn::Error::new(
+            Span::call_site(),
+            "handler impls require one method name, for example #[argx::handler(run)]",
         )
     })?;
+    if item_impl.trait_.is_some() {
+        return Err(syn::Error::new_spanned(
+            &item_impl.self_ty,
+            "Argx handlers must annotate an inherent impl",
+        ));
+    }
+    if !item_impl.generics.params.is_empty() || item_impl.generics.where_clause.is_some() {
+        return Err(syn::Error::new_spanned(
+            &item_impl.generics,
+            "Argx handler impls must be non-generic",
+        ));
+    }
 
-    validate_signature(&function)?;
-    validate_conditional_attributes(&function.attrs)?;
-    let output = match &function.sig.output {
+    validate_conditional_attributes(&item_impl.attrs)?;
+    let selected = item_impl
+        .items
+        .iter()
+        .find_map(|item| match item {
+            ImplItem::Fn(function) if function.sig.ident == method => Some(function),
+            _ => None,
+        })
+        .ok_or_else(|| {
+            syn::Error::new_spanned(
+                &item_impl.self_ty,
+                format!("Argx handler method `{method}` was not found in this impl"),
+            )
+        })?;
+    validate_signature(&selected.sig)?;
+    validate_conditional_attributes(&selected.attrs)?;
+    let output = concrete_output(&selected.sig)?;
+    let mut conditional = cfg_attributes(&item_impl.attrs);
+    conditional.extend(cfg_attributes(&selected.attrs));
+    let item = quote!(#item_impl);
+
+    expand_association(&item, &item_impl.self_ty, &output, &conditional)
+}
+
+/// Emits one handler item plus the static schema association for its command type.
+fn expand_association(
+    item: &TokenStream,
+    command_type: &Type,
+    output: &Type,
+    conditional: &[Attribute],
+) -> syn::Result<TokenStream> {
+    let facade = crate_name::facade_path();
+    let resolution = quote! {
+        <#output as #facade::__private::HandlerResult>::schemas()
+    };
+
+    Ok(quote! {
+        #item
+
+        #(#conditional)*
+        impl #facade::HandlerSchemaSource for #command_type {
+            fn handler_schemas() -> #facade::__private::HandlerSchemas {
+                #resolution
+            }
+        }
+
+        #(#conditional)*
+        impl #facade::__private::SchemaCommand for #command_type {
+            fn register_schema_commands(
+                command: &'static #facade::__private::Command<'static>,
+                registry: &mut #facade::__private::SchemaRegistry,
+            ) {
+                #facade::__private::register_schema_handler::<Self>(command, registry);
+            }
+        }
+    })
+}
+
+/// Returns one concrete handler return type.
+fn concrete_output(signature: &syn::Signature) -> syn::Result<Type> {
+    let output = match &signature.output {
         ReturnType::Default => {
             return Err(syn::Error::new_spanned(
-                &function.sig,
+                signature,
                 "Argx handlers require a concrete Result<Success, Error> return type",
             ));
         }
@@ -66,31 +166,15 @@ pub(crate) fn handler(attribute: TokenStream, input: TokenStream) -> syn::Result
             "Argx handlers do not support opaque `impl Trait` return types",
         ));
     }
-
-    let facade = crate_name::facade_path();
-    let command_type = arguments.command_type;
-    let resolution = quote! {
-        <#output as #facade::__private::HandlerResult>::schemas()
-    };
-    let conditional = function
-        .attrs
-        .iter()
-        .filter(|attribute| attribute.path().is_ident("cfg"))
-        .collect::<Vec<_>>();
-
-    Ok(quote! {
-        #function
-
-        #(#conditional)*
-        impl #facade::HandlerSchemaSource for #command_type {
-            fn handler_schemas() -> #facade::__private::HandlerSchemas {
-                #resolution
-            }
-        }
-    })
+    Ok(output.clone())
 }
 
-/// Rejects conditional attribute forms that cannot be safely mirrored onto the generated impl.
+/// Extracts explicit `cfg` attributes that must also guard generated associations.
+fn cfg_attributes(attributes: &[Attribute]) -> Vec<Attribute> {
+    attributes.iter().filter(|attribute| attribute.path().is_ident("cfg")).cloned().collect()
+}
+
+/// Rejects conditional attribute forms that cannot be safely mirrored onto generated impls.
 fn validate_conditional_attributes(attributes: &[Attribute]) -> syn::Result<()> {
     for attribute in attributes.iter().filter(|attribute| attribute.path().is_ident("cfg_attr")) {
         if cfg_attr_controls_presence(attribute)? {
@@ -136,16 +220,16 @@ fn meta_controls_presence(meta: &Meta) -> syn::Result<bool> {
 }
 
 /// Rejects handler signatures that cannot name one concrete result type.
-fn validate_signature(function: &ItemFn) -> syn::Result<()> {
-    if !function.sig.generics.params.is_empty() || function.sig.generics.where_clause.is_some() {
+fn validate_signature(signature: &syn::Signature) -> syn::Result<()> {
+    if !signature.generics.params.is_empty() || signature.generics.where_clause.is_some() {
         return Err(syn::Error::new_spanned(
-            &function.sig.generics,
+            &signature.generics,
             "Argx handlers must be non-generic",
         ));
     }
-    if function.sig.variadic.is_some() {
+    if signature.variadic.is_some() {
         return Err(syn::Error::new_spanned(
-            &function.sig,
+            signature,
             "Argx handlers do not support variadic parameters",
         ));
     }
@@ -173,12 +257,12 @@ mod tests {
 
         let unrelated: Attribute = parse_quote!(#[cfg_attr(feature = "extra", allow(dead_code))]);
         assert!(
-            !cfg_attr_controls_presence(&unrelated).expect("unrelated metadata should be safe"),
+            !cfg_attr_controls_presence(&unrelated).expect("unrelated metadata should be safe")
         );
 
         let no_attributes: Attribute = parse_quote!(#[cfg_attr(feature = "extra")]);
         assert!(
-            !cfg_attr_controls_presence(&no_attributes).expect("empty cfg_attr should be safe"),
+            !cfg_attr_controls_presence(&no_attributes).expect("empty cfg_attr should be safe")
         );
     }
 
@@ -193,7 +277,7 @@ mod tests {
         let nested_safe: Meta = parse_quote!(cfg_attr(unix, allow(dead_code)));
         assert!(
             !meta_controls_presence(&nested_safe)
-                .expect("nested unrelated metadata should be safe"),
+                .expect("nested unrelated metadata should be safe")
         );
     }
 

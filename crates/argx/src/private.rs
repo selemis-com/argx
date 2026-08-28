@@ -9,6 +9,12 @@
 pub use schemars;
 
 pub(crate) use crate::command::scope::{Named, long as resolve_long, short as resolve_short};
+/// Schema-discovery support named by generated code.
+#[doc(hidden)]
+pub use crate::schema_discovery::{
+    Registry as SchemaRegistry, SchemaCommand, SchemaSubcommands,
+    register_handler as register_schema_handler,
+};
 pub use crate::{
     argv::{ArgvParser, Error, Event},
     command::{
@@ -19,7 +25,7 @@ pub use crate::{
         },
         model::{
             Action, ActionKind, Arg, ArgumentState, Command, Constraint, ConstraintKind, Flag,
-            HELP_ACTION, HelpGroup, HelpSection, Key, key_base,
+            HELP_ACTION, HelpGroup, HelpSection, Key, SCHEMA_ACTION, key_base,
         },
     },
     derive_support::{

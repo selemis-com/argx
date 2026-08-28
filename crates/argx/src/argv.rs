@@ -11,7 +11,9 @@
 
 use std::ffi::OsStr;
 
-use crate::__private::{Action, Arg, Command, Flag, Named, resolve_long, resolve_short};
+use crate::__private::{
+    Action, Arg, Command, Flag, Named, SCHEMA_ACTION, resolve_long, resolve_short,
+};
 
 /// One token binding produced by the raw argument parser.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -105,6 +107,8 @@ pub struct ArgvParser<'t, 'a, 'v> {
     flags_stopped: bool,
     /// Whether a fatal parse error has already been returned.
     done: bool,
+    /// Whether the virtual `--schema` action is available in every selected scope.
+    schema_enabled: bool,
 }
 
 impl<'t, 'a, 'v> ArgvParser<'t, 'a, 'v> {
@@ -113,6 +117,16 @@ impl<'t, 'a, 'v> ArgvParser<'t, 'a, 'v> {
     /// `argv` contains only the command-line arguments; the program name is not included.
     #[must_use]
     pub const fn new(command: &'t Command<'t>, argv: &'a [&'v OsStr]) -> Self {
+        Self::new_with_schema(command, argv, false)
+    }
+
+    /// Creates a parser with optional schema discovery enabled in every command scope.
+    #[must_use]
+    pub const fn new_with_schema(
+        command: &'t Command<'t>,
+        argv: &'a [&'v OsStr],
+        schema_enabled: bool,
+    ) -> Self {
         Self {
             command,
             ancestors: Vec::new(),
@@ -123,6 +137,7 @@ impl<'t, 'a, 'v> ArgvParser<'t, 'a, 'v> {
             bundle_token: &[],
             flags_stopped: false,
             done: false,
+            schema_enabled,
         }
     }
 
@@ -194,6 +209,13 @@ impl<'t, 'a, 'v> ArgvParser<'t, 'a, 'v> {
             .iter()
             .position(|byte| *byte == b'=')
             .map_or((body, None), |index| (&body[..index], Some(&body[index + 1..])));
+        if self.schema_enabled && name == b"schema" {
+            return if attached.is_some() {
+                Err(Error::UnexpectedActionValue { action: &SCHEMA_ACTION })
+            } else {
+                Ok(Event::Action { action: &SCHEMA_ACTION, long: true })
+            };
+        }
         let flag = match resolve_long(self.command, &self.ancestors, name) {
             Some(Named::Action(action)) => {
                 return if attached.is_some() {

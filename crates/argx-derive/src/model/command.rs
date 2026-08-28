@@ -57,10 +57,16 @@ impl Command {
                 "version metadata is only valid on Parser declarations and Subcommand variants",
             ));
         }
+        if !root && attributes.schema {
+            return Err(syn::Error::new_spanned(
+                &input.ident,
+                "schema discovery is only valid on Parser declarations",
+            ));
+        }
         // Validate every invariant the current macro expansion can see. Cross-flatten invariants
         // are emitted later as const assertions over the composed child tables.
         let has_version = attributes.version.is_some() || attributes.long_version.is_some();
-        validate_fields(&fields, has_version)?;
+        validate_fields(&fields, has_version, attributes.schema)?;
         validate_constraints(&fields)?;
         validate_composed_generics(&fields, &input.generics)?;
         validate_value_enum_generics(&fields, &input.generics)?;
@@ -82,6 +88,7 @@ impl Command {
             .collect();
         let version = attributes.version;
         let long_version = attributes.long_version;
+        let schema = attributes.schema;
 
         Ok(Self {
             binding: CommandBinding {
@@ -100,6 +107,7 @@ impl Command {
                 version,
                 long_version,
                 aliases: Vec::new(),
+                schema,
             },
             fields,
         })
@@ -480,7 +488,7 @@ fn validate_short(character: char, span: Span) -> syn::Result<u8> {
 }
 
 /// Validates command-wide invariants that cannot be checked one field at a time.
-fn validate_fields(fields: &[Field], has_version: bool) -> syn::Result<()> {
+fn validate_fields(fields: &[Field], has_version: bool, schema_enabled: bool) -> syn::Result<()> {
     let mut longs: Vec<&str> = Vec::new();
     let mut shorts: Vec<u8> = Vec::new();
     let mut optional_positional_seen = false;
@@ -504,6 +512,12 @@ fn validate_fields(fields: &[Field], has_version: bool) -> syn::Result<()> {
                         return Err(syn::Error::new(
                             field.binding.span,
                             "`--help` is reserved by Argx",
+                        ));
+                    }
+                    if schema_enabled && long == "schema" {
+                        return Err(syn::Error::new(
+                            field.binding.span,
+                            "`--schema` is reserved when schema discovery is enabled",
                         ));
                     }
                     if has_version && long == "version" {

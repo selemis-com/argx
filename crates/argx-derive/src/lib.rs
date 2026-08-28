@@ -16,6 +16,7 @@
 mod attrs;
 mod case;
 mod codegen;
+mod command_schema;
 mod crate_name;
 mod handler;
 mod key;
@@ -91,10 +92,11 @@ pub fn schema(attribute: TokenStream, input: TokenStream) -> TokenStream {
 
 /// Associates a handler with one directly invocable command type.
 ///
-/// The handler remains an ordinary Rust function. Its concrete `Result<Success, Error>` return
-/// type defines the command's success and error JSON Schemas; both types must implement
-/// Schemars' `JsonSchema` trait. The attribute records metadata only and does not dispatch the
-/// function.
+/// On a free function, the attribute names the command type: `#[argx::handler(GetCommand)]`. On an
+/// inherent impl, it names the method containing the execution path: `#[argx::handler(run)]`.
+/// The concrete `Result<Success, Error>` return type defines the command's result and error JSON
+/// Schemas; both types must implement Schemars' `JsonSchema` trait. The attribute records schema
+/// association only and does not dispatch the handler.
 #[proc_macro_attribute]
 pub fn handler(attribute: TokenStream, input: TokenStream) -> TokenStream {
     handler::handler(
@@ -115,6 +117,17 @@ pub fn handler(attribute: TokenStream, input: TokenStream) -> TokenStream {
 pub fn derive_subcommand(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     expand_subcommand(&input).unwrap_or_else(syn::Error::into_compile_error).into()
+}
+
+/// Derives static schema traversal for a structural command group.
+///
+/// On a struct, `CommandSchema` requires one `#[argx(subcommand)]` field. On an enum it mirrors a
+/// `Subcommand` declaration and requires every variant to carry one concrete `Args` payload. Leaf
+/// commands do not derive this trait; `#[argx::handler(...)]` supplies their schema association.
+#[proc_macro_derive(CommandSchema, attributes(argx))]
+pub fn derive_command_schema(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    command_schema::command_schema(&input).unwrap_or_else(syn::Error::into_compile_error).into()
 }
 
 /// Builds the semantic model and emits one command declaration.

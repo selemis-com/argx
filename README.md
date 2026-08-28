@@ -97,10 +97,25 @@ for the complete grammar, precedence rules, derive restrictions, and error behav
 
 Argx exposes `#[argx::schema]` as a thin Schemars-backed attribute. It derives Schemars'
 `JsonSchema` through Argx, so downstream users do not need to depend on Schemars directly.
+Schema-enabled command trees keep structural traversal separate from executable handlers:
 
 ```rust
+use argx::Parser as _;
+
+#[derive(argx::Parser)]
+#[argx(name = "acme", schema)]
+struct Cli {
+    #[argx(subcommand)]
+    command: Commands,
+}
+
+#[derive(argx::Subcommand, argx::CommandSchema)]
+enum Commands {
+    Get(GetCommand),
+}
+
 #[derive(argx::Args)]
-struct GetArgs {
+struct GetCommand {
     id: String,
 }
 
@@ -114,17 +129,40 @@ enum GetError {
     NotFound,
 }
 
-#[argx::handler(GetArgs)]
-fn get(args: GetArgs) -> Result<GetOutput, GetError> {
-    Ok(GetOutput { id: args.id })
+#[argx::handler(GetCommand)]
+fn get(command: GetCommand) -> Result<GetOutput, GetError> {
+    Ok(GetOutput { id: command.id })
 }
 ```
 
-`#[argx::schema]` delegates schema generation to Schemars, including its Serde integration and
-`#[schemars(...)]` customization. Argx owns the CLI-specific side: invocation values are projected
-from its normalized command model, and handlers associate invocable commands with their result and
-error schemas. Together those form the invocation/result/error schema set for one executable
-command. Public schema discovery is intentionally separate from this layer.
+`#[argx::schema]` delegates Rust data-model schema generation to Schemars. Argx owns invocation
+schema projection and static command topology. `CommandSchema` is used only on structural command
+groups; executable leaves are associated with their result and error schemas by `#[argx::handler]`.
+For a zero-argument executable command, use an empty `Args` struct rather than a unit subcommand
+variant so the leaf has a concrete Rust type.
+
+A parser with `#[argx(schema)]` exposes both discovery forms:
+
+```text
+acme schema get
+acme get object-7 --schema
+```
+
+Both emit the same command document with the invocation, result, and error schemas. Requesting a
+structural path such as `acme schema` emits the command's invocation schema and summaries of its
+immediate children. Handler associations are traversed statically from the command types into a
+short-lived local registry; Argx does not use linker inventory or global registration.
+
+The handler may also stay on the inherent implementation that owns execution:
+
+```rust
+#[argx::handler(run)]
+impl GetCommand {
+    fn run(self) -> Result<GetOutput, GetError> {
+        Ok(GetOutput { id: self.id })
+    }
+}
+```
 
 ## Examples
 

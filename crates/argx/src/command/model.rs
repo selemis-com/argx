@@ -61,6 +61,8 @@ pub struct Action<'a> {
 pub enum ActionKind<'a> {
     /// Render generated help for the selected command scope.
     Help,
+    /// Render machine-readable schema for the selected command scope.
+    Schema,
     /// Render command version information.
     Version {
         /// Text rendered when the short spelling is used.
@@ -103,6 +105,16 @@ pub static HELP_ACTION: Action<'static> = Action {
     longs: &["help"],
     shorts: b"h",
     kind: ActionKind::Help,
+};
+
+/// Schema discovery is injected dynamically only for schema-enabled parser roots.
+pub static SCHEMA_ACTION: Action<'static> = Action {
+    name: "schema",
+    diagnostic: "--schema",
+    help: "Print machine-readable schema",
+    longs: &["schema"],
+    shorts: b"",
+    kind: ActionKind::Schema,
 };
 
 /// Static command semantics shared by parsing, help generation, and contract discovery.

@@ -515,6 +515,37 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
             quote!(<#ty as #facade::__private::Subcommands>::COMMANDS)
         },
     );
+    let schema_registry = if command.binding.root && command.semantics.schema {
+        subcommand.map_or_else(
+            || {
+                quote! {
+                    fn schema_registry() -> ::std::option::Option<#facade::__private::SchemaRegistry> {
+                        let mut registry = #facade::__private::SchemaRegistry::new();
+                        <Self as #facade::__private::SchemaCommand>::register_schema_commands(
+                            Self::COMMAND,
+                            &mut registry,
+                        );
+                        ::std::option::Option::Some(registry)
+                    }
+                }
+            },
+            |(_, field)| {
+                let ty = &field.binding.ty;
+                quote! {
+                    fn schema_registry() -> ::std::option::Option<#facade::__private::SchemaRegistry> {
+                        let mut registry = #facade::__private::SchemaRegistry::new();
+                        <#ty as #facade::__private::SchemaSubcommands>::register_schema_subcommands(
+                            Self::COMMAND.subcommands,
+                            &mut registry,
+                        );
+                        ::std::option::Option::Some(registry)
+                    }
+                }
+            },
+        )
+    } else {
+        TokenStream::new()
+    };
     let parser_impl = command.binding.root.then(|| {
         quote! {
             impl #impl_generics #facade::Parser for #ident #ty_generics #where_clause {}
@@ -575,6 +606,8 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                 type Partial = #partial_type;
 
                 const COMMAND: &'static #facade::__private::Command<'static> = &ARGX_COMMAND;
+
+                #schema_registry
 
                 fn start() -> Self::Partial {
                     #partial_value

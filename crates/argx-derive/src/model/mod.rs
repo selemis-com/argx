@@ -60,6 +60,8 @@ pub(crate) struct CommandSemantics {
     pub long_version: Option<syn::Expr>,
     /// Hidden command spellings accepted in addition to the canonical name.
     pub aliases: Vec<String>,
+    /// Whether this root parser exposes machine-readable schema discovery.
+    pub schema: bool,
 }
 
 /// One user-authored command help section.
@@ -713,6 +715,31 @@ mod tests {
             true,
         );
         assert_eq!(error, "`--help` is reserved by Argx");
+
+        let error = command_error(
+            parse_quote! {
+                #[argx(schema)]
+                struct Cli {
+                    #[argx(long = "schema")]
+                    value: Option<String>,
+                }
+            },
+            true,
+        );
+        assert_eq!(error, "`--schema` is reserved when schema discovery is enabled");
+
+        assert!(
+            Command::from_input(
+                &parse_quote! {
+                    struct Cli {
+                        #[argx(long = "schema")]
+                        value: Option<String>,
+                    }
+                },
+                true,
+            )
+            .is_ok()
+        );
 
         let error = command_error(
             parse_quote! {

@@ -34,6 +34,12 @@ impl Subcommand {
         let mut variants = Vec::with_capacity(data.variants.len());
         for variant in &data.variants {
             let attributes = attrs::variant(&variant.attrs)?;
+            if attributes.schema {
+                return Err(syn::Error::new_spanned(
+                    &variant.ident,
+                    "schema discovery is only valid on Parser declarations",
+                ));
+            }
             let rust_name = ident_name(&variant.ident);
             let name = attributes.name.unwrap_or_else(|| case::to_kebab(&rust_name));
             let docs = attrs::doc_help(&variant.attrs);
@@ -104,6 +110,7 @@ impl Subcommand {
                     version,
                     long_version,
                     aliases,
+                    schema: false,
                 },
             });
         }
@@ -154,6 +161,9 @@ fn validate_variant_generics(variants: &[Variant], generics: &syn::Generics) -> 
 
 /// Validates one command-line spelling used to select a subcommand.
 fn validate_subcommand_name(name: &str, span: Span) -> syn::Result<()> {
+    if name == "schema" {
+        return Err(syn::Error::new(span, "`schema` is reserved by Argx"));
+    }
     if name.is_empty()
         || name.starts_with('-')
         || name.contains('=')

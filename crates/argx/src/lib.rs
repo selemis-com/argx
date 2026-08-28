@@ -131,9 +131,10 @@
 //!
 //! Struct declarations accept `name = "..."` and `about = "..."`. `name` replaces the inferred
 //! kebab-case command name; `about` replaces documentation-derived descriptive text. A `Parser`
-//! declaration may additionally use `version = expression` and `long_version = expression`. If
-//! only one version expression is supplied, Argx uses it for both `-V` and `--version`. Version
-//! metadata is not valid on `Args`.
+//! declaration may additionally use `version = expression`, `long_version = expression`, and the
+//! marker `schema`. If only one version expression is supplied, Argx uses it for both `-V` and
+//! `--version`. `schema` enables machine-readable discovery for a command tree whose structural
+//! groups derive `CommandSchema`. Version and schema metadata are not valid on `Args`.
 //!
 //! Command aliases are intentionally not accepted on structs: aliases belong to selectable
 //! `Subcommand` variants. An `Args` declaration has no standalone process entry point. Flattening
@@ -303,7 +304,7 @@
 //! }
 //! ```
 //!
-//! # Help and version metadata
+//! # Help, version, and schema discovery
 //!
 //! Help is generated from the same static command model used for parsing. Every command scope has
 //! built-in `-h` and `--help`. A root command or subcommand variant that declares `version` or
@@ -321,10 +322,16 @@
 //! replaces a field's derived one-line summary. Hidden flag and subcommand aliases are accepted by
 //! parsing but omitted from generated help so help presents one canonical interface.
 //!
-//! [`Parser::render_help`] renders the root scope directly. During parsing, help and version are
-//! represented as [`Error::DisplayHelp`] and [`Error::DisplayVersion`] terminal actions. The
-//! process-oriented parsing methods print those actions to stdout and exit successfully. Other
-//! parse/binding errors go to stderr and exit with status 2.
+//! A parser marked `#[argx(schema)]` additionally exposes `--schema` in every selected command
+//! scope and the root `schema [COMMAND]...` pseudo-command. Structural command groups derive
+//! `CommandSchema`; executable leaves are associated with result and error schemas through
+//! `#[argx::handler(...)]`.
+//!
+//! [`Parser::render_help`] renders the root scope directly. During parsing, help, version, and
+//! schema discovery are represented as [`Error::DisplayHelp`], [`Error::DisplayVersion`], and
+//! [`Error::DisplaySchema`] terminal actions. The process-oriented parsing methods print those
+//! actions to stdout and exit successfully. Other parse/binding errors go to stderr and exit with
+//! status 2.
 //!
 //! # Shell completions
 //!
@@ -404,8 +411,8 @@
 //! - nested `Option` / `Vec` wrappers outside the recognized shapes are unsupported;
 //! - `value_enum` fields cannot depend on the containing command's generic parameters because their
 //!   vocabulary is part of static command metadata;
-//! - reserved built-in help/version spellings and invalid composed layouts are rejected during
-//!   derivation or const-time composition.
+//! - reserved built-in help/version/schema spellings and invalid composed layouts are rejected
+//!   during derivation or const-time composition.
 //!
 //! These restrictions keep generated metadata statically coherent and make unsupported behavior a
 //! compile-time error.
@@ -418,8 +425,8 @@
 //!
 //! # Cargo features
 //!
-//! The default `derive` feature exports the `Parser`, `Args`, `Subcommand`, and `ValueEnum` derives
-//! plus the `handler` and `schema` attribute macros.
+//! The default `derive` feature exports the `Parser`, `Args`, `Subcommand`, `CommandSchema`, and
+//! `ValueEnum` derives plus the `handler` and `schema` attribute macros.
 
 #![doc(
     html_logo_url = "https://raw.githubusercontent.com/selemis-com/argx/master/.github/assets/logo.jpg",
@@ -436,6 +443,7 @@ mod derive_support;
 mod error;
 mod help;
 mod invocation_schema;
+mod schema_discovery;
 mod value_enum;
 
 use std::ffi::{OsStr, OsString};
@@ -463,7 +471,7 @@ pub use derive_support::traits::HandlerSchemaSource;
 extern crate self as argx;
 
 #[cfg(feature = "derive")]
-pub use argx_derive::{Args, Parser, Subcommand, ValueEnum, handler, schema};
+pub use argx_derive::{Args, CommandSchema, Parser, Subcommand, ValueEnum, handler, schema};
 
 /// Marks a reusable argument group derived with `#[derive(Args)]`.
 ///
@@ -501,8 +509,9 @@ pub trait Args: Sized + __private::CommandArgs {}
 pub trait Parser: Sized + __private::CommandArgs {
     /// Parses the current process arguments, excluding the program name.
     ///
-    /// Help and version requests are printed to standard output and terminate successfully. Parse
-    /// failures are printed to standard error and terminate the process with status 2.
+    /// Help, version, and schema requests are printed to standard output and terminate
+    /// successfully. Parse failures are printed to standard error and terminate the process with
+    /// status 2.
     fn parse() -> Self {
         if completion::handle_process::<Self>() {
             std::process::exit(0);
@@ -514,17 +523,18 @@ pub trait Parser: Sized + __private::CommandArgs {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::DisplayHelp`] or [`Error::DisplayVersion`] when the corresponding built-in
-    /// action is requested, or an error when argv cannot be bound to this command or a bound value
-    /// cannot be converted to its Rust field type.
+    /// Returns [`Error::DisplayHelp`], [`Error::DisplayVersion`], or [`Error::DisplaySchema`] when
+    /// the corresponding built-in action is requested, or an error when argv cannot be bound to
+    /// this command or a bound value cannot be converted to its Rust field type.
     fn try_parse() -> Result<Self, Error> {
         Self::try_parse_args(std::env::args_os().skip(1))
     }
 
     /// Parses a complete argv sequence whose first item is the program name.
     ///
-    /// Help and version requests are printed to standard output and terminate successfully. Parse
-    /// failures are printed to standard error and terminate the process with status 2.
+    /// Help, version, and schema requests are printed to standard output and terminate
+    /// successfully. Parse failures are printed to standard error and terminate the process with
+    /// status 2.
     fn parse_from<I, T>(argv: I) -> Self
     where
         I: IntoIterator<Item = T>,
@@ -556,9 +566,9 @@ pub trait Parser: Sized + __private::CommandArgs {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::DisplayHelp`] or [`Error::DisplayVersion`] when the corresponding built-in
-    /// action is requested, or an error when argv cannot be bound to this command or a bound value
-    /// cannot be converted to its Rust field type.
+    /// Returns [`Error::DisplayHelp`], [`Error::DisplayVersion`], or [`Error::DisplaySchema`] when
+    /// the corresponding built-in action is requested, or an error when argv cannot be bound to
+    /// this command or a bound value cannot be converted to its Rust field type.
     fn try_parse_from<I, T>(argv: I) -> Result<Self, Error>
     where
         I: IntoIterator<Item = T>,
@@ -571,8 +581,9 @@ pub trait Parser: Sized + __private::CommandArgs {
 
     /// Parses arguments that do not include a program name.
     ///
-    /// Help and version requests are printed to standard output and terminate successfully. Parse
-    /// failures are printed to standard error and terminate the process with status 2.
+    /// Help, version, and schema requests are printed to standard output and terminate
+    /// successfully. Parse failures are printed to standard error and terminate the process with
+    /// status 2.
     fn parse_args<I, T>(argv: I) -> Self
     where
         I: IntoIterator<Item = T>,
@@ -604,9 +615,9 @@ pub trait Parser: Sized + __private::CommandArgs {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::DisplayHelp`] or [`Error::DisplayVersion`] when the corresponding built-in
-    /// action is requested, or an error when argv cannot be bound to this command or a bound value
-    /// cannot be converted to its Rust field type.
+    /// Returns [`Error::DisplayHelp`], [`Error::DisplayVersion`], or [`Error::DisplaySchema`] when
+    /// the corresponding built-in action is requested, or an error when argv cannot be bound to
+    /// this command or a bound value cannot be converted to its Rust field type.
     fn try_parse_args<I, T>(argv: I) -> Result<Self, Error>
     where
         I: IntoIterator<Item = T>,
@@ -614,7 +625,13 @@ pub trait Parser: Sized + __private::CommandArgs {
     {
         let owned: Vec<OsString> = argv.into_iter().map(Into::into).collect();
         let refs: Vec<&OsStr> = owned.iter().map(OsString::as_os_str).collect();
-        binding::parse_refs::<Self>(&refs)
+        let Some(registry) = <Self as __private::CommandArgs>::schema_registry() else {
+            return binding::parse_refs::<Self>(&refs);
+        };
+        if let Some(error) = schema_discovery::pseudo_command(Self::COMMAND, &refs, &registry) {
+            return Err(error);
+        }
+        binding::parse_refs_with_schema::<Self>(&refs, &registry)
     }
 
     /// Handles a dynamic shell-completion request for the current process.
@@ -668,7 +685,10 @@ pub trait Parser: Sized + __private::CommandArgs {
     /// ```
     #[must_use]
     fn render_help() -> String {
-        help::render(&[Self::COMMAND])
+        help::render_with_schema(
+            &[Self::COMMAND],
+            <Self as __private::CommandArgs>::schema_registry().is_some(),
+        )
     }
 }
 

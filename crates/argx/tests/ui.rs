@@ -55,6 +55,7 @@ error: `value_enum` takes no value
             "argx",
             snapbox::str![[r#"
 error[E0119]: conflicting implementations of trait `HandlerSchemaSource` for type `Command`
+error[E0119]: conflicting implementations of trait `argx::__private::SchemaCommand` for type `Command`
 
 "#]],
         );
@@ -222,7 +223,7 @@ error[E0308]: mismatched types
             "argx",
             &[
                 (
-                    "#[argx::handler] requires an invocable command type, for example #[argx::handler(GetArgs)]",
+                    "#[argx::handler] requires a command type or inherent handler method",
                     "#[argx::handler]",
                 ),
                 ("Argx handlers must be non-generic", "fn generic_handler<T>()"),
@@ -235,11 +236,11 @@ error[E0308]: mismatched types
                     "fn opaque_result() -> impl Sized",
                 ),
                 (
-                    "unsupported Argx handler arguments; expected only #[argx::handler(CommandType)]",
+                    "unsupported Argx handler arguments; expected one command type",
                     "#[argx::handler(UnsupportedArguments, error = ())]",
                 ),
                 (
-                    "#[argx::handler(CommandType)] can only be applied to a free function",
+                    "#[argx::handler(...)] can only be applied to a free function or inherent impl",
                     "#[argx::handler(NotAFunction)]",
                 ),
             ],

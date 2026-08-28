@@ -9,7 +9,10 @@
 use std::fmt::Write as _;
 
 use crate::{
-    __private::{Action, Arg, Command, Flag, HelpGroup, Key, Named, resolve_long, resolve_short},
+    __private::{
+        Action, Arg, Command, Flag, HelpGroup, Key, Named, SCHEMA_ACTION, resolve_long,
+        resolve_short,
+    },
     error::display_bytes,
 };
 
@@ -35,7 +38,13 @@ struct VisibleFlag<'a> {
 ///
 /// Required ancestor arguments remain attached to the scope where they must appear, while only the
 /// selected command contributes positional rows and child-command listings.
+#[cfg(test)]
 pub(crate) fn render(path: &[&Command<'_>]) -> String {
+    render_with_schema(path, false)
+}
+
+/// Renders help with the virtual schema action when discovery is enabled for the root parser.
+pub(crate) fn render_with_schema(path: &[&Command<'_>], schema_enabled: bool) -> String {
     let Some(&command) = path.last() else {
         return String::new();
     };
@@ -93,13 +102,16 @@ pub(crate) fn render(path: &[&Command<'_>]) -> String {
 
     if !command.subcommands.is_empty() {
         output.push_str("\nCommands:\n");
-        let rows = command
+        let mut rows = command
             .subcommands
             .iter()
             .map(|command| {
                 (display_bytes(command.name.as_bytes()), command.about.unwrap_or("").to_owned())
             })
             .collect::<Vec<_>>();
+        if schema_enabled && path.len() == 1 {
+            rows.push(("schema".to_owned(), "Print machine-readable schema".to_owned()));
+        }
         write_rows(&mut output, &rows);
     }
 
@@ -112,6 +124,9 @@ pub(crate) fn render(path: &[&Command<'_>]) -> String {
     rows.extend(
         command.actions.iter().map(|action| (action_label(action), action.help.to_owned())),
     );
+    if schema_enabled {
+        rows.push((action_label(&SCHEMA_ACTION), SCHEMA_ACTION.help.to_owned()));
+    }
     write_rows(&mut output, &rows);
 
     for (heading, rows) in grouped_rows {

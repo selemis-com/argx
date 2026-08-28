@@ -8,17 +8,28 @@
 
 use serde_json::{Map, Value};
 
-use crate::command::model::{Command, ConstraintKind, Key};
+use crate::command::{
+    model::{Command, ConstraintKind, Flag, Key},
+    scope::{Named, long as resolve_long, short as resolve_short},
+};
 
 /// JSON Schema dialect used by Argx invocation schemas.
 const DRAFT_2020_12: &str = "https://json-schema.org/draft/2020-12/schema";
 
 /// Projects one normalized command context into a Draft 2020-12 JSON Schema.
 pub(crate) fn invocation_schema(command: &Command<'_>) -> schemars::Schema {
+    invocation_schema_for_path(&[command])
+}
+
+/// Projects one selected command path, including inherited globals visible in the selected scope.
+pub(crate) fn invocation_schema_for_path(path: &[&Command<'_>]) -> schemars::Schema {
+    let Some(&command) = path.last() else {
+        return schemars::Schema::from(Map::new());
+    };
     let mut properties = Map::new();
     let mut required = Vec::new();
 
-    for flag in command.flags {
+    for (flag, name) in visible_flags(path) {
         let item = if flag.takes_value {
             lexical_value_schema(flag.accepted_values)
         } else {
@@ -26,10 +37,10 @@ pub(crate) fn invocation_schema(command: &Command<'_>) -> schemars::Schema {
         };
         let mut schema = if flag.repeatable { repeated_schema(item) } else { item };
         set_description(&mut schema, flag.help);
-        properties.insert(flag.diagnostic.to_owned(), schema);
         if flag.required {
-            required.push(Value::String(flag.diagnostic.to_owned()));
+            required.push(Value::String(name.clone()));
         }
+        properties.insert(name, schema);
     }
 
     for arg in command.args {
@@ -59,6 +70,57 @@ pub(crate) fn invocation_schema(command: &Command<'_>) -> schemars::Schema {
     add_constraints(&mut root, command);
 
     schemars::Schema::from(root)
+}
+
+/// Collects canonical flag spellings accepted in the selected command scope.
+fn visible_flags<'a>(path: &[&'a Command<'a>]) -> Vec<(&'a Flag<'a>, String)> {
+    let Some((&command, ancestors)) = path.split_last() else {
+        return Vec::new();
+    };
+    let mut flags = command
+        .flags
+        .iter()
+        .copied()
+        .map(|flag| (flag, flag.diagnostic.to_owned()))
+        .collect::<Vec<_>>();
+
+    for (scope, ancestor) in ancestors.iter().enumerate().rev() {
+        for &flag in ancestor.flags.iter().filter(|flag| flag.global) {
+            if let Some(spelling) = visible_ancestor_spelling(command, ancestors, scope, flag) {
+                flags.push((flag, spelling));
+            }
+        }
+    }
+
+    flags
+}
+
+/// Returns one canonical spelling that remains visible for an inherited global flag.
+fn visible_ancestor_spelling(
+    command: &Command<'_>,
+    ancestors: &[&Command<'_>],
+    scope: usize,
+    flag: &Flag<'_>,
+) -> Option<String> {
+    for &long in flag.longs {
+        if matches!(
+            resolve_long(command, ancestors, long.as_bytes()),
+            Some(Named::Flag { flag: resolved, scope: resolved_scope })
+                if resolved_scope == scope && std::ptr::eq(resolved, flag)
+        ) {
+            return Some(format!("--{long}"));
+        }
+    }
+    for &short in flag.shorts {
+        if matches!(
+            resolve_short(command, ancestors, short),
+            Some(Named::Flag { flag: resolved, scope: resolved_scope })
+                if resolved_scope == scope && std::ptr::eq(resolved, flag)
+        ) {
+            return Some(format!("-{}", char::from(short)));
+        }
+    }
+    None
 }
 
 /// Builds the schema for one argv value, optionally constrained to a finite vocabulary.
@@ -169,7 +231,7 @@ fn conflict_schema(source: &str, target: &str) -> Value {
 
 #[cfg(test)]
 mod tests {
-    use super::invocation_schema;
+    use super::{invocation_schema, invocation_schema_for_path};
     use crate::command::model::{Arg, Command, Constraint, ConstraintKind, Flag};
 
     #[test]
@@ -262,5 +324,55 @@ mod tests {
             schema["allOf"][0]["not"]["required"],
             serde_json::json!(["--force", "--dry-run"]),
         );
+    }
+
+    #[test]
+    fn selected_scope_includes_visible_inherited_globals() {
+        let root_verbose = Flag {
+            key: 20,
+            name: "verbose",
+            diagnostic: "--verbose",
+            longs: &["verbose"],
+            shorts: b"v",
+            global: true,
+            ..Flag::BOOL
+        };
+        let profile = Flag {
+            key: 21,
+            name: "profile",
+            diagnostic: "--profile",
+            longs: &["profile"],
+            global: true,
+            ..Flag::VALUE
+        };
+        let region = Flag {
+            key: 22,
+            name: "region",
+            diagnostic: "--region",
+            longs: &["region"],
+            global: true,
+            ..Flag::VALUE
+        };
+        let local_verbose = Flag {
+            key: 23,
+            name: "verbose",
+            diagnostic: "--verbose",
+            longs: &["verbose"],
+            ..Flag::BOOL
+        };
+        let root_flags = [&root_verbose, &profile];
+        let mid_flags = [&region];
+        let leaf_flags = [&local_verbose];
+        let leaf = Command { name: "leaf", flags: &leaf_flags, ..Command::EMPTY };
+        let mid = Command { name: "outer", flags: &mid_flags, ..Command::EMPTY };
+        let root = Command { name: "tool", flags: &root_flags, ..Command::EMPTY };
+
+        let schema = serde_json::to_value(invocation_schema_for_path(&[&root, &mid, &leaf]))
+            .expect("schema should serialize");
+
+        assert_eq!(schema["properties"]["--verbose"]["const"], true);
+        assert_eq!(schema["properties"]["-v"]["const"], true);
+        assert_eq!(schema["properties"]["--profile"]["type"], "string");
+        assert_eq!(schema["properties"]["--region"]["type"], "string");
     }
 }
