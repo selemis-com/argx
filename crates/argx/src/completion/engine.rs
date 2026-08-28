@@ -16,7 +16,7 @@ use crate::{
         routes_negative_number_to_arg,
     },
     command::{
-        model::{Action, Arg, Command, ConstraintKind, Flag, Key},
+        model::{Action, Arg, Command, ConstraintKind, Flag, Key, SCHEMA_ACTION},
         scope::{Named, long as resolve_long, short as resolve_short},
     },
     derive_support::traits::CommandArgs,
@@ -49,7 +49,7 @@ where
             let Ok(spans) = serde_json::from_str::<Vec<String>>(&encoded) else {
                 return true;
             };
-            complete_spans(T::COMMAND, &spans)
+            complete_spans_with_schema(T::COMMAND, &spans, T::schema_registry().is_some())
         }
         Err(env::VarError::NotUnicode(_)) => return true,
         Err(env::VarError::NotPresent) => {
@@ -59,7 +59,7 @@ where
             let Some(line) = line.to_str() else {
                 return true;
             };
-            complete_line(T::COMMAND, line)
+            complete_line_with_schema(T::COMMAND, line, T::schema_registry().is_some())
         }
     };
 
@@ -94,6 +94,8 @@ struct Position<'t> {
     awaiting_value: Option<&'t Flag<'t>>,
     /// Semantic argument keys supplied before the cursor.
     given: HashSet<Key>,
+    /// Whether machine-readable schema discovery is enabled for the parser root.
+    schema_enabled: bool,
 }
 
 impl<'t> Position<'t> {
@@ -104,13 +106,33 @@ impl<'t> Position<'t> {
 }
 
 /// Completes one shell line already truncated at the cursor.
+#[cfg(test)]
 fn complete_line<'t>(root: &'t Command<'t>, line: &str) -> Vec<Candidate<'t>> {
+    complete_line_with_schema(root, line, false)
+}
+
+/// Completes one shell line with optional schema-discovery candidates.
+fn complete_line_with_schema<'t>(
+    root: &'t Command<'t>,
+    line: &str,
+    schema_enabled: bool,
+) -> Vec<Candidate<'t>> {
     let split = split_line(line);
-    complete_split(root, &split)
+    complete_split(root, &split, schema_enabled)
 }
 
 /// Completes Nushell's already-tokenized external-completer spans.
+#[cfg(test)]
 fn complete_spans<'t>(root: &'t Command<'t>, spans: &[String]) -> Vec<Candidate<'t>> {
+    complete_spans_with_schema(root, spans, false)
+}
+
+/// Completes Nushell spans with optional schema-discovery candidates.
+fn complete_spans_with_schema<'t>(
+    root: &'t Command<'t>,
+    spans: &[String],
+    schema_enabled: bool,
+) -> Vec<Candidate<'t>> {
     let Some((prefix, completed)) = spans.split_last() else {
         return Vec::new();
     };
@@ -121,16 +143,24 @@ fn complete_spans<'t>(root: &'t Command<'t>, spans: &[String]) -> Vec<Candidate<
         if prefix.chars().all(char::is_whitespace) { String::new() } else { prefix.clone() };
 
     let split = Split { argv, prefix, current_index };
-    complete_split(root, &split)
+    complete_split(root, &split, schema_enabled)
 }
 
 /// Completes one normalized cursor position independent of its shell transport.
-fn complete_split<'t>(root: &'t Command<'t>, split: &Split) -> Vec<Candidate<'t>> {
+fn complete_split<'t>(
+    root: &'t Command<'t>,
+    split: &Split,
+    schema_enabled: bool,
+) -> Vec<Candidate<'t>> {
     if split.current_index == 0 {
         return Vec::new();
     }
 
-    let Some(position) = walk(root, &split.argv) else {
+    if schema_enabled && split.argv.first().is_some_and(|word| word == "schema") {
+        return schema_path_candidates(root, &split.argv[1..], &split.prefix);
+    }
+
+    let Some(position) = walk(root, &split.argv, schema_enabled) else {
         return Vec::new();
     };
 
@@ -160,15 +190,39 @@ fn complete_split<'t>(root: &'t Command<'t>, split: &Split) -> Vec<Candidate<'t>
     candidates(&position, &split.prefix)
 }
 
+/// Completes command-path segments following the built-in `schema` pseudo-command.
+fn schema_path_candidates<'t>(
+    root: &'t Command<'t>,
+    completed: &[String],
+    prefix: &str,
+) -> Vec<Candidate<'t>> {
+    let mut command = root;
+    for segment in completed {
+        let Some(child) = command.subcommands.iter().copied().find(|child| {
+            child.name == segment || child.aliases.iter().any(|alias| *alias == segment)
+        }) else {
+            return Vec::new();
+        };
+        command = child;
+    }
+
+    let mut candidates = Vec::new();
+    let mut seen = HashSet::new();
+    for &child in command.subcommands {
+        push_candidate(&mut candidates, &mut seen, prefix, child.name, child.about);
+    }
+    candidates
+}
+
 /// Walks complete argv words through the real raw parser.
 ///
 /// A missing detached flag value is usable only when the parser reached the physical end of the
 /// completed words. If a later flag-like token caused the error, the completed prefix is already
 /// invalid and there is no sound completion position. Any other raw parse error likewise returns
 /// `None`.
-fn walk<'t>(root: &'t Command<'t>, argv: &[String]) -> Option<Position<'t>> {
+fn walk<'t>(root: &'t Command<'t>, argv: &[String], schema_enabled: bool) -> Option<Position<'t>> {
     let refs: Vec<&OsStr> = argv.iter().map(|value| OsStr::new(value.as_str())).collect();
-    let mut parser = ArgvParser::new(root, &refs);
+    let mut parser = ArgvParser::new_with_schema(root, &refs, schema_enabled);
     let mut given = HashSet::new();
     let mut awaiting_value = None;
 
@@ -196,6 +250,7 @@ fn walk<'t>(root: &'t Command<'t>, argv: &[String]) -> Option<Position<'t>> {
         flags_stopped: parser.flags_stopped(),
         awaiting_value,
         given,
+        schema_enabled,
     })
 }
 
@@ -256,6 +311,15 @@ fn candidates<'t>(position: &Position<'t>, prefix: &str) -> Vec<Candidate<'t>> {
     let mut seen = HashSet::new();
 
     if !position.flags_stopped && !prefix.starts_with('-') {
+        if position.schema_enabled && position.ancestors.is_empty() {
+            push_candidate(
+                &mut candidates,
+                &mut seen,
+                prefix,
+                "schema",
+                Some("Inspect machine-readable command schema"),
+            );
+        }
         for &command in position.command.subcommands {
             push_candidate(&mut candidates, &mut seen, prefix, command.name, command.about);
         }
@@ -268,6 +332,28 @@ fn candidates<'t>(position: &Position<'t>, prefix: &str) -> Vec<Candidate<'t>> {
     }
 
     if flags_possible(position, prefix) {
+        if position.schema_enabled {
+            for &long in SCHEMA_ACTION.longs {
+                push_option(
+                    &mut candidates,
+                    &mut seen,
+                    prefix,
+                    "--",
+                    long,
+                    Some(SCHEMA_ACTION.help),
+                );
+            }
+            for &short in SCHEMA_ACTION.shorts {
+                let spelling = format!("-{}", char::from(short));
+                push_owned_candidate(
+                    &mut candidates,
+                    &mut seen,
+                    prefix,
+                    spelling,
+                    Some(SCHEMA_ACTION.help),
+                );
+            }
+        }
         for &action in position.command.actions {
             for &long in action.longs {
                 if resolves_action_long(position, action, long) {
@@ -702,6 +788,13 @@ mod tests {
             .collect()
     }
 
+    fn schema_values(line: &str) -> Vec<String> {
+        complete_line_with_schema(<Cli as CommandArgs>::COMMAND, line, true)
+            .into_iter()
+            .map(|candidate| candidate.value)
+            .collect()
+    }
+
     #[test]
     fn split_reconstructs_quoted_completed_words_and_current_prefix() {
         assert_eq!(
@@ -775,6 +868,13 @@ mod tests {
             .collect::<Vec<_>>();
         assert!(candidates.contains(&"--json".into()));
         assert!(candidates.contains(&"--help".into()));
+    }
+
+    #[test]
+    fn schema_completion_offers_short_and_long_actions() {
+        let candidates = schema_values("tool -");
+        assert!(candidates.contains(&"-S".into()));
+        assert!(candidates.contains(&"--schema".into()));
     }
 
     #[test]
@@ -905,6 +1005,7 @@ mod tests {
             flags_stopped: false,
             awaiting_value: None,
             given: HashSet::new(),
+            schema_enabled: false,
         };
         let mut candidates = Vec::new();
         let mut seen = HashSet::new();

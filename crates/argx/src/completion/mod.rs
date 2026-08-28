@@ -25,11 +25,6 @@ use std::{fmt, str::FromStr};
 
 pub(crate) use engine::handle_process;
 
-use crate::type_contract::{
-    TypeContractValue, TypeDefinitionKind, TypeVariantContract, TypeVariantKind,
-    resolve::{TypeContractSource, TypeKey, TypeResolver},
-};
-
 /// Environment marker used only by generated completion adapters.
 const PROTOCOL_ENV: &str = "ARGX_COMPLETE";
 /// Current private completion-protocol version.
@@ -101,39 +96,6 @@ impl FromStr for Shell {
     }
 }
 
-impl TypeContractSource for Shell {
-    fn resolve_type(resolver: &mut TypeResolver) -> TypeContractValue {
-        resolver.named(
-            Self::type_key(),
-            "Shell",
-            Some(
-                "Shell completion target. CLI spellings are `bash`, `fish`, `nushell`, and `zsh`.",
-            ),
-            |_resolver| TypeDefinitionKind::Enum {
-                variants: [
-                    ("Bash", "GNU Bash."),
-                    ("Fish", "Fish shell."),
-                    ("Nushell", "Nushell."),
-                    ("Zsh", "Z shell."),
-                ]
-                .into_iter()
-                .map(|(name, description)| TypeVariantContract {
-                    name: name.to_owned(),
-                    description: Some(description.to_owned()),
-                    kind: TypeVariantKind::Unit,
-                })
-                .collect(),
-            },
-        )
-    }
-
-    fn type_key() -> TypeKey {
-        TypeKey::new::<Self>(Vec::new(), Vec::new())
-    }
-}
-
-impl crate::ContractType for Shell {}
-
 /// Failure while generating a shell completion adapter.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -185,18 +147,5 @@ mod tests {
         assert_eq!(Shell::Nushell.to_string(), "nushell");
         assert_eq!(<Shell as crate::ValueEnum>::VALUES, &["bash", "fish", "nushell", "zsh"],);
         assert!("nu".parse::<Shell>().is_err());
-    }
-
-    #[test]
-    fn shell_has_a_semantic_contract() {
-        let contract = <Shell as crate::ContractType>::type_contract();
-        assert_eq!(contract.types.len(), 1);
-        assert_eq!(contract.types[0].name, "Shell");
-        assert_eq!(
-            contract.types[0].description.as_deref(),
-            Some(
-                "Shell completion target. CLI spellings are `bash`, `fish`, `nushell`, and `zsh`.",
-            ),
-        );
     }
 }

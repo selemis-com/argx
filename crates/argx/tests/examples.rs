@@ -16,7 +16,6 @@ mod tests {
         "basic",
         "completions",
         "constraints",
-        "contracts",
         "defaults",
         "environment",
         "flatten",
@@ -104,29 +103,6 @@ mod tests {
                 stdout.contains("ARGX_COMPLETE_LINE="),
                 "{name} did not emit the Argx completion protocol adapter:\n{stdout}",
             );
-            return;
-        }
-
-        if name == "contracts" {
-            command.args(["get", "object-7"]);
-            let output = command
-                .output()
-                .unwrap_or_else(|error| panic!("failed to execute {name}: {error}"));
-            assert!(
-                output.status.success(),
-                "{name} representative invocation exited with {}\nstderr:\n{}",
-                output.status,
-                String::from_utf8_lossy(&output.stderr),
-            );
-            assert!(output.stderr.is_empty(), "{name} wrote to stderr");
-
-            let contract: serde_json::Value = serde_json::from_slice(&output.stdout)
-                .unwrap_or_else(|error| panic!("{name} did not emit valid JSON: {error}"));
-            assert_eq!(contract["root"], "contracts");
-            assert_eq!(contract["command"]["name"], "get");
-            assert_eq!(contract["command"]["path"][0], "get");
-            assert!(contract["command"]["invocation"].is_array());
-            assert!(contract["command"]["execution"].is_object());
             return;
         }
 

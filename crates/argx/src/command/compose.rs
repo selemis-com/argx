@@ -317,12 +317,8 @@ const fn str_eq(left: &str, right: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        action_flag_spellings_disjoint, argument_key_by_name, command_keys_unique, concat_args,
-        concat_constraints, concat_flags, concat_help_groups, flag_spellings_unique,
-        positional_layout_valid, table_len,
-    };
-    use crate::__private::{Arg, Constraint, ConstraintKind, Flag, HELP_ACTION, HelpGroup};
+    use super::*;
+    use crate::__private::HELP_ACTION;
 
     static ALPHA: Flag<'static> = Flag {
         key: 1,

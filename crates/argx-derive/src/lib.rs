@@ -16,15 +16,20 @@
 mod attrs;
 mod case;
 mod codegen;
+mod command_schema;
 mod crate_name;
-mod execution_contract;
+mod handler;
 mod key;
 mod model;
-mod type_contract;
+mod schema;
 mod value_enum;
 
 use proc_macro::TokenStream;
-use syn::{DeriveInput, parse_macro_input};
+use syn::{
+    DeriveInput, Token,
+    parse::{Parse, ParseStream},
+    parse_macro_input,
+};
 
 /// Derives the root Argx parser facade for a struct.
 ///
@@ -58,46 +63,76 @@ pub fn derive_args(input: TokenStream) -> TokenStream {
     expand_command(&input, false).unwrap_or_else(syn::Error::into_compile_error).into()
 }
 
-/// Derives a standalone machine-readable semantic contract for a Rust struct or enum.
-///
-/// The generated contract preserves Rust declaration, field, and variant names. It is independent
-/// of serialization frameworks and does not interpret attributes such as `serde(rename = ...)`.
-/// When `Contract` is co-derived with `Parser` or `Args`, their CLI helper attributes remain
-/// available but do not rename semantic type-contract fields. `Contract` by itself does not
-/// register `#[argx(...)]` as meaningful type-contract metadata.
-#[proc_macro_derive(Contract)]
-pub fn derive_contract(input: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(input as DeriveInput);
-    type_contract::contract(&input).unwrap_or_else(syn::Error::into_compile_error).into()
-}
-
 /// Derives a finite canonical command-line value vocabulary for an enum.
 ///
 /// Every unit variant is accepted using Argx's normal kebab-case spelling. The derive implements
 /// both `argx::ValueEnum` and `FromStr`; parsing is exact and case-sensitive. Generic enums and
 /// variants carrying fields are rejected. Use `#[argx(value_enum)]` on a parser field to project
-/// the same vocabulary into parsing metadata, generated help, and machine contracts.
+/// the same vocabulary into parsing metadata, generated help, and completion.
 #[proc_macro_derive(ValueEnum)]
 pub fn derive_value_enum(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     value_enum::value_enum(&input).unwrap_or_else(syn::Error::into_compile_error).into()
 }
 
-/// Attaches one canonical execution result contract to an invocable command type.
+/// One standalone Argx item attribute.
+enum StandaloneAttribute {
+    /// Derive JSON Schema through Schemars.
+    Schema,
+    /// Associate one handler target with the annotated function or inherent impl.
+    Handler(proc_macro2::TokenStream),
+}
+
+impl Parse for StandaloneAttribute {
+    fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
+        let kind: syn::Ident = input.parse()?;
+        if kind == "schema" {
+            if !input.is_empty() {
+                return Err(input.error("`schema` takes no value"));
+            }
+            return Ok(Self::Schema);
+        }
+        if kind == "handler" {
+            if !input.peek(Token![=]) {
+                return Err(syn::Error::new(
+                    kind.span(),
+                    "`handler` requires `= <command type or method>`",
+                ));
+            }
+            input.parse::<Token![=]>()?;
+            if input.is_empty() {
+                return Err(input.error("`handler` requires a command type or method name"));
+            }
+            let value: proc_macro2::TokenStream = input.parse()?;
+            return Ok(Self::Handler(value));
+        }
+
+        Err(syn::Error::new(kind.span(), "unsupported standalone Argx attribute"))
+    }
+}
+
+/// Applies one standalone Argx item attribute.
 ///
-/// The annotated free function remains ordinary Rust. Its parameters are runtime-only and do not
-/// participate in the machine contract. Its concrete `Result<Success, Error>` return type is the
-/// command's semantic execution contract: both `Success` and `Error` must implement Argx's type
-/// contract. The attribute records contract metadata only; it does not register, wrap, or invoke
-/// the function for dispatch.
+/// `#[argx(schema)]` marks a Rust type for JSON Schema generation through Schemars.
+/// `#[argx(handler = CommandType)]` associates a free function with one invocable command type,
+/// while `#[argx(handler = method)]` associates an inherent impl with its execution method.
 #[proc_macro_attribute]
-pub fn contract(attribute: TokenStream, input: TokenStream) -> TokenStream {
-    execution_contract::contract(
-        proc_macro2::TokenStream::from(attribute),
-        proc_macro2::TokenStream::from(input),
-    )
-    .unwrap_or_else(syn::Error::into_compile_error)
-    .into()
+pub fn argx(attribute: TokenStream, input: TokenStream) -> TokenStream {
+    let attribute = proc_macro2::TokenStream::from(attribute);
+    let input = proc_macro2::TokenStream::from(input);
+
+    standalone_attribute(attribute, input).unwrap_or_else(syn::Error::into_compile_error).into()
+}
+
+/// Dispatches the standalone `#[argx(...)]` attribute forms.
+fn standalone_attribute(
+    attribute: proc_macro2::TokenStream,
+    input: proc_macro2::TokenStream,
+) -> syn::Result<proc_macro2::TokenStream> {
+    match syn::parse2::<StandaloneAttribute>(attribute)? {
+        StandaloneAttribute::Schema => schema::schema(input),
+        StandaloneAttribute::Handler(handler) => handler::handler(handler, input),
+    }
 }
 
 /// Derives a subcommand set for an enum.
@@ -110,6 +145,17 @@ pub fn contract(attribute: TokenStream, input: TokenStream) -> TokenStream {
 pub fn derive_subcommand(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     expand_subcommand(&input).unwrap_or_else(syn::Error::into_compile_error).into()
+}
+
+/// Derives static schema traversal for a structural command group.
+///
+/// On a struct, `CommandSchema` requires one `#[argx(subcommand)]` field. On an enum it mirrors a
+/// `Subcommand` declaration and requires every variant to carry one concrete `Args` payload. Leaf
+/// commands do not derive this trait; `#[argx(handler = ...)]` supplies their schema association.
+#[proc_macro_derive(CommandSchema, attributes(argx))]
+pub fn derive_command_schema(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    command_schema::command_schema(&input).unwrap_or_else(syn::Error::into_compile_error).into()
 }
 
 /// Builds the semantic model and emits one command declaration.

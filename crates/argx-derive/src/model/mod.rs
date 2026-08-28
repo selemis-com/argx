@@ -60,6 +60,8 @@ pub(crate) struct CommandSemantics {
     pub long_version: Option<syn::Expr>,
     /// Hidden command spellings accepted in addition to the canonical name.
     pub aliases: Vec<String>,
+    /// Whether this root parser exposes machine-readable schema discovery.
+    pub schema: bool,
 }
 
 /// One user-authored command help section.
@@ -82,8 +84,6 @@ pub(crate) struct Subcommand {
 pub(crate) struct SubcommandBinding {
     /// Rust enum receiving the generated implementation.
     pub ident: syn::Ident,
-    /// Visibility of the derived declaration.
-    pub visibility: syn::Visibility,
     /// Generic parameters copied to generated implementations.
     pub generics: syn::Generics,
     /// Whole declaration token stream used to seed stable variant identities.
@@ -272,7 +272,7 @@ impl<'ast> syn::visit::Visit<'ast> for GenericUse<'_> {
 mod tests {
     use syn::{DeriveInput, parse_quote};
 
-    use super::{ArgumentKind, Command, FieldSemantics, Shape, Subcommand, ValueConversion};
+    use super::*;
 
     #[expect(
         clippy::needless_pass_by_value,
@@ -715,6 +715,43 @@ mod tests {
             true,
         );
         assert_eq!(error, "`--help` is reserved by Argx");
+
+        let error = command_error(
+            parse_quote! {
+                #[argx(schema)]
+                struct Cli {
+                    #[argx(long = "schema")]
+                    value: Option<String>,
+                }
+            },
+            true,
+        );
+        assert_eq!(error, "`--schema` is reserved when schema discovery is enabled");
+
+        let error = command_error(
+            parse_quote! {
+                #[argx(schema)]
+                struct Cli {
+                    #[argx(short = 'S')]
+                    value: bool,
+                }
+            },
+            true,
+        );
+        assert_eq!(error, "`-S` is reserved when schema discovery is enabled");
+
+        assert!(
+            Command::from_input(
+                &parse_quote! {
+                    struct Cli {
+                        #[argx(long = "schema", short = 'S')]
+                        value: Option<String>,
+                    }
+                },
+                true,
+            )
+            .is_ok()
+        );
 
         let error = command_error(
             parse_quote! {

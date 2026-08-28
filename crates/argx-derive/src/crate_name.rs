@@ -8,6 +8,14 @@ use proc_macro_crate::{FoundCrate, crate_name};
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
 
+/// Returns the resolved Rust crate name for the Argx facade.
+pub(crate) fn facade_name() -> String {
+    match crate_name("argx") {
+        Ok(FoundCrate::Name(name)) => name,
+        Ok(FoundCrate::Itself) | Err(_) => String::from("argx"),
+    }
+}
+
 /// Returns an absolute path to the Argx facade from generated code.
 pub(crate) fn facade_path() -> TokenStream {
     match crate_name("argx") {

@@ -4,7 +4,17 @@
 //! is not part of Argx's stable user-facing API. The re-exports below are intentionally narrow:
 //! they form the generated-code surface shared between the derive crate and the runtime crate.
 
+/// Schemars re-export used by `#[argx(schema)]` expansions.
+#[doc(hidden)]
+pub use schemars;
+
 pub(crate) use crate::command::scope::{Named, long as resolve_long, short as resolve_short};
+/// Schema-discovery support named by generated code.
+#[doc(hidden)]
+pub use crate::schema_discovery::{
+    Registry as SchemaRegistry, SchemaCommand, SchemaSubcommands,
+    register_handler as register_schema_handler,
+};
 pub use crate::{
     argv::{ArgvParser, Error, Event},
     command::{
@@ -15,22 +25,16 @@ pub use crate::{
         },
         model::{
             Action, ActionKind, Arg, ArgumentState, Command, Constraint, ConstraintKind, Flag,
-            HELP_ACTION, HelpGroup, HelpSection, Key, key_base,
+            HELP_ACTION, HelpGroup, HelpSection, Key, SCHEMA_ACTION, key_base,
         },
     },
     derive_support::{
         traits::{
-            CommandArgs, CommandExecutionTypes, CommandTypeContract, CommandTypes,
-            ExecutionContractSource, ExecutionResult, InvocableCommandContract,
-            ResolveCommandTypeContract, ResolveExecutionContract, ResolveSubcommandTree,
-            ResolveSubcommands, ResolveValueFields, SubcommandTypeContract, Subcommands,
+            CommandArgs, HandlerResult, HandlerSchemas, InvocableCommandHandler, Subcommands,
         },
         value::{
             RawValue, os_value, os_values, parsed_value, parsed_values, text_value, text_values,
             value_enum_value, value_enum_values,
         },
-    },
-    type_contract::resolve::{
-        TypeContractSource, TypeKey, TypeResolver, const_key, discover_type_contract,
     },
 };

@@ -29,7 +29,7 @@ derive = ["dep:argx-derive"]
 
 [dependencies]
 # Vendor
-serde.workspace = true
+schemars.workspace = true
 serde_json.workspace = true
 
 # Crates

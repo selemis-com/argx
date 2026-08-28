@@ -10,7 +10,7 @@ mod support;
 
 #[cfg(test)]
 mod tests {
-    use super::support;
+    use super::*;
 
     #[test]
     fn basic_example_builds_and_runs() {
@@ -215,9 +215,6 @@ Output:
 Examples:
     structured-help --field id --field title
     structured-help --json
-
-Machine-readable usage:
-Embedding and discovery code can inspect the same command model through `Parser::contract`.
 
 "#]])
             .stderr_eq("");

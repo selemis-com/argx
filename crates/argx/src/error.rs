@@ -1,9 +1,10 @@
 //! Public parse and typed-binding errors.
 //!
 //! [`Error`] carries both genuine failures and successful terminal parser actions. The `try_parse*`
-//! APIs return help and version requests as values so embedding code can choose its own output and
-//! process policy; [`Error::exit`] applies Argx's conventional CLI policy. Diagnostic rendering
-//! escapes control characters from caller-controlled bytes before writing them to a terminal.
+//! APIs return help, version, and schema requests as values so embedding code can choose its own
+//! output and process policy; [`Error::exit`] applies Argx's conventional CLI policy. Diagnostic
+//! rendering escapes control characters from caller-controlled bytes before writing them to a
+//! terminal.
 
 use std::{
     borrow::Cow,
@@ -26,9 +27,9 @@ pub struct InvalidValue {
 
 /// A control-flow or failure result while parsing command-line arguments.
 ///
-/// Help and version are represented explicitly rather than printed by the parser core. All other
-/// variants describe the first syntax, cardinality, relationship, or conversion failure selected
-/// by the binding pipeline.
+/// Help, version, and schema discovery are represented explicitly rather than printed by the
+/// parser core. All other variants describe the first syntax, cardinality, relationship, or
+/// conversion failure selected by the binding pipeline.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Error {
@@ -41,6 +42,11 @@ pub enum Error {
     DisplayVersion {
         /// Fully rendered version text for the selected command scope.
         version: String,
+    },
+    /// Machine-readable command schema requested through built-in discovery.
+    DisplaySchema {
+        /// Pretty-printed JSON schema document for the selected command scope.
+        schema: String,
     },
     /// A flag-like token did not match any declared flag.
     UnknownFlag {
@@ -140,15 +146,17 @@ impl Error {
     #[must_use]
     pub const fn exit_code(&self) -> i32 {
         match self {
-            Self::DisplayHelp { .. } | Self::DisplayVersion { .. } => 0,
+            Self::DisplayHelp { .. } | Self::DisplayVersion { .. } | Self::DisplaySchema { .. } => {
+                0
+            }
             _ => 2,
         }
     }
 
     /// Prints this result to the appropriate stream and terminates the process.
     ///
-    /// Help and version requests are written to standard output and exit successfully. Parse and
-    /// binding failures are written to standard error and exit with status 2.
+    /// Help, version, and schema requests are written to standard output and exit successfully.
+    /// Parse and binding failures are written to standard error and exit with status 2.
     pub fn exit(&self) -> ! {
         let output = self.exit_output();
         match output.stream {
@@ -172,13 +180,13 @@ impl Error {
     /// without spawning a child process or duplicating the production formatter.
     fn exit_output(&self) -> ExitOutput<'_> {
         match self {
-            Self::DisplayHelp { help: text } | Self::DisplayVersion { version: text } => {
-                ExitOutput {
-                    stream: ExitStream::Stdout,
-                    text: Cow::Borrowed(text.as_str()),
-                    code: self.exit_code(),
-                }
-            }
+            Self::DisplayHelp { help: text }
+            | Self::DisplayVersion { version: text }
+            | Self::DisplaySchema { schema: text } => ExitOutput {
+                stream: ExitStream::Stdout,
+                text: Cow::Borrowed(text.as_str()),
+                code: self.exit_code(),
+            },
             _ => ExitOutput {
                 stream: ExitStream::Stderr,
                 text: Cow::Owned(format!("error: {self}\n\nFor more information, try '--help'.\n")),
@@ -212,6 +220,7 @@ impl fmt::Display for Error {
         match self {
             Self::DisplayHelp { help } => formatter.write_str(help),
             Self::DisplayVersion { version } => formatter.write_str(version),
+            Self::DisplaySchema { schema } => formatter.write_str(schema),
             Self::UnknownFlag { token } => {
                 write!(formatter, "unknown flag `{}`", display_bytes(token))
             }
@@ -279,7 +288,7 @@ pub(crate) fn display_bytes(value: &[u8]) -> String {
 mod tests {
     use std::ffi::OsString;
 
-    use super::{Error, ExitStream, InvalidValue, display_bytes};
+    use super::*;
 
     #[test]
     fn diagnostic_bytes_do_not_emit_control_characters() {
@@ -302,6 +311,12 @@ mod tests {
         assert_eq!(output.stream, ExitStream::Stdout);
         assert_eq!(output.code, 0);
         assert_eq!(output.text, "tool 1.2.3\n");
+
+        let schema = Error::DisplaySchema { schema: "{\"command\":{}}\n".to_owned() };
+        let output = schema.exit_output();
+        assert_eq!(output.stream, ExitStream::Stdout);
+        assert_eq!(output.code, 0);
+        assert_eq!(output.text, "{\"command\":{}}\n");
 
         let failure = Error::UnknownFlag { token: b"--bad\nflag".to_vec() };
         let output = failure.exit_output();
@@ -328,6 +343,10 @@ Usage: tool [OPTIONS]
         let version = Error::DisplayVersion { version: "tool 1.2.3\n".to_owned() };
         assert_eq!(version.exit_code(), 0);
         assert_eq!(version.to_string(), "tool 1.2.3\n");
+
+        let schema = Error::DisplaySchema { schema: "{}\n".to_owned() };
+        assert_eq!(schema.exit_code(), 0);
+        assert_eq!(schema.to_string(), "{}\n");
 
         let failure = Error::UnknownFlag { token: b"--bad".to_vec() };
         assert_eq!(failure.exit_code(), 2);

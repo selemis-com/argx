@@ -28,9 +28,25 @@ use crate::{
 /// Panics only when an implementation of the hidden generated-code contract exposes parse metadata
 /// that it then refuses to bind. Derived implementations cannot violate this invariant.
 pub(crate) fn parse_refs<T: CommandArgs>(argv: &[&std::ffi::OsStr]) -> Result<T, Error> {
+    parse_refs_inner::<T>(argv, None)
+}
+
+/// Parses arguments with machine-readable schema discovery enabled.
+pub(crate) fn parse_refs_with_schema<T: CommandArgs>(
+    argv: &[&std::ffi::OsStr],
+    registry: &crate::__private::SchemaRegistry,
+) -> Result<T, Error> {
+    parse_refs_inner::<T>(argv, Some(registry))
+}
+
+/// Shared typed-binding pipeline with an optional schema-discovery registry.
+fn parse_refs_inner<T: CommandArgs>(
+    argv: &[&std::ffi::OsStr],
+    registry: Option<&crate::__private::SchemaRegistry>,
+) -> Result<T, Error> {
     let mut partial = T::start();
     let mut parser: crate::argv::ArgvParser<'static, '_, '_> =
-        crate::argv::ArgvParser::new(T::COMMAND, argv);
+        crate::argv::ArgvParser::new_with_schema(T::COMMAND, argv, registry.is_some());
 
     while let Some(event) = parser.next_event() {
         let event = match event {
@@ -38,7 +54,16 @@ pub(crate) fn parse_refs<T: CommandArgs>(argv: &[&std::ffi::OsStr]) -> Result<T,
                 return match action.kind {
                     ActionKind::Help => {
                         let command_path = parser.command_path().collect::<Vec<_>>();
-                        Err(Error::DisplayHelp { help: help::render(&command_path) })
+                        Err(Error::DisplayHelp {
+                            help: help::render_with_schema(&command_path, registry.is_some()),
+                        })
+                    }
+                    ActionKind::Schema => {
+                        let command_path = parser.command_path().collect::<Vec<_>>();
+                        Err(crate::schema_discovery::display_schema(
+                            &command_path,
+                            registry.expect("schema action requires a schema registry"),
+                        ))
                     }
                     ActionKind::Version { short, long } => {
                         let version = if used_long { long } else { short };
@@ -301,7 +326,7 @@ fn os_string(value: Vec<u8>, name: &'static str) -> Result<OsString, Error> {
 
 #[cfg(test)]
 mod tests {
-    use super::render_version;
+    use super::*;
 
     #[test]
     fn version_command_name_does_not_emit_terminal_controls() {

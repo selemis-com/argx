@@ -50,6 +50,8 @@ pub(crate) struct CommandAttrs {
     pub long_version: Option<Expr>,
     /// Additional hidden spellings accepted for a selectable subcommand.
     pub aliases: Vec<String>,
+    /// Whether a root parser exposes built-in schema discovery.
+    pub schema: bool,
 }
 
 /// Attributes accepted on a command field.
@@ -130,6 +132,15 @@ fn command_like(attributes: &[Attribute], context: &str) -> syn::Result<CommandA
                 Ok(())
             } else if meta.path.is_ident("aliases") {
                 parsed.aliases.extend(string_array(&meta)?);
+                Ok(())
+            } else if meta.path.is_ident("schema") {
+                if parsed.schema {
+                    return Err(meta.error("duplicate `schema` attribute"));
+                }
+                if meta.input.peek(Token![=]) || meta.input.peek(syn::token::Paren) {
+                    return Err(meta.error("`schema` takes no value"));
+                }
+                parsed.schema = true;
                 Ok(())
             } else {
                 Err(meta.error(format!("unsupported Argx {context} attribute")))
@@ -398,7 +409,7 @@ fn first_paragraph(lines: &[String]) -> Option<String> {
 mod tests {
     use syn::{DeriveInput, parse_quote};
 
-    use super::{doc_help, doc_summary};
+    use super::*;
 
     #[test]
     fn doc_summary_uses_only_the_first_paragraph() {

@@ -1,209 +1,99 @@
-//! Privacy-safe semantic type projection for generated commands.
+//! Privacy-safe partial-state projection for generated commands.
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
 use crate::{key, model};
 
-/// Generated semantic type projection for one command declaration.
+/// Generated partial-state projection for one command declaration.
 #[derive(Debug)]
-pub(super) struct SemanticProjection {
+pub(super) struct PartialProjection {
     /// Helper declarations emitted alongside the derived type.
     pub(super) declarations: TokenStream,
     /// Partial-state type exposed through `CommandArgs`.
     pub(super) partial: TokenStream,
     /// Nominal constructor used when private composed types require an opaque partial witness.
     pub(super) partial_constructor: Option<proc_macro2::Ident>,
-    /// Type-level resolver for values owned by this command context.
-    pub(super) fields: TokenStream,
-    /// Type-level resolver for this command's execution result when directly invocable.
-    pub(super) execution: TokenStream,
-    /// Type-level resolver for the nested subcommand field, when present.
-    pub(super) subcommands: TokenStream,
 }
 
-/// Builds privacy-safe semantic value resolvers for this command declaration.
-pub(super) fn semantic_projection(
+/// Builds the privacy-safe partial state for this command declaration.
+pub(super) fn partial_projection(
     command: &model::Command,
     facade: &TokenStream,
-) -> SemanticProjection {
+) -> PartialProjection {
     let ident = &command.binding.ident;
     let visibility = &command.binding.visibility;
     let suffix = ident.to_string().trim_start_matches("r#").to_owned();
     let declaration = key::declaration_hash(&command.binding.fingerprint);
-    let fields_ident = format_ident!("__ArgxContractFieldsFor{}H{}", suffix, declaration);
-    let subcommands_ident = format_ident!("__ArgxContractSubcommandsFor{}H{}", suffix, declaration);
-    let execution_ident = format_ident!("__ArgxContractExecutionFor{}H{}", suffix, declaration);
     let partial_ident = partial_type_constructor(command);
-    let shape_ident = format_ident!("__ArgxContractShapeFor{}H{}", suffix, declaration);
+    let shape_ident = format_ident!("__ArgxPartialShapeFor{}H{}", suffix, declaration);
     let (impl_generics, ty_generics, where_clause) = command.binding.generics.split_for_impl();
 
-    let mut shape_declarations = Vec::new();
-    let mut shape_definitions = Vec::new();
-    let mut associated_fields = vec![None; command.fields.len()];
-    let mut field_bounds = Vec::new();
-    let mut field_steps = Vec::new();
-    let mut has_fields = false;
-    let mut needs_shape = false;
-
-    for (index, field) in command.fields.iter().enumerate() {
-        match &field.semantics {
-            model::FieldSemantics::Argument(model::Argument {
-                kind: model::ArgumentKind::Flag { .. },
-                ..
-            }) if field.is_switch() => {
-                has_fields = true;
-                field_steps.push(quote!(flags.push(::std::option::Option::None);));
-            }
-            model::FieldSemantics::Argument(model::Argument {
-                kind: model::ArgumentKind::Flag { .. },
-                ..
-            }) => {
-                has_fields = true;
-                needs_shape = true;
-                let associated = format_ident!("Field{index}");
-                let ty = &field.value_binding().ty;
-                shape_declarations.push(quote!(type #associated;));
-                shape_definitions.push(quote!(type #associated = #ty;));
-                associated_fields[index] = Some(associated.clone());
-                field_bounds.push(quote!(
-                    <T as #shape_ident>::#associated: #facade::__private::TypeContractSource
-                ));
-                field_steps.push(quote! {
-                    flags.push(::std::option::Option::Some(
-                        <<T as #shape_ident>::#associated as
-                            #facade::__private::TypeContractSource>::resolve_type(resolver),
-                    ));
-                });
-            }
-            model::FieldSemantics::Argument(model::Argument {
-                kind: model::ArgumentKind::Positional,
-                ..
-            }) => {
-                has_fields = true;
-                needs_shape = true;
-                let associated = format_ident!("Field{index}");
-                let ty = &field.value_binding().ty;
-                shape_declarations.push(quote!(type #associated;));
-                shape_definitions.push(quote!(type #associated = #ty;));
-                associated_fields[index] = Some(associated.clone());
-                field_bounds.push(quote!(
-                    <T as #shape_ident>::#associated: #facade::__private::TypeContractSource
-                ));
-                field_steps.push(quote! {
-                    args.push(
-                        <<T as #shape_ident>::#associated as
-                            #facade::__private::TypeContractSource>::resolve_type(resolver),
-                    );
-                });
-            }
-            model::FieldSemantics::Flatten => {
-                has_fields = true;
-                needs_shape = true;
-                let associated = format_ident!("Field{index}");
-                let ty = &field.binding.ty;
-                shape_declarations.push(quote!(type #associated;));
-                shape_definitions.push(quote!(type #associated = #ty;));
-                associated_fields[index] = Some(associated.clone());
-                field_bounds.push(quote!(
-                    <T as #shape_ident>::#associated: #facade::__private::CommandTypeContract
-                ));
-                field_bounds.push(quote!(
-                    <<T as #shape_ident>::#associated as
-                        #facade::__private::CommandTypeContract>::Fields:
-                        #facade::__private::ResolveValueFields
-                ));
-                field_steps.push(quote! {
-                    <<<T as #shape_ident>::#associated as
-                        #facade::__private::CommandTypeContract>::Fields as
-                        #facade::__private::ResolveValueFields>::append(resolver, flags, args);
-                });
-            }
-            model::FieldSemantics::Subcommand => {
-                needs_shape = true;
-                let associated = format_ident!("Field{index}");
-                let ty = &field.binding.ty;
-                shape_declarations.push(quote!(type #associated;));
-                shape_definitions.push(quote!(type #associated = #ty;));
-                associated_fields[index] = Some(associated);
-            }
-        }
-    }
-
-    let subcommand_projection = command
+    let nested = command
         .fields
         .iter()
         .enumerate()
-        .find(|(_, field)| matches!(&field.semantics, model::FieldSemantics::Subcommand))
-        .map(|(index, _)| {
-            associated_fields[index]
-                .clone()
-                .expect("subcommand fields always have a generated shape association")
-        });
+        .filter_map(|(index, field)| match &field.semantics {
+            model::FieldSemantics::Flatten | model::FieldSemantics::Subcommand => {
+                Some((index, field))
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let has_nested = !nested.is_empty();
 
-    let shape = needs_shape.then(|| {
+    let associated =
+        nested.iter().map(|(index, _)| format_ident!("Field{index}")).collect::<Vec<_>>();
+    let definitions = nested
+        .iter()
+        .zip(&associated)
+        .map(|((_, field), associated)| {
+            let ty = &field.binding.ty;
+            quote!(type #associated = #ty;)
+        })
+        .collect::<Vec<_>>();
+
+    let shape = has_nested.then(|| {
         quote! {
             trait #shape_ident {
-                #(#shape_declarations)*
+                #(type #associated;)*
             }
 
             impl #impl_generics #shape_ident for #ident #ty_generics #where_clause {
-                #(#shape_definitions)*
+                #(#definitions)*
             }
         }
     });
 
-    // `CommandArgs::Partial` is a public associated type because derives must implement the hidden
-    // runtime trait downstream. Keep concrete flattened/subcommand types behind private fields of a
-    // nominal witness so a public parser may itself contain private implementation types.
-    let mut partial_bounds = Vec::new();
-    let partial_types = command
-        .fields
-        .iter()
-        .enumerate()
-        .map(|(index, field)| match &field.semantics {
-            model::FieldSemantics::Flatten => {
-                let associated = associated_fields[index]
-                    .as_ref()
-                    .expect("flatten fields always have a generated shape association");
-                partial_bounds.push(quote!(
-                    <T as #shape_ident>::#associated: #facade::__private::CommandArgs
-                ));
-                quote!(
-                    <<T as #shape_ident>::#associated as
-                        #facade::__private::CommandArgs>::Partial
-                )
-            }
-            model::FieldSemantics::Subcommand => {
-                let associated = associated_fields[index]
-                    .as_ref()
-                    .expect("subcommand fields always have a generated shape association");
-                partial_bounds.push(quote!(
-                    <T as #shape_ident>::#associated: #facade::__private::Subcommands
-                ));
-                quote!(
-                    <<T as #shape_ident>::#associated as
-                        #facade::__private::Subcommands>::Partial
-                )
-            }
-            _ if field.argument().is_some_and(|argument| argument.shape == model::Shape::Many) => {
-                quote!(::std::vec::Vec<::std::vec::Vec<u8>>)
-            }
-            _ if field.is_switch() => quote!((bool, bool)),
-            _ => quote!((::std::option::Option<#facade::__private::RawValue>, bool)),
-        })
-        .collect::<Vec<_>>();
-    let has_nested_partial = command.fields.iter().any(|field| {
-        matches!(
-            &field.semantics,
-            model::FieldSemantics::Flatten | model::FieldSemantics::Subcommand
-        )
-    });
-    let (partial, partial_constructor, partial_declaration) = if has_nested_partial {
+    let mut nested_index = 0_usize;
+    let mut bounds = Vec::new();
+    let partial_types = command.fields.iter().map(|field| match &field.semantics {
+        model::FieldSemantics::Flatten => {
+            let associated = &associated[nested_index];
+            nested_index += 1;
+            bounds.push(quote!(<T as #shape_ident>::#associated: #facade::__private::CommandArgs));
+            quote!(<<T as #shape_ident>::#associated as #facade::__private::CommandArgs>::Partial)
+        }
+        model::FieldSemantics::Subcommand => {
+            let associated = &associated[nested_index];
+            nested_index += 1;
+            bounds.push(quote!(<T as #shape_ident>::#associated: #facade::__private::Subcommands));
+            quote!(<<T as #shape_ident>::#associated as #facade::__private::Subcommands>::Partial)
+        }
+        _ if field.argument().is_some_and(|argument| argument.shape == model::Shape::Many) => {
+            quote!(::std::vec::Vec<::std::vec::Vec<u8>>)
+        }
+        _ if field.is_switch() => quote!((bool, bool)),
+        _ => quote!((::std::option::Option<#facade::__private::RawValue>, bool)),
+    }).collect::<Vec<_>>();
+
+    let (partial, partial_constructor, declaration) = if has_nested {
         (
             quote!(#partial_ident<Self>),
             Some(partial_ident.clone()),
             quote! {
+                #shape
+
                 #[doc = "Argx-generated opaque parser partial state."]
                 #[doc(hidden)]
                 #[allow(
@@ -217,159 +107,17 @@ pub(super) fn semantic_projection(
                 #visibility struct #partial_ident<T>(#(#partial_types,)*)
                 where
                     T: #shape_ident,
-                    #(#partial_bounds,)*;
+                    #(#bounds,)*;
             },
         )
     } else {
         (quote!((#(#partial_types,)*)), None, TokenStream::new())
     };
 
-    let fields = if has_fields { quote!(#fields_ident<Self>) } else { quote!(()) };
-    let field_declaration = has_fields.then(|| {
-        let field_where = if needs_shape {
-            quote! {
-                where
-                    T: #shape_ident,
-                    #(#field_bounds,)*
-            }
-        } else {
-            TokenStream::new()
-        };
-        let privacy_allow = needs_shape.then(|| {
-            quote! {
-                #[allow(
-                    private_bounds,
-                    reason = "generated contract witnesses intentionally hide concrete value types"
-                )]
-            }
-        });
-        quote! {
-            #[doc = "Argx-generated semantic contract witness."]
-            #[doc(hidden)]
-            #[derive(Debug, Clone, Copy)]
-            #[allow(
-                unreachable_pub,
-                unnameable_types,
-                reason = "generated witness is exposed only through Argx's hidden projection trait"
-            )]
-            #visibility struct #fields_ident<T>(::core::marker::PhantomData<fn() -> T>);
-
-            #privacy_allow
-            impl<T> #facade::__private::ResolveValueFields for #fields_ident<T>
-            #field_where
-            {
-                fn append(
-                    resolver: &mut #facade::__private::TypeResolver,
-                    flags: &mut ::std::vec::Vec<
-                        ::std::option::Option<#facade::TypeContractValue>,
-                    >,
-                    args: &mut ::std::vec::Vec<#facade::TypeContractValue>,
-                ) {
-                    #(#field_steps)*
-                }
-            }
-        }
-    });
-
-    let directly_invocable = subcommand_projection.is_none();
-    let (subcommands, subcommand_declaration) = subcommand_projection.map_or_else(
-        || (quote!(()), None),
-        |associated| {
-            let projection = quote!(#subcommands_ident<Self>);
-            let declaration = quote! {
-                #[doc = "Argx-generated semantic contract witness."]
-                #[doc(hidden)]
-                #[derive(Debug, Clone, Copy)]
-                #[allow(
-                    unreachable_pub,
-                    unnameable_types,
-                    reason = "generated witness is exposed only through Argx's hidden projection trait"
-                )]
-                #visibility struct #subcommands_ident<T>(::core::marker::PhantomData<fn() -> T>);
-
-                #[allow(
-                    private_bounds,
-                    reason = "generated contract witnesses intentionally hide concrete value types"
-                )]
-                impl<T> #facade::__private::ResolveSubcommands for #subcommands_ident<T>
-                where
-                    T: #shape_ident,
-                    <T as #shape_ident>::#associated:
-                        #facade::__private::SubcommandTypeContract,
-                    <<T as #shape_ident>::#associated as
-                        #facade::__private::SubcommandTypeContract>::Commands:
-                        #facade::__private::ResolveSubcommandTree,
-                {
-                    fn resolve(
-                        index: usize,
-                        rest: &[usize],
-                        resolver: &mut #facade::__private::TypeResolver,
-                    ) -> ::std::option::Option<#facade::__private::CommandTypes> {
-                        <<<T as #shape_ident>::#associated as
-                            #facade::__private::SubcommandTypeContract>::Commands as
-                            #facade::__private::ResolveSubcommandTree>::resolve(
-                                index,
-                                rest,
-                                resolver,
-                            )
-                    }
-                }
-            };
-            (projection, Some(declaration))
-        },
-    );
-
-    let (execution, execution_declaration) = if directly_invocable {
-        (
-            quote!(#execution_ident<Self>),
-            Some(quote! {
-                #[doc = "Argx-generated execution contract witness."]
-                #[doc(hidden)]
-                #[derive(Debug, Clone, Copy)]
-                #[allow(
-                    unreachable_pub,
-                    unnameable_types,
-                    reason = "generated witness is exposed only through Argx's hidden projection trait"
-                )]
-                #visibility struct #execution_ident<T>(::core::marker::PhantomData<fn() -> T>);
-
-                impl<T> #facade::__private::ResolveExecutionContract for #execution_ident<T>
-                where
-                    T: #facade::ExecutionContractSource,
-                {
-                    fn resolve(
-                        resolver: &mut #facade::__private::TypeResolver,
-                    ) -> ::std::option::Option<#facade::__private::CommandExecutionTypes> {
-                        ::std::option::Option::Some(
-                            <T as #facade::ExecutionContractSource>::resolve_execution(
-                                resolver,
-                            ),
-                        )
-                    }
-                }
-            }),
-        )
-    } else {
-        (quote!(()), None)
-    };
-
-    SemanticProjection {
-        declarations: quote! {
-            #shape
-            #partial_declaration
-            #field_declaration
-            #subcommand_declaration
-            #execution_declaration
-        },
-        partial,
-        partial_constructor,
-        fields,
-        execution,
-        subcommands,
-    }
+    PartialProjection { declarations: declaration, partial, partial_constructor }
 }
 
-/// Returns the deterministic generated partial-state constructor for one command declaration.
+/// Returns the generated partial projection type name for `command`.
 fn partial_type_constructor(command: &model::Command) -> proc_macro2::Ident {
     let suffix = command.binding.ident.to_string().trim_start_matches("r#").to_owned();
     let declaration = key::declaration_hash(&command.binding.fingerprint);
