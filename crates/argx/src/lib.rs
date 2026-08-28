@@ -435,6 +435,7 @@ pub mod completion;
 mod derive_support;
 mod error;
 mod help;
+mod invocation_schema;
 mod value_enum;
 
 use std::ffi::{OsStr, OsString};

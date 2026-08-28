@@ -83,7 +83,7 @@ pub(crate) fn handler(attribute: TokenStream, input: TokenStream) -> syn::Result
 
         #(#conditional)*
         impl #facade::HandlerSchemaSource for #command_type {
-            fn schemas() -> #facade::__private::HandlerSchemas {
+            fn handler_schemas() -> #facade::__private::HandlerSchemas {
                 #resolution
             }
         }

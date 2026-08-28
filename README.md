@@ -121,8 +121,10 @@ fn get(args: GetArgs) -> Result<GetOutput, GetError> {
 ```
 
 `#[argx::schema]` delegates schema generation to Schemars, including its Serde integration and
-`#[schemars(...)]` customization. Argx only owns the association between an invocable command and
-its handler result types. Public schema discovery is intentionally separate from this layer.
+`#[schemars(...)]` customization. Argx owns the CLI-specific side: invocation values are projected
+from its normalized command model, and handlers associate invocable commands with their result and
+error schemas. Together those form the invocation/result/error schema set for one executable
+command. Public schema discovery is intentionally separate from this layer.
 
 ## Examples
 

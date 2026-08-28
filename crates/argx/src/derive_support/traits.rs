@@ -9,8 +9,19 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct HandlerSchemas {
     /// Schema returned when command execution succeeds.
-    pub success: schemars::Schema,
+    pub result: schemars::Schema,
     /// Schema returned when command execution fails.
+    pub error: schemars::Schema,
+}
+
+/// JSON Schemas associated with one directly invocable command.
+#[derive(Debug, Clone)]
+pub struct CommandSchemas {
+    /// Explicit invocation values accepted by the command.
+    pub invocation: schemars::Schema,
+    /// Value returned when command execution succeeds.
+    pub result: schemars::Schema,
+    /// Value returned when command execution fails.
     pub error: schemars::Schema,
 }
 
@@ -26,14 +37,25 @@ where
     E: schemars::JsonSchema,
 {
     fn schemas() -> HandlerSchemas {
-        HandlerSchemas { success: schemars::schema_for!(T), error: schemars::schema_for!(E) }
+        HandlerSchemas { result: schemars::schema_for!(T), error: schemars::schema_for!(E) }
     }
 }
 
 /// Schema source attached to an invocable command by `#[argx::handler(CommandType)]`.
 pub trait HandlerSchemaSource: crate::InvocableHandlerCommand {
-    /// Generates this handler's success and error schemas.
-    fn schemas() -> HandlerSchemas;
+    /// Generates the handler-specific result and error schemas.
+    #[doc(hidden)]
+    fn handler_schemas() -> HandlerSchemas;
+
+    /// Generates invocation, result, and error schemas for this command.
+    fn schemas() -> CommandSchemas {
+        let handler = Self::handler_schemas();
+        CommandSchemas {
+            invocation: crate::invocation_schema::invocation_schema(<Self as CommandArgs>::COMMAND),
+            result: handler.result,
+            error: handler.error,
+        }
+    }
 }
 
 /// Marker implemented by generated command declarations that can execute directly.

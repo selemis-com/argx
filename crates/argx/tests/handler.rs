@@ -25,13 +25,15 @@ mod tests {
     }
 
     #[test]
-    fn schema_attribute_and_handlers_emit_schemars_schemas() {
+    fn handlers_associate_invocation_result_and_error_schemas() {
         let schemas = <RunArgs as argx::HandlerSchemaSource>::schemas();
-        let success =
-            serde_json::to_value(&schemas.success).expect("success schema should serialize");
+        let invocation =
+            serde_json::to_value(&schemas.invocation).expect("invocation schema should serialize");
+        let result = serde_json::to_value(&schemas.result).expect("result schema should serialize");
         let error = serde_json::to_value(&schemas.error).expect("error schema should serialize");
 
-        assert!(success["properties"]["value"].is_object());
+        assert_eq!(invocation["properties"]["value"]["type"], "string");
+        assert!(result["properties"]["value"].is_object());
         assert!(error.is_object());
         let result = run(RunArgs { value: String::from("ok") }).expect("handler should succeed");
         assert_eq!(result.value, "ok");
