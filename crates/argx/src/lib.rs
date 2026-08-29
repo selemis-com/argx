@@ -73,7 +73,7 @@
 //! # Configuration
 //!
 //! `#[derive(Config)]` generates one typed configuration contract. A generated `loader()` starts
-//! empty; applications add [`Defaults`], [`Dotenv`], [`Environment`], and [`Argv`] layers
+//! empty. Applications add [`Defaults`], [`Dotenv`], [`Environment`], and [`Argv`] layers
 //! explicitly, in the precedence order they want. The optional `toml` feature adds `Toml`:
 //!
 //! ```
@@ -98,7 +98,7 @@
 //! # Ok::<(), argx::ConfigError>(())
 //! ```
 //!
-//! Layers are sparse and are applied in call order. A later layer replaces only fields it supplies;
+//! Layers are sparse and are applied in call order. A later layer replaces only fields it supplies.
 //! an absent value never masks an earlier one. Declared field defaults are therefore not implicit:
 //! they take effect only when [`Defaults`] appears in the layer stack. Non-optional fields are
 //! required only after all configured layers have been resolved.
@@ -140,7 +140,7 @@
 //!
 //! With the `toml` feature enabled, `Toml` reads exactly the path supplied to the layer and
 //! rejects unknown fields. Argx performs no configuration-file discovery. [`Dotenv`] likewise reads
-//! exactly the supplied dotenv path; [`Environment`] contributes the current process environment.
+//! exactly the supplied dotenv path. [`Environment`] contributes the current process environment.
 //! TOML interpolation can observe environment values accumulated by earlier `Dotenv` and
 //! `Environment` layers, so moving an environment layer after a TOML layer also removes it from
 //! that TOML layer's interpolation scope.
@@ -162,7 +162,7 @@
 //! Root-command aliases are deliberately unsupported so the root has one canonical identity.
 //!
 //! A field with `#[argx(subcommand)]` selects one child from a derived subcommand enum. Selection
-//! is exact; Argx does not perform prefix matching. Once a child is selected, parsing enters that
+//! is exact. Argx does not perform prefix matching. Once a child is selected, parsing enters that
 //! child's lexical scope.
 //!
 //! A field with `#[argx(flatten)]` composes one direct `Args` declaration into the current command.
@@ -177,7 +177,7 @@
 //! # Arguments and cardinality
 //!
 //! A field is positional unless `long` or `short` is present. A bare `#[argx(long)]` infers the
-//! kebab-case field name; a bare `#[argx(short)]` infers its first character. Explicit spellings
+//! kebab-case field name. A bare `#[argx(short)]` infers its first character. Explicit spellings
 //! are accepted with `long = "..."` and `short = 'x'`. Named fields may add hidden long spellings
 //! with `alias` or `aliases`.
 //!
@@ -197,9 +197,9 @@
 //!
 //! Value conversion depends on the direct value type:
 //!
-//! - a field marked `#[argx(value_enum)]` parses through its finite [`trait@ValueEnum`] vocabulary;
-//! - `String` consumes UTF-8 text;
-//! - `OsString` and `PathBuf` preserve operating-system strings;
+//! - a field marked `#[argx(value_enum)]` parses through its finite [`trait@ValueEnum`] vocabulary.
+//! - `String` consumes UTF-8 text.
+//! - `OsString` and `PathBuf` preserve operating-system strings.
 //! - other value types are converted through [`std::str::FromStr`].
 //!
 //! ## Finite values
@@ -247,7 +247,7 @@
 //!
 //! `requires` is conditional: when the source is given through argv,
 //! the target must be satisfied. A typed default counts as a satisfied target. `conflicts` rejects
-//! the case where both source and target were given; a default alone does not make an argument
+//! the case where both source and target were given. A default alone does not make an argument
 //! conflict with another argument.
 //!
 //! ```
@@ -272,7 +272,7 @@
 //! committed, so a failing member does not partially apply earlier members.
 //!
 //! `--` stops flag interpretation in the active command scope. Ordinary flag-like detached values
-//! are refused by default. `allow_hyphen_values` permits them for a named value-taking option;
+//! are refused by default. `allow_hyphen_values` permits them for a named value-taking option.
 //! `allow_negative_numbers` permits recognized negative-number spellings while continuing to
 //! reject other flag-like values. The latter is also available for positional values.
 //!
@@ -282,7 +282,7 @@
 //!
 //! # Entry points and embedding
 //!
-//! All parser entry points use the same generated command model; they differ only in where argv
+//! All parser entry points use the same generated command model. They differ only in where argv
 //! comes from and who owns terminal/process policy:
 //!
 //! | Entry point | Input | Process policy |
@@ -316,17 +316,17 @@
 //!
 //! Help is generated from the same static command model used for parsing. Every command scope has
 //! built-in `-h` and `--help`. A root command or subcommand variant that declares `version` or
-//! `long_version` also receives `-V` and `--version`; if only one version expression is supplied,
+//! `long_version` also receives `-V` and `--version`. If only one version expression is supplied,
 //! it is used for both forms.
 //!
 //! Rust documentation participates directly in help generation:
 //!
-//! - the first prose paragraph is the one-line summary used in command listings and argument rows;
-//! - the command's prose before the first level-one heading is its full description;
-//! - level-one Markdown headings become user-authored help sections after generated sections;
+//! - the first prose paragraph is the one-line summary used in command listings and argument rows.
+//! - the command's prose before the first level-one heading is its full description.
+//! - level-one Markdown headings become user-authored help sections after generated sections.
 //! - documentation on a flatten field becomes the flattened group's heading.
 //!
-//! `about = "..."` explicitly replaces the command's derived descriptive text; `help = "..."`
+//! `about = "..."` explicitly replaces the command's derived descriptive text. `help = "..."`
 //! replaces a field's derived one-line summary. Hidden flag and subcommand aliases are accepted by
 //! parsing but omitted from generated help so help presents one canonical interface.
 //!
@@ -409,7 +409,7 @@
 //! paths bundle child command schemas under `$defs.subcommands.$defs`.
 //!
 //! Handler associations are traversed statically from the command types into a short-lived local
-//! registry for one discovery operation; Argx uses neither linker inventory nor global
+//! registry for one discovery operation. Argx uses neither linker inventory nor global
 //! registration. Schema discovery is represented during parsing as [`Error::DisplaySchema`] and
 //! follows the same successful terminal-action policy as help and version.
 //!
@@ -422,7 +422,7 @@
 //! ## `Parser` and `Args` declarations
 //!
 //! Struct declarations accept `name = "..."` and `about = "..."`. `name` replaces the inferred
-//! kebab-case command name; `about` replaces documentation-derived descriptive text. A `Parser`
+//! kebab-case command name. `about` replaces documentation-derived descriptive text. A `Parser`
 //! declaration may additionally use `version = expression`, `long_version = expression`, and the
 //! marker `schema`. If only one version expression is supplied, Argx uses it for both `-V` and
 //! `--version`. `schema` enables machine-readable discovery. Structural `Args` declarations that
@@ -439,10 +439,10 @@
 //! The enum itself accepts the `schema` marker when it participates in machine-readable command
 //! topology. Individual variants accept:
 //!
-//! - `name = "..."` to replace the inferred kebab-case command spelling;
-//! - `about = "..."` to override documentation-derived descriptive text;
-//! - `alias = "..."` for one hidden accepted command spelling;
-//! - `aliases = ["...", "..."]` for multiple hidden accepted spellings;
+//! - `name = "..."` to replace the inferred kebab-case command spelling.
+//! - `about = "..."` to override documentation-derived descriptive text.
+//! - `alias = "..."` for one hidden accepted command spelling.
+//! - `aliases = ["...", "..."]` for multiple hidden accepted spellings.
 //! - `version = expression` and `long_version = expression` for version actions local to that
 //!   command scope.
 //!
@@ -478,7 +478,7 @@
 //!
 //! `alias` / `aliases` and `global` require a named option. `default` is restricted to scalar
 //! value-taking named options, so it cannot be used on switches or collections.
-//! `allow_hyphen_values` is named-option only; `allow_negative_numbers` may also be used on a
+//! `allow_hyphen_values` is named-option only. `allow_negative_numbers` may also be used on a
 //! positional value. Value policies do not apply to `bool` switches.
 //!
 //! `requires` and `conflicts` refer to Rust field names in the composed command context, including
@@ -501,14 +501,14 @@
 //!
 //! The derive surface rejects ambiguous or unsupported shapes rather than approximating them:
 //!
-//! - `Parser` and `Args` do not support tuple structs;
-//! - a command may have at most one direct `subcommand` field;
+//! - `Parser` and `Args` do not support tuple structs.
+//! - a command may have at most one direct `subcommand` field.
 //! - `flatten` and `subcommand` fields must hold their derived type directly, not through `Option`
-//!   or collection wrappers;
-//! - subcommand variants support only unit variants or one unnamed direct `Args` payload;
-//! - nested `Option` / `Vec` wrappers outside the recognized shapes are unsupported;
+//!   or collection wrappers.
+//! - subcommand variants support only unit variants or one unnamed direct `Args` payload.
+//! - nested `Option` / `Vec` wrappers outside the recognized shapes are unsupported.
 //! - `value_enum` fields cannot depend on the containing command's generic parameters because their
-//!   vocabulary is part of static command metadata;
+//!   vocabulary is part of static command metadata.
 //! - reserved built-in help/version/schema spellings and invalid composed layouts are rejected
 //!   during derivation or const-time composition.
 //!
@@ -518,7 +518,7 @@
 //! # Platform support
 //!
 //! The supported native targets are Linux and macOS. Windows is supported through the Windows
-//! Subsystem for Linux (WSL); native Windows targets are not supported. The parser still uses
+//! Subsystem for Linux (WSL). Native Windows targets are not supported. The parser still uses
 //! [`OsString`] internally so supported Unix targets do not need to force argv through UTF-8.
 //!
 #![doc(
@@ -600,7 +600,7 @@ pub trait Args: Sized + __private::CommandArgs {}
 /// Parses command-line arguments into a typed value.
 ///
 /// The derive generates one static command model and the hidden binding implementation required by
-/// these entry points. Prefer the `try_parse*` methods when the caller owns process policy; the
+/// these entry points. Prefer the `try_parse*` methods when the caller owns process policy. The
 /// corresponding `parse*` methods are convenience entry points for ordinary CLI binaries.
 pub trait Parser: Sized + __private::CommandArgs {
     /// Parses the current process arguments, excluding the program name.

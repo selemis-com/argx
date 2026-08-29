@@ -16,15 +16,15 @@
 </p>
 
 Argx is a derive-first command-line parser and configuration library for Rust. Rust types define
-its interface; generated static metadata drives parsing, typed binding, help, diagnostics,
+its interface. Generated static metadata drives parsing, typed binding, help, diagnostics,
 completions, schemas, and ordered configuration resolution.
 
 The model is deliberately small:
 
-- [`Parser`](https://docs.rs/argx/latest/argx/trait.Parser.html) defines a root command;
-- [`Args`](https://docs.rs/argx/latest/argx/trait.Args.html) defines reusable argument groups;
-- [`Subcommand`](https://docs.rs/argx/latest/argx/derive.Subcommand.html) defines typed child commands;
-- [`Config`](https://docs.rs/argx/latest/argx/trait.Config.html) resolves typed values across explicitly ordered layers;
+- [`Parser`](https://docs.rs/argx/latest/argx/trait.Parser.html) defines a root command.
+- [`Args`](https://docs.rs/argx/latest/argx/trait.Args.html) defines reusable argument groups.
+- [`Subcommand`](https://docs.rs/argx/latest/argx/derive.Subcommand.html) defines typed child commands.
+- [`Config`](https://docs.rs/argx/latest/argx/trait.Config.html) resolves typed values across explicitly ordered layers.
 - one static command model drives parsing, help, completions, and schema discovery.
 
 Full API documentation and behavioral details are available on
@@ -38,7 +38,7 @@ cargo add argx
 
 ### Features
 
-- `derive` — enabled by default; exports the `Parser`, `Args`, `Subcommand`, `ValueEnum`, and
+- `derive` — enabled by default. It exports the `Parser`, `Args`, `Subcommand`, `ValueEnum`, and
   `Config` derives plus the `#[argx(...)]` attribute macro.
 - `toml` — enables TOML configuration layers and implies `derive`.
 
@@ -138,9 +138,9 @@ implicit: they participate only when `Defaults` is added. A non-optional field b
 only after every configured layer has been considered.
 
 A configuration-level prefix maps fields to environment variables. For example,
-`#[argx(prefix = "ACME")]` maps `workers` to `ACME_WORKERS`; a flattened `server.workers` field maps
+`#[argx(prefix = "ACME")]` maps `workers` to `ACME_WORKERS`. A flattened `server.workers` field maps
 to `ACME_SERVER_WORKERS`. `#[argx(env = "EXACT_NAME")]` selects an exact variable instead.
-Environment layers inspect only mapped variables; unrelated process variables are ignored.
+Environment layers inspect only mapped variables. Unrelated process variables are ignored.
 
 Files are explicit layers too:
 
@@ -158,7 +158,7 @@ observe environment values established by earlier `Dotenv` or `Environment` laye
 also controls interpolation visibility. Argx performs no file discovery.
 
 Configuration fields participate in argv only when they carry CLI metadata such as `long` or
-`short`; `#[argx(flatten)]` composes a nested `Config` across every layer. See the
+`short`. `#[argx(flatten)]` composes a nested `Config` across every layer. See the
 [configuration example](crates/argx/examples/configuration.rs) for a runnable version.
 
 ## Shell completions
@@ -223,7 +223,7 @@ exact discovery contract.
 ## Examples
 
 The examples are executable documentation. Start with `basic` for the smallest integration point or
-`complete` for the complete Argx API; the remaining examples isolate one major subsystem.
+`complete` for the complete Argx API. The remaining examples isolate one major subsystem.
 Detailed behavior is documented on [docs.rs/argx](https://docs.rs/argx/latest/argx/).
 
 | Example | Focus | Try it |
@@ -239,7 +239,7 @@ Detailed behavior is documented on [docs.rs/argx](https://docs.rs/argx/latest/ar
 ## Support
 
 Argx supports Linux and macOS natively. Windows is supported through the
-Windows Subsystem for Linux (WSL); native Windows targets are not supported.
+Windows Subsystem for Linux (WSL). Native Windows targets are not supported.
 
 ## MSRV
 
