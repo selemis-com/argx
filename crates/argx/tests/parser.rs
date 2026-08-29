@@ -510,6 +510,27 @@ mod tests {
         profile: Option<String>,
     }
 
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    struct CountCli {
+        #[argx(short = 'v', long, count, default = 3)]
+        verbosity: u8,
+        #[argx(short = 'q', long)]
+        quiet: bool,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    struct GlobalCountCli {
+        #[argx(short = 'v', long, count, global)]
+        verbosity: u8,
+        #[argx(subcommand)]
+        command: GlobalCountCommand,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Subcommand)]
+    enum GlobalCountCommand {
+        Run,
+    }
+
     #[derive(Debug, PartialEq, Eq, argx::Args)]
     struct DefaultShared {
         #[argx(long, default = 4_u16)]
@@ -685,6 +706,47 @@ mod tests {
                 input: String::from("input.txt"),
                 rest: vec![String::from("tail-a"), String::from("tail-b")],
             }
+        );
+    }
+
+    #[test]
+    fn counted_flags_bind_occurrences_and_use_defaults_only_when_absent() {
+        assert_eq!(
+            CountCli::try_parse_args(std::iter::empty::<&str>()),
+            Ok(CountCli { verbosity: 3, quiet: false })
+        );
+        assert_eq!(
+            CountCli::try_parse_args(["-v"]),
+            Ok(CountCli { verbosity: 1, quiet: false })
+        );
+        assert_eq!(
+            CountCli::try_parse_args(["-vvv"]),
+            Ok(CountCli { verbosity: 3, quiet: false })
+        );
+        assert_eq!(
+            CountCli::try_parse_args(["--verbosity", "--verbosity"]),
+            Ok(CountCli { verbosity: 2, quiet: false })
+        );
+        assert_eq!(
+            CountCli::try_parse_args(["-vvq"]),
+            Ok(CountCli { verbosity: 2, quiet: true })
+        );
+    }
+
+    #[test]
+    fn counted_flags_saturate_at_u8_max() {
+        let flags = std::iter::repeat_n("-v", usize::from(u8::MAX) + 1);
+        assert_eq!(
+            CountCli::try_parse_args(flags),
+            Ok(CountCli { verbosity: u8::MAX, quiet: false })
+        );
+    }
+
+    #[test]
+    fn global_counted_flags_accumulate_across_command_boundaries() {
+        assert_eq!(
+            GlobalCountCli::try_parse_args(["-v", "run", "-vv"]),
+            Ok(GlobalCountCli { verbosity: 3, command: GlobalCountCommand::Run })
         );
     }
 

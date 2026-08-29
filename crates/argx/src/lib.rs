@@ -461,7 +461,8 @@
 //! | `alias = "name"` | add one hidden long spelling to a named option |
 //! | `aliases = ["a", "b"]` | add multiple hidden long spellings to a named option |
 //! | `global` | keep a named option visible in descendant command scopes |
-//! | `default = expression` | use a typed Rust default for a scalar value-taking named option |
+//! | `count` | bind the number of occurrences of a value-less flag to a `u8` field |
+//! | `default = expression` | use a typed Rust default for a scalar value option or counted flag |
 //! | `requires = "field"` | require another argument when this argument is supplied |
 //! | `requires = ["a", "b"]` | require multiple arguments |
 //! | `conflicts = "field"` | reject use with another argument |
@@ -476,10 +477,12 @@
 //! Long and alias spellings are written without leading dashes. A short spelling is one visible
 //! ASCII character other than `-` or `=`.
 //!
-//! `alias` / `aliases` and `global` require a named option. `default` is restricted to scalar
-//! value-taking named options, so it cannot be used on switches or collections.
+//! `alias` / `aliases`, `global`, and `count` require a named option. `count` requires a direct
+//! `u8` field and makes the option value-less and repeatable. Its value is the number of explicit
+//! occurrences, saturating at `u8::MAX`. A typed `default` is used only
+//! when the flag is absent. Other defaults remain restricted to scalar value-taking named options.
 //! `allow_hyphen_values` is named-option only. `allow_negative_numbers` may also be used on a
-//! positional value. Value policies do not apply to `bool` switches.
+//! positional value. Value policies do not apply to `bool` switches or counted flags.
 //!
 //! `requires` and `conflicts` refer to Rust field names in the composed command context, including
 //! fields contributed by `flatten`. Structural `flatten` and `subcommand` fields cannot also carry

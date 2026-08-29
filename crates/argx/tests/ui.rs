@@ -121,6 +121,22 @@ error: `global` takes no value
     }
 
     #[test]
+    fn invalid_count_declarations_are_rejected_deterministically() {
+        support::assert_ui_failure(
+            "invalid_counts",
+            "argx",
+            snapbox::str![[r#"
+error: `count` is only valid on named flags
+error: `count` requires a `u8` field
+error: value policies are not valid on counted flags
+error: `value_enum` is not valid on counted flags
+error: `count` takes no value
+
+"#]],
+        );
+    }
+
+    #[test]
     fn invalid_alias_declarations_are_rejected_deterministically() {
         support::assert_ui_failure(
             "invalid_aliases",

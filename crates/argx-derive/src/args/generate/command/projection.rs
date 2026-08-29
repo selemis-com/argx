@@ -83,6 +83,10 @@ pub(super) fn partial_projection(
         _ if field.argument().is_some_and(|argument| argument.shape == model::Shape::Many) => {
             quote!(::std::vec::Vec<::std::vec::Vec<u8>>)
         }
+        _ if field.is_count() => {
+            let ty = &field.binding.ty;
+            quote!(#ty)
+        },
         _ if field.is_switch() => quote!((bool, bool)),
         _ => quote!((::std::option::Option<::std::vec::Vec<u8>>, bool)),
     }).collect::<Vec<_>>();

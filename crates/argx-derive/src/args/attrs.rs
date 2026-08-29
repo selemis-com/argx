@@ -63,6 +63,8 @@ pub(crate) struct FieldAttrs {
     pub subcommand: bool,
     /// Whether this named argument remains in scope for descendant commands.
     pub global: bool,
+    /// Whether this value-less flag binds its occurrence count.
+    pub count: bool,
     /// Typed Rust expression used when the argument is absent.
     pub default: Option<Expr>,
     /// Long flag spelling, or an instruction to infer it.
@@ -179,6 +181,15 @@ pub(crate) fn field(attributes: &[Attribute]) -> syn::Result<FieldAttrs> {
                     return Err(meta.error("`global` takes no value"));
                 }
                 parsed.global = true;
+                Ok(())
+            } else if meta.path.is_ident("count") {
+                if parsed.count {
+                    return Err(meta.error("duplicate `count` attribute"));
+                }
+                if meta.input.peek(Token![=]) || meta.input.peek(syn::token::Paren) {
+                    return Err(meta.error("`count` takes no value"));
+                }
+                parsed.count = true;
                 Ok(())
             } else if meta.path.is_ident("default") {
                 if parsed.default.is_some() {

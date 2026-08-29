@@ -83,15 +83,17 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
         let diagnostic = &argument.diagnostic;
         let help = option_str(argument.help.as_deref());
         let global = argument.global;
-        let takes_value = !field.is_switch();
+        let takes_value = field.takes_value();
         let accepted_values = if argument.value_enum {
             let ty = &field.value_binding().ty;
             quote!(<#ty as #facade::ValueEnum>::VALUES)
         } else {
             quote!(&[])
         };
-        let repeatable = argument.shape == model::Shape::Many;
-        let required = argument.shape == model::Shape::Required && !argument.has_default;
+        let repeatable = field.is_repeatable();
+        let required = argument.shape == model::Shape::Required
+            && !argument.has_default
+            && field.takes_value();
         let has_default = argument.has_default;
         let allow_hyphen_values = argument.allow_hyphen_values;
         let allow_negative_numbers = argument.allow_negative_numbers;
@@ -211,6 +213,10 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
             _ if field.argument().is_some_and(|argument| argument.shape == model::Shape::Many) => {
                 quote!(::std::vec::Vec::new())
             }
+            _ if field.is_count() => {
+                let ty = &field.binding.ty;
+                quote!(0 as #ty)
+            },
             _ if field.is_switch() => quote!((false, false)),
             _ => quote!((::std::option::Option::None, false)),
         })
@@ -318,7 +324,8 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
         .filter_map(|(field_index, field)| match &field.semantics {
             model::FieldSemantics::Argument(argument)
                 if matches!(&argument.kind, model::ArgumentKind::Flag { .. })
-                    && argument.shape != model::Shape::Many =>
+                    && argument.shape != model::Shape::Many
+                    && !argument.count =>
             {
                 let slot = syn::Index::from(field_index);
                 let name = &argument.diagnostic;
@@ -382,6 +389,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
             }
             model::FieldSemantics::Argument(argument)
                 if !field.is_switch()
+                    && !field.is_count()
                     && matches!(argument.shape, model::Shape::Bool | model::Shape::Required)
                     && !argument.has_default =>
             {

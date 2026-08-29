@@ -210,19 +210,21 @@ impl Field {
         let shape = Shape::from_type(&binding.ty);
         validate_value_shape(&binding.ty, shape, binding.span)?;
         let kind = argument_kind(&binding, &mut attributes)?;
+        validate_count(&attributes, &binding.ty, &kind, binding.span)?;
         validate_argument_value_policies(&attributes, &kind, shape, binding.span)?;
         validate_argument_default(&attributes, &kind, shape, binding.span)?;
 
         let diagnostic = argument_diagnostic(&binding, &kind);
         let has_default = attributes.default.is_some();
         let switch = matches!(&kind, ArgumentKind::Flag { .. }) && shape == Shape::Bool;
+        let count = attributes.count;
         if attributes.value_enum && switch {
             return Err(syn::Error::new(
                 binding.span,
                 "`value_enum` is only valid on value-taking arguments",
             ));
         }
-        if !switch {
+        if !switch && !count {
             binding.value = Some(value_binding(&binding.ty, shape));
         }
         binding.default = attributes.default;
@@ -242,6 +244,7 @@ impl Field {
                 allow_hyphen_values: attributes.allow_hyphen_values,
                 allow_negative_numbers: attributes.allow_negative_numbers,
                 value_enum: attributes.value_enum,
+                count,
             }),
             help_heading: None,
         })
@@ -265,6 +268,24 @@ impl Field {
         self.argument().is_some_and(|argument| {
             matches!(&argument.kind, ArgumentKind::Flag { .. }) && argument.shape == Shape::Bool
         })
+    }
+
+    /// Reports whether this field binds the number of flag occurrences.
+    pub(crate) fn is_count(&self) -> bool {
+        self.argument().is_some_and(|argument| argument.count)
+    }
+
+    /// Reports whether this argument consumes a value from argv.
+    pub(crate) fn takes_value(&self) -> bool {
+        self.argument().is_some_and(|argument| {
+            matches!(argument.kind, ArgumentKind::Positional)
+                || (!self.is_switch() && !argument.count)
+        })
+    }
+
+    /// Reports whether this argument may occur more than once.
+    pub(crate) fn is_repeatable(&self) -> bool {
+        self.argument().is_some_and(|argument| argument.shape == Shape::Many || argument.count)
     }
 
     /// Returns normalized typed-value binding information.
@@ -300,6 +321,7 @@ fn validate_structural_metadata(
         attributes.short.is_some(),
         !attributes.aliases.is_empty(),
         attributes.global,
+        attributes.count,
         attributes.default.is_some(),
         attributes.allow_hyphen_values,
         attributes.allow_negative_numbers,
@@ -353,6 +375,35 @@ fn argument_kind(
     Ok(ArgumentKind::Flag { longs, aliases, shorts })
 }
 
+/// Validates counted flags before ordinary value policy checks.
+fn validate_count(
+    attributes: &attrs::FieldAttrs,
+    ty: &Type,
+    kind: &ArgumentKind,
+    span: Span,
+) -> syn::Result<()> {
+    if !attributes.count {
+        return Ok(());
+    }
+    if !matches!(kind, ArgumentKind::Flag { .. }) {
+        return Err(syn::Error::new(span, "`count` is only valid on named flags"));
+    }
+    if !matches!(
+        rendered_path(ty).as_str(),
+        "u8"
+            | "std::primitive::u8"
+            | "::std::primitive::u8"
+            | "core::primitive::u8"
+            | "::core::primitive::u8"
+    ) {
+        return Err(syn::Error::new(span, "`count` requires a `u8` field"));
+    }
+    if attributes.value_enum {
+        return Err(syn::Error::new(span, "`value_enum` is not valid on counted flags"));
+    }
+    Ok(())
+}
+
 /// Validates value-consumption policies whose legality depends on argument kind and shape.
 fn validate_argument_value_policies(
     attributes: &attrs::FieldAttrs,
@@ -365,6 +416,9 @@ fn validate_argument_value_policies(
     }
     if attributes.global && matches!(kind, ArgumentKind::Positional) {
         return Err(syn::Error::new(span, "`global` is only valid on named flags"));
+    }
+    if (attributes.allow_hyphen_values || attributes.allow_negative_numbers) && attributes.count {
+        return Err(syn::Error::new(span, "value policies are not valid on counted flags"));
     }
     if (attributes.allow_hyphen_values || attributes.allow_negative_numbers) && shape == Shape::Bool
     {
@@ -382,7 +436,7 @@ fn validate_argument_default(
 ) -> syn::Result<()> {
     if attributes.default.is_some()
         && (!matches!(kind, ArgumentKind::Flag { .. })
-            || matches!(shape, Shape::Bool | Shape::Many))
+            || (!attributes.count && matches!(shape, Shape::Bool | Shape::Many)))
     {
         return Err(syn::Error::new(
             span,

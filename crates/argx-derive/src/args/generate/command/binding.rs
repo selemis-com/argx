@@ -27,7 +27,7 @@ pub(super) fn binding_generics(command: &model::Command, facade: &TokenStream) -
             }
             _ => {}
         }
-        if field.is_switch() {
+        if !field.takes_value() {
             continue;
         }
         let value = field.value_binding();
@@ -91,6 +91,15 @@ pub(super) fn apply_arm(
         };
     }
 
+    if field.is_count() {
+        return quote! {
+            #key if ::core::ptr::eq(#event_meta, &#table) => {
+                partial.#slot = partial.#slot.saturating_add(1);
+                true
+            },
+        };
+    }
+
     let raw_value = if flag {
         quote! {
             let ::std::option::Option::Some(value) = value else {
@@ -136,6 +145,8 @@ pub(super) fn argument_state_branch(
     let diagnostic = &argument.diagnostic;
     let given = if field.is_switch() {
         quote!(partial.#slot.0)
+    } else if field.is_count() {
+        quote!(partial.#slot > 0)
     } else if argument.shape == model::Shape::Many {
         quote!(!partial.#slot.is_empty())
     } else {
@@ -186,6 +197,23 @@ pub(super) fn finish_field(
 
     if field.is_switch() {
         return quote!(partial.#slot.0);
+    }
+
+    if field.is_count() {
+        let ty = &field.binding.ty;
+        return field.binding.default.as_ref().map_or_else(
+            || quote!(partial.#slot),
+            |default| {
+                quote! {
+                    if partial.#slot == 0 {
+                        let __argx_default: #ty = #default;
+                        __argx_default
+                    } else {
+                        partial.#slot
+                    }
+                }
+            },
+        );
     }
 
     let binding = field.value_binding();

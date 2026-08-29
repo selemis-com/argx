@@ -189,6 +189,8 @@ pub(crate) struct Argument {
     pub allow_negative_numbers: bool,
     /// Whether this argument is restricted to a finite `ValueEnum` vocabulary.
     pub value_enum: bool,
+    /// Whether this value-less flag binds its occurrence count.
+    pub count: bool,
 }
 
 /// Command-line category of one argument.

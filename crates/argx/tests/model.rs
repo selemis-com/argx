@@ -92,6 +92,12 @@ mod tests {
         command: Commands,
     }
 
+    #[derive(argx::Parser)]
+    struct CountModel {
+        #[argx(short, long, count, default = 3)]
+        verbosity: u8,
+    }
+
     const VERSION: &str = "1.2.3";
     const LONG_VERSION: &str = "1.2.3 (build abc123)";
 
@@ -182,6 +188,26 @@ mod tests {
         pub(super) enum Action {
             Run,
         }
+    }
+
+    #[test]
+    fn counted_flags_project_as_repeatable_value_less_options() {
+        let &[verbosity] = CountModel::COMMAND.flags else {
+            panic!("expected verbosity flag");
+        };
+        assert_eq!(
+            *verbosity,
+            Flag {
+                key: verbosity.key,
+                name: "verbosity",
+                diagnostic: "--verbosity",
+                longs: &["verbosity"],
+                shorts: b"v",
+                repeatable: true,
+                has_default: true,
+                ..Flag::BOOL
+            }
+        );
     }
 
     #[test]
