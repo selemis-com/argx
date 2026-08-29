@@ -29,7 +29,7 @@ pub(crate) fn generate_config(
             return quote! {
                 #(#docs)*
                 #[argx(flatten)]
-                #ident: <#ty as #argx::Config>::__CliArgs
+                #ident: <#ty as #argx::__private::Config>::__CliArgs
             };
         }
         let attrs = &field.cli;
@@ -55,7 +55,7 @@ pub(crate) fn generate_config(
         if field.nested {
             return quote! {
                 overrides.#ident = ::core::option::Option::Some(
-                    <#ty as #argx::Config>::__cli_overrides(args.#ident)
+                    <#ty as #argx::__private::Config>::__cli_overrides(args.#ident)
                 );
             };
         }
@@ -77,7 +77,7 @@ pub(crate) fn generate_config(
         let ident = &field.ident;
         let ty = &field.ty;
         if field.nested {
-            quote!(#ident: ::core::option::Option<<#ty as #argx::Config>::Overrides>)
+            quote!(#ident: ::core::option::Option<<#ty as #argx::__private::Config>::Overrides>)
         } else {
             quote!(#ident: ::core::option::Option<#ty>)
         }
@@ -86,7 +86,7 @@ pub(crate) fn generate_config(
         let ident = &field.ident;
         let ty = &field.ty;
         if field.nested {
-            quote!(#ident: ::core::option::Option<<#ty as #argx::Config>::__Toml>)
+            quote!(#ident: ::core::option::Option<<#ty as #argx::__private::Config>::__Toml>)
         } else {
             quote!(#ident: ::core::option::Option<#ty>)
         }
@@ -118,7 +118,7 @@ pub(crate) fn generate_config(
         let ty = &field.ty;
         if field.nested {
             return quote! {
-                #ident: ::core::option::Option::Some(<#ty as #argx::Config>::__defaults())
+                #ident: ::core::option::Option::Some(<#ty as #argx::__private::Config>::__defaults())
             };
         }
         match &field.default {
@@ -140,7 +140,7 @@ pub(crate) fn generate_config(
         if field.nested {
             quote! {
                 #ident: self.#ident.map(
-                    <<#ty as #argx::Config>::__Toml as #argx::__private::TomlInput>::into_overrides,
+                    <<#ty as #argx::__private::Config>::__Toml as #argx::__private::TomlInput>::into_overrides,
                 )
             }
         } else {
@@ -160,7 +160,7 @@ pub(crate) fn generate_config(
             return quote! {
                 let nested_prefix = prefix
                     .map(|prefix| #argx::__private::environment_name(prefix, #component));
-                let nested = <#ty as #argx::Config>::__environment_contract(
+                let nested = <#ty as #argx::__private::Config>::__environment_contract(
                     nested_prefix.as_deref(),
                 );
                 contract.__extend_within(nested, #field_name);
@@ -197,7 +197,7 @@ pub(crate) fn generate_config(
                 let nested_prefix = prefix
                     .map(|prefix| #argx::__private::environment_name(prefix, #component));
                 overrides.#ident = ::core::option::Option::Some(
-                    <#ty as #argx::Config>::__environment_with_prefix(
+                    <#ty as #argx::__private::Config>::__environment_with_prefix(
                         environment,
                         nested_prefix.as_deref(),
                     )
@@ -243,8 +243,8 @@ pub(crate) fn generate_config(
         let name = LitStr::new(&field.name, field.ident.span());
         if field.nested {
             return quote! {
-                #ident: <#ty as #argx::Config>::__finalize(
-                    resolved.#ident.unwrap_or_else(<#ty as #argx::Config>::__defaults),
+                #ident: <#ty as #argx::__private::Config>::__finalize(
+                    resolved.#ident.unwrap_or_else(<#ty as #argx::__private::Config>::__defaults),
                 )
                 .map_err(|error| error.__within(#name))?
             };
@@ -264,6 +264,13 @@ pub(crate) fn generate_config(
     });
 
     quote! {
+        impl #ident {
+            /// Creates an empty ordered configuration loader.
+            pub fn loader() -> #argx::ConfigLoader<Self> {
+                <Self as #argx::__private::Config>::loader()
+            }
+        }
+
         #[doc(hidden)]
         #[derive(::core::default::Default)]
         #[must_use = "configuration overrides have no effect until they are resolved"]
@@ -318,14 +325,14 @@ pub(crate) fn generate_config(
         impl #argx::__private::TomlInput for #toml_ident {
             type Config = #ident;
 
-            fn into_overrides(self) -> <Self::Config as #argx::Config>::Overrides {
+            fn into_overrides(self) -> <Self::Config as #argx::__private::Config>::Overrides {
                 #overrides_ident {
                     #(#toml_into_overrides,)*
                 }
             }
         }
 
-        impl #argx::Config for #ident {
+        impl #argx::__private::Config for #ident {
             type Overrides = #overrides_ident;
             type __Toml = #toml_ident;
             type __CliArgs = #cli_ident;

@@ -36,7 +36,7 @@ files, environment values and command-line arguments are different ways to suppl
 same Rust fields; the application receives only the final resolved `Config`.
 
 ```rust
-use argx::{Argv, Config as _, Defaults, Env, Toml};
+use argx::{Argv, Defaults, Environment, Toml};
 
 #[derive(argx::Config)]
 #[argx(prefix = "ACME")]
@@ -51,7 +51,7 @@ struct Config {
 let config = Config::loader()
     .layer(Defaults)
     .layer(Toml::new("acme.toml"))
-    .layer(Env)
+    .layer(Environment)
     .layer(Argv::current())
     .resolve()?;
 # Ok::<(), argx::ConfigError>(())
@@ -145,7 +145,8 @@ struct Cli {
     command: Commands,
 }
 
-#[derive(argx::Subcommand, argx::CommandSchema)]
+#[derive(argx::Subcommand)]
+#[argx(schema)]
 enum Commands {
     Get(GetCommand),
 }
@@ -172,8 +173,9 @@ fn get(command: GetCommand) -> Result<GetOutput, GetError> {
 ```
 
 `#[argx(schema)]` delegates Rust data-model schema generation to Schemars. Argx owns invocation
-schema projection and static command topology. `CommandSchema` is used only on structural command
-groups; executable leaves are associated with their result and error schemas by `#[argx(handler = ...)]`.
+schema projection and static command topology. Structural `Args` and `Subcommand` declarations use
+the same `#[argx(schema)]` marker; executable leaves are associated with their result and error
+schemas by `#[argx(handler = ...)]`.
 For a zero-argument executable command, use an empty `Args` struct rather than a unit subcommand
 variant so the leaf has a concrete Rust type.
 

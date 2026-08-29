@@ -20,7 +20,18 @@ impl Subcommand {
                 "Subcommand can only be derived for enums",
             ));
         };
-        attrs::reject(&input.attrs, "subcommand")?;
+        let attributes = attrs::command(&input.attrs)?;
+        if attributes.name.is_some()
+            || attributes.about.is_some()
+            || attributes.version.is_some()
+            || attributes.long_version.is_some()
+            || !attributes.aliases.is_empty()
+        {
+            return Err(syn::Error::new_spanned(
+                &input.ident,
+                "Subcommand enum attributes support only `schema`",
+            ));
+        }
         if data.variants.is_empty() {
             return Err(syn::Error::new_spanned(
                 &input.ident,
@@ -37,7 +48,7 @@ impl Subcommand {
             if attributes.schema {
                 return Err(syn::Error::new_spanned(
                     &variant.ident,
-                    "schema discovery is only valid on Parser declarations",
+                    "`schema` is only valid on Parser, Args, or Subcommand declarations",
                 ));
             }
             let rust_name = support::ident_name(&variant.ident);
@@ -115,6 +126,16 @@ impl Subcommand {
             });
         }
 
+        if attributes.schema {
+            for variant in &variants {
+                if variant.binding.payload.is_none() {
+                    return Err(syn::Error::new_spanned(
+                        &variant.binding.ident,
+                        "`#[argx(schema)]` requires executable subcommands to use a concrete Args payload; use an empty Args struct instead of a unit variant",
+                    ));
+                }
+            }
+        }
         validate_variant_generics(&variants, &input.generics)?;
 
         Ok(Self {
@@ -122,6 +143,7 @@ impl Subcommand {
                 ident: input.ident.clone(),
                 generics: input.generics.clone(),
                 fingerprint: input.to_token_stream().to_string(),
+                schema: attributes.schema,
             },
             variants,
         })

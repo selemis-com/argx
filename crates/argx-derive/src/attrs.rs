@@ -50,7 +50,7 @@ pub(crate) struct CommandAttrs {
     pub long_version: Option<Expr>,
     /// Additional hidden spellings accepted for a selectable subcommand.
     pub aliases: Vec<String>,
-    /// Whether a root parser exposes built-in schema discovery.
+    /// Whether this command declaration participates in schema discovery.
     pub schema: bool,
 }
 

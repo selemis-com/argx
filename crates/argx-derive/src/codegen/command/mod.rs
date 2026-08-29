@@ -171,6 +171,25 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
             {}
         }
     });
+    let schema_command_impl = (!command.binding.root && command.semantics.schema).then(|| {
+        let (_, field) = subcommand.expect("schema-enabled Args must contain a subcommand field");
+        let ty = &field.binding.ty;
+        quote! {
+            impl #impl_generics #facade::__private::SchemaCommand
+                for #ident #ty_generics #where_clause
+            {
+                fn register_schema_commands(
+                    command: &'static #facade::__private::Command<'static>,
+                    registry: &mut #facade::__private::SchemaRegistry,
+                ) {
+                    <#ty as #facade::__private::SchemaSubcommands>::register_schema_subcommands(
+                        command.subcommands,
+                        registry,
+                    );
+                }
+            }
+        }
+    });
 
     // Partial state mirrors Rust field order. Direct arguments accumulate raw bytes, flattened
     // declarations retain their own partial state, and subcommands retain branch-selection state.
@@ -457,7 +476,8 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
             quote!(<#ty as #facade::__private::Subcommands>::COMMANDS)
         },
     );
-    let schema_registry = if command.binding.root && command.semantics.schema {
+    let schema_enabled = command.binding.root && command.semantics.schema;
+    let schema_registry = if schema_enabled {
         subcommand.map_or_else(
             || {
                 quote! {
@@ -541,6 +561,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
             #flattened_checks
 
             #invocable_handler_impl
+            #schema_command_impl
 
             impl #impl_generics #facade::__private::CommandArgs
                 for #ident #ty_generics #where_clause
@@ -548,6 +569,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                 type Partial = #partial_type;
 
                 const COMMAND: &'static #facade::__private::Command<'static> = &ARGX_COMMAND;
+                const SCHEMA_ENABLED: bool = #schema_enabled;
 
                 #schema_registry
 

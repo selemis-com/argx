@@ -15,7 +15,6 @@
 
 mod attrs;
 mod codegen;
-mod command_schema;
 mod config;
 mod handler;
 mod key;
@@ -150,23 +149,14 @@ fn standalone_attribute(
 /// Every variant becomes one exact child-command spelling. Variants may be unit variants or contain
 /// exactly one unnamed direct `Args` payload; named fields, multiple tuple fields, and collection
 /// or optional wrappers around a payload are rejected. Canonical names and aliases share one
-/// sibling namespace so command lookup is never order-dependent.
+/// sibling namespace so command lookup is never order-dependent. Add `#[argx(schema)]` to a
+/// structural subcommand enum when it participates in schema discovery.
 #[proc_macro_derive(Subcommand, attributes(argx))]
 pub fn derive_subcommand(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     expand_subcommand(&input).unwrap_or_else(syn::Error::into_compile_error).into()
 }
 
-/// Derives static schema traversal for a structural command group.
-///
-/// On a struct, `CommandSchema` requires one `#[argx(subcommand)]` field. On an enum it mirrors a
-/// `Subcommand` declaration and requires every variant to carry one concrete `Args` payload. Leaf
-/// commands do not derive this trait; `#[argx(handler = ...)]` supplies their schema association.
-#[proc_macro_derive(CommandSchema, attributes(argx))]
-pub fn derive_command_schema(input: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(input as DeriveInput);
-    command_schema::command_schema(&input).unwrap_or_else(syn::Error::into_compile_error).into()
-}
 
 /// Builds the semantic model and emits one command declaration.
 fn expand_command(input: &DeriveInput, root: bool) -> syn::Result<proc_macro2::TokenStream> {

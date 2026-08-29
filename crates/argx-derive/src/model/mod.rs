@@ -60,7 +60,7 @@ pub(crate) struct CommandSemantics {
     pub long_version: Option<syn::Expr>,
     /// Hidden command spellings accepted in addition to the canonical name.
     pub aliases: Vec<String>,
-    /// Whether this root parser exposes machine-readable schema discovery.
+    /// Whether this command declaration participates in machine-readable schema discovery.
     pub schema: bool,
 }
 
@@ -88,6 +88,8 @@ pub(crate) struct SubcommandBinding {
     pub generics: syn::Generics,
     /// Whole declaration token stream used to seed stable variant identities.
     pub fingerprint: String,
+    /// Whether this structural command set participates in schema discovery.
+    pub schema: bool,
 }
 
 /// One selectable subcommand variant.
@@ -525,6 +527,31 @@ mod tests {
         assert_eq!(
             error,
             "subcommand variants support only unit variants or one unnamed Args payload",
+        );
+
+        let error = subcommand_error(parse_quote! {
+            #[argx(schema)]
+            enum Commands {
+                Status,
+            }
+        });
+        assert_eq!(
+            error,
+            "`#[argx(schema)]` requires executable subcommands to use a concrete Args payload; use an empty Args struct instead of a unit variant",
+        );
+
+        let error = command_error(
+            parse_quote! {
+                #[argx(schema)]
+                struct Leaf {
+                    value: String,
+                }
+            },
+            false,
+        );
+        assert_eq!(
+            error,
+            "`#[argx(schema)]` on Args requires a `#[argx(subcommand)]` field; executable leaves use `#[argx(handler = ...)]`",
         );
     }
 

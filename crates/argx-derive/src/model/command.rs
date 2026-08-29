@@ -56,10 +56,13 @@ impl Command {
                 "version metadata is only valid on Parser declarations and Subcommand variants",
             ));
         }
-        if !root && attributes.schema {
+        if !root
+            && attributes.schema
+            && !fields.iter().any(|field| matches!(field.semantics, FieldSemantics::Subcommand))
+        {
             return Err(syn::Error::new_spanned(
                 &input.ident,
-                "schema discovery is only valid on Parser declarations",
+                "`#[argx(schema)]` on Args requires a `#[argx(subcommand)]` field; executable leaves use `#[argx(handler = ...)]`",
             ));
         }
         // Validate every invariant the current macro expansion can see. Cross-flatten invariants

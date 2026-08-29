@@ -1,4 +1,4 @@
-//! Machine-readable JSON Schema discovery over the statically derived Argx command topology.
+//! Machine-readable JSON Schema generation over the statically derived Argx command topology.
 //!
 //! Handler associations are collected into a short-lived local registry by generated trait calls
 //! over the concrete command types. The registry is neither global registration nor linker
@@ -8,6 +8,8 @@ use std::{borrow::Cow, ffi::OsStr, fmt::Write as _};
 
 use schemars::{SchemaGenerator, generate::SchemaSettings};
 use serde_json::{Map, Value};
+
+mod invocation;
 
 use crate::{
     Error,
@@ -138,7 +140,7 @@ pub(crate) fn display_schema(path: &[&Command<'_>], registry: &Registry) -> Erro
 fn command_schema(path: &[&Command<'_>], registry: &Registry, location: &[String]) -> Value {
     let command = path.last().copied().expect("schema discovery always has a root command");
     let mut schema =
-        serde_json::to_value(crate::invocation_schema::invocation_schema_for_path(path))
+        serde_json::to_value(invocation::invocation_schema_for_path(path))
             .expect("invocation schema must serialize");
     let object = schema.as_object_mut().expect("invocation schemas are objects");
 

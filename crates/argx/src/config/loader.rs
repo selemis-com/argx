@@ -12,7 +12,7 @@ use toml_edit::de as toml;
 use crate::config::{
     __private,
     dotenv::load_dotenv,
-    environment::{Environment, EnvironmentContract, EnvironmentError},
+    environment::{Environment as EnvironmentValues, EnvironmentContract, EnvironmentError},
     error::{EnvironmentScope, Error as SourceError, Source},
     toml::expand_toml,
 };
@@ -31,6 +31,7 @@ pub trait Config: Sized {
     type __CliArgs: crate::__private::CommandArgs;
 
     /// Creates an empty ordered configuration loader.
+    #[doc(hidden)]
     fn loader() -> Loader<Self> {
         Loader { layers: Vec::new(), marker: PhantomData }
     }
@@ -64,7 +65,7 @@ pub trait Config: Sized {
     /// Decodes one environment-like scope with an inherited nested prefix.
     #[doc(hidden)]
     fn __environment_with_prefix(
-        environment: &Environment,
+        environment: &EnvironmentValues,
         inherited_prefix: Option<&str>,
     ) -> Result<Self::Overrides, EnvironmentError>;
 
@@ -101,12 +102,12 @@ impl Toml {
 
 /// One dotenv-format file layer.
 #[derive(Clone, Debug)]
-pub struct EnvFile {
+pub struct Dotenv {
     /// Filesystem path read by this layer.
     path: PathBuf,
 }
 
-impl EnvFile {
+impl Dotenv {
     /// Creates an environment-file layer from one filesystem path.
     #[must_use]
     pub fn new(path: impl Into<PathBuf>) -> Self {
@@ -116,7 +117,7 @@ impl EnvFile {
 
 /// The current process environment.
 #[derive(Clone, Copy, Debug, Default)]
-pub struct Env;
+pub struct Environment;
 
 /// One command-line layer.
 #[derive(Clone, Debug)]
@@ -156,15 +157,15 @@ impl From<Toml> for Layer {
     }
 }
 
-impl From<EnvFile> for Layer {
-    fn from(layer: EnvFile) -> Self {
-        Self(LayerKind::EnvFile(layer))
+impl From<Dotenv> for Layer {
+    fn from(layer: Dotenv) -> Self {
+        Self(LayerKind::Dotenv(layer))
     }
 }
 
-impl From<Env> for Layer {
-    fn from(_: Env) -> Self {
-        Self(LayerKind::Env)
+impl From<Environment> for Layer {
+    fn from(_: Environment) -> Self {
+        Self(LayerKind::Environment)
     }
 }
 
@@ -182,9 +183,9 @@ enum LayerKind {
     /// One TOML file.
     Toml(Toml),
     /// One dotenv-format file.
-    EnvFile(EnvFile),
+    Dotenv(Dotenv),
     /// The current process environment.
-    Env,
+    Environment,
     /// One complete command-line argument vector.
     Argv(Argv),
 }
@@ -224,7 +225,7 @@ impl<C: Config> Loader<C> {
         environment_contract.validate().map_err(SourceError::environment_contract)?;
 
         let mut state = C::Overrides::default();
-        let mut environment = Environment::default();
+        let mut environment = EnvironmentValues::default();
 
         for layer in self.layers {
             match layer.0 {
@@ -234,7 +235,7 @@ impl<C: Config> Loader<C> {
                 LayerKind::Toml(layer) => {
                     merge_toml::<C>(&mut state, &layer.path, &environment)?;
                 }
-                LayerKind::EnvFile(layer) => {
+                LayerKind::Dotenv(layer) => {
                     let higher =
                         load_dotenv(&layer.path, &environment).map_err(SourceError::dotenv)?;
                     merge_environment::<C>(
@@ -245,8 +246,8 @@ impl<C: Config> Loader<C> {
                     )?;
                     environment.overlay(higher);
                 }
-                LayerKind::Env => {
-                    let higher = Environment::process();
+                LayerKind::Environment => {
+                    let higher = EnvironmentValues::process();
                     merge_environment::<C>(
                         &mut state,
                         &higher,
@@ -270,7 +271,7 @@ impl<C: Config> Loader<C> {
 fn merge_toml<C: Config>(
     resolved: &mut C::Overrides,
     path: &Path,
-    environment: &Environment,
+    environment: &EnvironmentValues,
 ) -> Result<(), SourceError> {
     let contents = fs::read_to_string(path)
         .map_err(|source| SourceError::read_toml(Source::Toml, path, source))?;
@@ -294,7 +295,7 @@ fn merge_toml<C: Config>(
 /// Decodes and merges one environment-like layer into the typed resolution state.
 fn merge_environment<C: Config>(
     resolved: &mut C::Overrides,
-    environment: &Environment,
+    environment: &EnvironmentValues,
     scope: EnvironmentScope,
     contract: &EnvironmentContract,
 ) -> Result<(), SourceError> {

@@ -58,7 +58,7 @@ fn parse_refs_inner<T: CommandArgs>(
                     }
                     ActionKind::Schema => {
                         let command_path = parser.command_path().collect::<Vec<_>>();
-                        Err(crate::schema_discovery::display_schema(
+                        Err(crate::schema::display_schema(
                             &command_path,
                             registry.expect("schema action requires a schema registry"),
                         ))

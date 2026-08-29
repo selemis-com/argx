@@ -53,7 +53,7 @@ pub enum Source {
     /// A TOML file layer.
     Toml,
     /// A dotenv-format file layer.
-    EnvFile,
+    Dotenv,
     /// Process environment layer.
     Environment,
 }
@@ -62,7 +62,7 @@ impl fmt::Display for Source {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Toml => formatter.write_str("TOML"),
-            Self::EnvFile => formatter.write_str("environment file"),
+            Self::Dotenv => formatter.write_str("environment file"),
             Self::Environment => formatter.write_str("process environment"),
         }
     }
@@ -167,7 +167,7 @@ impl Error {
             | ErrorKind::InterpolateToml { scope, .. }
             | ErrorKind::ParseToml { scope, .. }
             | ErrorKind::ParseInterpolatedToml { scope, .. } => Some(*scope),
-            ErrorKind::Dotenv { .. } => Some(Source::EnvFile),
+            ErrorKind::Dotenv { .. } => Some(Source::Dotenv),
             ErrorKind::Environment { scope, .. } | ErrorKind::UnknownEnvironment { scope, .. } => {
                 Some(scope.source())
             }
@@ -338,7 +338,7 @@ impl EnvironmentScope {
     /// Returns the source kind represented by this scope.
     const fn source(&self) -> Source {
         match self {
-            Self::File(_) => Source::EnvFile,
+            Self::File(_) => Source::Dotenv,
             Self::Process => Source::Environment,
         }
     }

@@ -38,13 +38,15 @@ mod tests {
         Ok(GetOutput { id: command.id, detail: GetDetail { labels: Vec::new() } })
     }
 
-    #[derive(argx::Args, argx::CommandSchema)]
+    #[derive(argx::Args)]
+    #[argx(schema)]
     struct AdminCommand {
         #[argx(subcommand)]
         command: AdminCommands,
     }
 
-    #[derive(argx::Subcommand, argx::CommandSchema)]
+    #[derive(argx::Subcommand)]
+    #[argx(schema)]
     enum AdminCommands {
         /// Inspect service status.
         Status(StatusCommand),
@@ -70,7 +72,8 @@ mod tests {
         }
     }
 
-    #[derive(argx::Subcommand, argx::CommandSchema)]
+    #[derive(argx::Subcommand)]
+    #[argx(schema)]
     enum Commands {
         /// Retrieve one object.
         Get(GetCommand),

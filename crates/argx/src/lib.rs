@@ -137,8 +137,9 @@
 //! kebab-case command name; `about` replaces documentation-derived descriptive text. A `Parser`
 //! declaration may additionally use `version = expression`, `long_version = expression`, and the
 //! marker `schema`. If only one version expression is supplied, Argx uses it for both `-V` and
-//! `--version`. `schema` enables machine-readable discovery for a command tree whose structural
-//! groups derive `CommandSchema`. Version and schema metadata are not valid on `Args`.
+//! `--version`. `schema` enables machine-readable discovery. Structural `Args` declarations that
+//! contain a subcommand field may also use `schema` to participate in that command topology.
+//! Version metadata remains root-only.
 //!
 //! Command aliases are intentionally not accepted on structs: aliases belong to selectable
 //! `Subcommand` variants. An `Args` declaration has no standalone process entry point. Flattening
@@ -147,7 +148,8 @@
 //!
 //! ## `Subcommand` variants
 //!
-//! The enum itself accepts no `#[argx(...)]` metadata. Individual variants accept:
+//! The enum itself accepts the `schema` marker when it participates in machine-readable command
+//! topology. Individual variants accept:
 //!
 //! - `name = "..."` to replace the inferred kebab-case command spelling;
 //! - `about = "..."` to override documentation-derived descriptive text;
@@ -321,9 +323,9 @@
 //! parsing but omitted from generated help so help presents one canonical interface.
 //!
 //! A parser marked `#[argx(schema)]` additionally exposes `-S` and `--schema` in every selected
-//! command scope and the root `schema [COMMAND]...` pseudo-command. Structural command groups
-//! derive `CommandSchema`; executable leaves are associated with result and error schemas through
-//! `#[argx(handler = ...)]`.
+//! command scope and the root `schema [COMMAND]...` pseudo-command. Structural `Args` and
+//! `Subcommand` declarations opt into topology with the same `#[argx(schema)]` marker; executable
+//! leaves are associated with result and error schemas through `#[argx(handler = ...)]`.
 //!
 //! [`Parser::render_help`] renders the root scope directly. During parsing, help, version, and
 //! schema discovery are represented as [`Error::DisplayHelp`], [`Error::DisplayVersion`], and
@@ -423,8 +425,8 @@
 //!
 //! # Cargo features
 //!
-//! The default `derive` feature exports the `Parser`, `Args`, `Subcommand`, `CommandSchema`, and
-//! `ValueEnum` derives plus the `handler` and `schema` attribute macros.
+//! The default `derive` feature exports the `Parser`, `Args`, `Subcommand`, and `ValueEnum` derives
+//! plus the unified `argx` attribute macro.
 
 #![doc(
     html_logo_url = "https://raw.githubusercontent.com/selemis-com/argx/master/.github/assets/logo.jpg",
@@ -441,8 +443,7 @@ pub mod config;
 mod error;
 mod generated;
 mod help;
-mod invocation_schema;
-mod schema_discovery;
+mod schema;
 mod value_enum;
 
 use std::ffi::{OsStr, OsString};
@@ -472,9 +473,9 @@ extern crate self as argx;
 #[cfg(feature = "derive")]
 pub use argx_derive::Config;
 #[cfg(feature = "derive")]
-pub use argx_derive::{Args, CommandSchema, Parser, Subcommand, ValueEnum, argx};
+pub use argx_derive::{Args, Parser, Subcommand, ValueEnum, argx};
 pub use config::{
-    Argv, Config, Defaults, Env, EnvFile, Error as ConfigError, Layer, Loader as ConfigLoader, Toml,
+    Argv, Defaults, Dotenv, Environment, Error as ConfigError, Layer, Loader as ConfigLoader, Toml,
 };
 
 /// Marks a reusable argument group derived with `#[derive(Args)]`.
@@ -629,10 +630,12 @@ pub trait Parser: Sized + __private::CommandArgs {
     {
         let owned: Vec<OsString> = argv.into_iter().map(Into::into).collect();
         let refs: Vec<&OsStr> = owned.iter().map(OsString::as_os_str).collect();
-        let Some(registry) = <Self as __private::CommandArgs>::schema_registry() else {
+        if !<Self as __private::CommandArgs>::SCHEMA_ENABLED {
             return binding::parse_refs::<Self>(&refs);
-        };
-        if let Some(error) = schema_discovery::pseudo_command(Self::COMMAND, &refs, &registry) {
+        }
+        let registry = <Self as __private::CommandArgs>::schema_registry()
+            .expect("schema-enabled parser must generate a schema registry");
+        if let Some(error) = schema::pseudo_command(Self::COMMAND, &refs, &registry) {
             return Err(error);
         }
         binding::parse_refs_with_schema::<Self>(&refs, &registry)
@@ -691,7 +694,7 @@ pub trait Parser: Sized + __private::CommandArgs {
     fn render_help() -> String {
         help::render_with_schema(
             &[Self::COMMAND],
-            <Self as __private::CommandArgs>::schema_registry().is_some(),
+            <Self as __private::CommandArgs>::SCHEMA_ENABLED,
         )
     }
 }

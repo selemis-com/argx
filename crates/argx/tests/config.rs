@@ -2,7 +2,7 @@
 
 use std::{fs, path::PathBuf};
 
-use argx::{Argv, Config as _, Defaults, EnvFile, Toml};
+use argx::{Argv, Defaults, Dotenv, Toml};
 
 #[derive(Debug, argx::Config)]
 struct AppConfig {
@@ -105,7 +105,7 @@ mod tests {
         let path = temp_file("environment", "env", "ARGX_LAYER_TEST_ENDPOINT=from-env-file\n");
 
         let config = EnvironmentConfig::loader()
-            .layer(EnvFile::new(&path))
+            .layer(Dotenv::new(&path))
             .resolve()
             .expect("resolve environment file");
 
@@ -151,7 +151,7 @@ mod tests {
             temp_file("interpolation", "toml", "endpoint = \"https://${ARGX_LAYER_HOST}\"\n");
 
         let config = InterpolatedConfig::loader()
-            .layer(EnvFile::new(&env))
+            .layer(Dotenv::new(&env))
             .layer(Toml::new(&toml))
             .resolve()
             .expect("resolve interpolated TOML");

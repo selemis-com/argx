@@ -292,6 +292,36 @@ pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
         )
     });
 
+    let schema_impl = subcommand.binding.schema.then(|| {
+        let registrations = subcommand.variants.iter().enumerate().map(|(index, variant)| {
+            let ty = variant.binding.payload.as_ref().expect("unit variants were rejected above");
+            quote! {
+                <#ty as #facade::__private::SchemaCommand>::register_schema_commands(
+                    commands[#index],
+                    registry,
+                );
+            }
+        });
+        let count = subcommand.variants.len();
+        quote! {
+            impl #impl_generics #facade::__private::SchemaSubcommands
+                for #ident #ty_generics #where_clause
+            {
+                fn register_schema_subcommands(
+                    commands: &'static [&'static #facade::__private::Command<'static>],
+                    registry: &mut #facade::__private::SchemaRegistry,
+                ) {
+                    assert_eq!(
+                        commands.len(),
+                        #count,
+                        "generated schema topology diverged from subcommand metadata",
+                    );
+                    #(#registrations)*
+                }
+            }
+        }
+    });
+
     quote! {
         #[doc(hidden)]
         const _: () = {
@@ -306,6 +336,8 @@ pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
                 Unselected,
                 #(#partial_variants)*
             }
+
+            #schema_impl
 
             impl #impl_generics #facade::__private::Subcommands
                 for #ident #ty_generics #where_clause

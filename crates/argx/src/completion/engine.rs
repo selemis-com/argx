@@ -49,7 +49,7 @@ where
             let Ok(spans) = serde_json::from_str::<Vec<String>>(&encoded) else {
                 return true;
             };
-            complete_spans_with_schema(T::COMMAND, &spans, T::schema_registry().is_some())
+            complete_spans_with_schema(T::COMMAND, &spans, T::SCHEMA_ENABLED)
         }
         Err(env::VarError::NotUnicode(_)) => return true,
         Err(env::VarError::NotPresent) => {
@@ -59,7 +59,7 @@ where
             let Some(line) = line.to_str() else {
                 return true;
             };
-            complete_line_with_schema(T::COMMAND, line, T::schema_registry().is_some())
+            complete_line_with_schema(T::COMMAND, line, T::SCHEMA_ENABLED)
         }
     };
 

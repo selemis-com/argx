@@ -108,7 +108,7 @@ error: unsupported Argx command attribute
 error: unsupported Argx field attribute
 error: short flag must be one visible ASCII character other than `-` or `=`
 error: short flag must be one visible ASCII character other than `-` or `=`
-error: unsupported Argx subcommand attribute
+error: Subcommand enum attributes support only `schema`
 error: `allow_hyphen_values` is only valid on named flags
 error: value policies are not valid on bool fields
 error: `global` is only valid on named flags

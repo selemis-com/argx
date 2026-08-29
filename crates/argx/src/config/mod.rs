@@ -1,7 +1,7 @@
 //! Unified application configuration resolution.
 //!
 //! Configuration is resolved from an explicitly ordered stack of layers. Each
-//! layer contributes sparse values for the same typed [`Config`], and later
+//! layer contributes sparse values for the same derived configuration, and later
 //! layers override only values they supply. Applications consume only the final
 //! resolved value.
 
@@ -12,7 +12,7 @@ mod loader;
 mod toml;
 
 pub use error::{Error as SourceError, Source};
-pub use loader::{Argv, Config, Defaults, Env, EnvFile, Layer, Loader, Toml};
+pub use loader::{Argv, Defaults, Dotenv, Environment, Layer, Loader, Toml};
 
 /// Failure while resolving a configuration from its declared layers.
 #[derive(Debug, thiserror::Error)]
@@ -28,6 +28,8 @@ pub enum Error {
 #[doc(hidden)]
 pub mod __private {
     pub use serde;
+
+    pub use super::loader::Config;
 
     pub use super::environment::{
         Environment, EnvironmentContract, EnvironmentError, parse_environment_field,
@@ -45,12 +47,12 @@ pub mod __private {
     }
 
     pub trait TomlInput: serde::de::DeserializeOwned + Sized {
-        type Config: super::Config<__Toml = Self>;
-        fn into_overrides(self) -> <Self::Config as super::Config>::Overrides;
+        type Config: Config<__Toml = Self>;
+        fn into_overrides(self) -> <Self::Config as Config>::Overrides;
     }
 
     pub trait ConfigState: Default + Sized {
-        type Config: super::Config<Overrides = Self>;
+        type Config: Config<Overrides = Self>;
         fn merge(&mut self, higher: Self);
     }
 }
