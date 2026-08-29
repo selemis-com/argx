@@ -7,3 +7,4 @@ pub(crate) mod compose;
 pub(crate) mod help;
 pub(crate) mod protocol;
 pub(crate) mod value;
+pub(crate) mod value_enum;

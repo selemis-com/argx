@@ -503,12 +503,11 @@ pub mod completion;
 pub mod config;
 mod error;
 mod schema;
-mod value_enum;
 
 use std::ffi::{OsStr, OsString};
 
 pub use error::{Error, InvalidValue};
-pub use value_enum::{ValueEnum, ValueEnumError};
+pub use cli::value_enum::{ValueEnum, ValueEnumError};
 
 /// Compiler-facing marker for command declarations that are directly invocable.
 #[doc(hidden)]
