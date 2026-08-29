@@ -1,25 +1,19 @@
 //! Configuration contracts and ordered layer resolution.
 
-use std::{
-    ffi::OsString,
-    fmt,
-    marker::PhantomData,
-    path::PathBuf,
-};
-
+use std::{ffi::OsString, fmt, marker::PhantomData, path::PathBuf};
 #[cfg(feature = "toml")]
 use std::{fs, path::Path};
+
 #[cfg(feature = "toml")]
 use toml_edit::de as toml;
 
+#[cfg(feature = "toml")]
+use crate::config::{__private, error::Source, toml::expand_toml};
 use crate::config::{
-    __private,
     dotenv::load_dotenv,
     environment::{Environment as EnvironmentValues, EnvironmentContract, EnvironmentError},
     error::{EnvironmentScope, Error as SourceError},
 };
-#[cfg(feature = "toml")]
-use crate::config::{error::Source, toml::expand_toml};
 
 /// A typed configuration contract.
 pub trait Config: Sized {

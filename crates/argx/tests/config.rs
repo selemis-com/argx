@@ -2,9 +2,9 @@
 
 use std::{fs, path::PathBuf};
 
-use argx::{Argv, Defaults, Dotenv};
 #[cfg(feature = "toml")]
 use argx::Toml;
+use argx::{Argv, Defaults, Dotenv};
 
 #[derive(Debug, argx::Config)]
 struct AppConfig {

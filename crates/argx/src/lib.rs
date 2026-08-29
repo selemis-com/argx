@@ -70,8 +70,8 @@
 //! # Unified configuration
 //!
 //! `#[derive(Config)]` generates one typed configuration contract. A generated `loader()` starts
-//! empty; applications add [`Defaults`], [`Dotenv`], [`Environment`], and [`Argv`] layers explicitly,
-//! in the precedence order they want. The optional `toml` feature adds `Toml`:
+//! empty; applications add [`Defaults`], [`Dotenv`], [`Environment`], and [`Argv`] layers
+//! explicitly, in the precedence order they want. The optional `toml` feature adds `Toml`:
 //!
 //! ```
 //! use argx::{Argv, Defaults};
@@ -123,10 +123,11 @@
 //! argv surface, but does not itself accept `default` or `env`.
 //!
 //! With the `toml` feature enabled, `Toml` reads exactly the path supplied to the layer and
-//! rejects unknown fields. Argx performs no configuration-file discovery. [`Dotenv`] likewise reads exactly the supplied dotenv path;
-//! [`Environment`] contributes the current process environment. TOML interpolation can observe
-//! environment values accumulated by earlier `Dotenv` and `Environment` layers, so moving an
-//! environment layer after a TOML layer also removes it from that TOML layer's interpolation scope.
+//! rejects unknown fields. Argx performs no configuration-file discovery. [`Dotenv`] likewise reads
+//! exactly the supplied dotenv path; [`Environment`] contributes the current process environment.
+//! TOML interpolation can observe environment values accumulated by earlier `Dotenv` and
+//! `Environment` layers, so moving an environment layer after a TOML layer also removes it from
+//! that TOML layer's interpolation scope.
 //!
 //! [`Argv::new`] expects a complete argument vector including the program name. [`Argv::current`]
 //! captures the current process argv in that form.
@@ -508,8 +509,8 @@ mod schema;
 
 use std::ffi::{OsStr, OsString};
 
-pub use error::{Error, InvalidValue};
 pub use cli::value_enum::{ValueEnum, ValueEnumError};
+pub use error::{Error, InvalidValue};
 
 /// Compiler-facing marker for command declarations that are directly invocable.
 #[doc(hidden)]
@@ -534,12 +535,12 @@ extern crate self as argx;
 pub use argx_derive::Config;
 #[cfg(feature = "derive")]
 pub use argx_derive::{Args, Parser, Subcommand, ValueEnum, argx};
-pub use config::{
-    Argv, Defaults, Dotenv, Environment, Error as ConfigError, Layer, Loader as ConfigLoader,
-};
 #[cfg(feature = "toml")]
 #[cfg_attr(docsrs, doc(cfg(feature = "toml")))]
 pub use config::Toml;
+pub use config::{
+    Argv, Defaults, Dotenv, Environment, Error as ConfigError, Layer, Loader as ConfigLoader,
+};
 
 /// Marks a reusable argument group derived with `#[derive(Args)]`.
 ///

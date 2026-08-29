@@ -11,20 +11,8 @@ mod tests {
 
     use snapbox::cmd::compile_examples;
 
-    const PUBLIC_EXAMPLES: &[&str] = &[
-        "aliases",
-        "basic",
-        "completions",
-        "configuration",
-        "constraints",
-        "defaults",
-        "flatten",
-        "structured_help",
-        "subcommands",
-        "value_enum",
-        "version",
-    ];
-
+    const PUBLIC_EXAMPLES: &[&str] =
+        &["arguments", "basic", "commands", "complete", "completions", "configuration", "schema"];
     #[test]
     fn every_public_example_builds_renders_help_and_demonstrates_its_behavior() {
         let examples = compile_examples(["--all-features"])
@@ -66,12 +54,10 @@ mod tests {
             "{name} --help succeeded without rendering Argx help:\n{stdout}",
         );
 
-        if name == "value_enum" {
+        if name == "arguments" {
             assert!(
-                stdout.contains(
-                    "Output format. [possible values: human-readable, json, json-lines]",
-                ),
-                "value_enum --help omitted the derived vocabulary:\n{stdout}",
+                stdout.contains("Output format. [possible values: human, json, json-lines]",),
+                "arguments --help omitted the derived vocabulary:\n{stdout}",
             );
         }
     }
@@ -107,55 +93,34 @@ mod tests {
         }
 
         let (expected_stdout, expected_stderr) = match name {
-            "aliases" => {
-                command.args(["--colour", "always", "rm"]);
-                ("", "color: always\ncommand: remove\n")
+            "arguments" => {
+                command.args(["input.txt", "--format", "json", "--colour", "always"]);
+                (
+                    "",
+                    concat!(
+                        "input: input.txt\n",
+                        "format: json\n",
+                        "color: always\n",
+                        "stdout: false\n",
+                    ),
+                )
             }
             "basic" => ("", ""),
+            "commands" => {
+                command.args(["--verbose", "add", "hello", "--force"]);
+                ("", "verbose mode enabled\nforce add: hello\n")
+            }
+            "complete" => {
+                command.args(["get", "object-7", "--format", "json"]);
+                ("get: object-7 (limit 20, json)\n", "")
+            }
             "configuration" => {
                 command.args(["--workers", "8", "--endpoint", "https://example.invalid"]);
                 ("workers: 8\nendpoint: https://example.invalid\n", "")
             }
-            "constraints" => {
-                command.args([
-                    "--endpoint",
-                    "https://example.invalid",
-                    "--token",
-                    "secret",
-                    "--workspace",
-                    "demo",
-                ]);
-                (
-                    "",
-                    concat!(
-                        "endpoint: https://example.invalid\n",
-                        "token: provided\n",
-                        "workspace: demo\n",
-                        "stdout: false\n",
-                        "validate only: false\n",
-                    ),
-                )
-            }
-            "defaults" => ("", "port: 3000\nprofile: development\n"),
-            "flatten" => {
-                command.args(["--verbose", "--config", "./argx.toml"]);
-                ("", "verbose mode enabled\nconfig: ./argx.toml\n")
-            }
-            "structured_help" => {
-                command.args(["--json", "--field", "id"]);
-                ("", "json output enabled\nfield: id\n")
-            }
-            "subcommands" => {
-                command.args(["add", "hello", "--force"]);
-                ("", "force add: hello\n")
-            }
-            "value_enum" => {
-                command.args(["--output", "json-lines"]);
-                ("", "JSON Lines output\n")
-            }
-            "version" => {
-                command.arg("--version");
-                ("cli 1.2.3 (build abc123)\n", "")
+            "schema" => {
+                command.args(["get", "object-7"]);
+                ("id: object-7\n", "")
             }
             other => panic!("missing behavior assertion for public example `{other}`"),
         };

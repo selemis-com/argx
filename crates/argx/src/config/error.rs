@@ -1,21 +1,21 @@
 //! Public loading diagnostics and their internal context.
 
+#[cfg(feature = "toml")]
+use std::io;
 use std::{
     fmt,
     path::{Path, PathBuf},
 };
 
 #[cfg(feature = "toml")]
-use std::io;
-#[cfg(feature = "toml")]
 use toml_edit::de as toml;
 
+#[cfg(feature = "toml")]
+use crate::config::toml::TomlInterpolationError;
 use crate::config::{
     dotenv::DotenvError,
     environment::{EnvironmentContractError, EnvironmentError},
 };
-#[cfg(feature = "toml")]
-use crate::config::toml::TomlInterpolationError;
 
 /// One-based source location used by configuration diagnostics.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

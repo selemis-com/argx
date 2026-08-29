@@ -108,13 +108,13 @@ For more information, try '--help'.
 
     #[test]
     fn diagnostics_use_cli_spellings() {
-        support::example_command("defaults")
-            .arg("--port")
+        support::example_command("arguments")
+            .arg("--format")
             .assert()
             .failure()
             .stdout_eq("")
             .stderr_eq(snapbox::str![[r#"
-error: missing value for `--port`
+error: missing value for `--format`
 
 For more information, try '--help'.
 
@@ -141,26 +141,36 @@ Options:
 
     #[test]
     fn nested_help_is_scoped_to_the_selected_command() {
-        support::example_command("subcommands")
+        support::example_command("commands")
             .arg("--help")
             .assert()
             .success()
             .stdout_eq(snapbox::str![[r#"
-Root command that requires one child command selection.
+Manage values in the example workspace.
+
+The longer command description is authored in the Rust documentation beside its type.
 
 Usage: cli [OPTIONS] <COMMAND>
 
 Commands:
   add     Adds one value.
-  remove  Removes one value using the same argument shape.
+  remove  Removes one value.
   status  Shows status without additional arguments.
 
 Options:
-  -h, --help  Print help
+  -h, --help     Print help
+  -V, --version  Print version
+
+Common options:
+  -v, --verbose  Enables verbose output.
+
+Examples:
+    commands add hello
+    commands --verbose rm hello
 
 "#]])
             .stderr_eq("");
-        support::example_command("subcommands")
+        support::example_command("commands")
             .args(["add", "--help"])
             .assert()
             .success()
@@ -176,33 +186,8 @@ Options:
   --force     Forces the operation.
   -h, --help  Print help
 
-"#]])
-            .stderr_eq("");
-    }
-
-    #[test]
-    fn structured_help_example_renders_documented_sections_and_groups() {
-        support::example_command("structured_help")
-            .arg("--help")
-            .assert()
-            .success()
-            .stdout_eq(snapbox::str![[r#"
-Inspect objects in a workspace.
-
-The command keeps its longer explanation alongside the Rust type that defines it.
-
-Usage: structured-help [OPTIONS]
-
-Options:
-  -h, --help  Print help
-
-Output:
-  --json           Emit structured JSON output.
-  --field <FIELD>  Include one output field; repeat the option to select more than one.
-
-Examples:
-    structured-help --field id --field title
-    structured-help --json
+Common options:
+  -v, --verbose  Enables verbose output.
 
 "#]])
             .stderr_eq("");
@@ -210,38 +195,32 @@ Examples:
 
     #[test]
     fn version_actions_use_stdout_and_success_status() {
-        support::example_command("version")
+        support::example_command("commands")
             .arg("-V")
             .assert()
             .success()
             .stdout_eq("cli 1.2.3\n")
             .stderr_eq("");
-        support::example_command("version")
+        support::example_command("commands")
             .arg("--version")
             .assert()
             .success()
             .stdout_eq("cli 1.2.3 (build abc123)\n")
             .stderr_eq("");
-        support::example_command("version")
-            .args(["run", "-V"])
+        support::example_command("commands")
+            .args(["status", "-V"])
             .assert()
             .success()
-            .stdout_eq("run 1.2.3\n")
+            .stdout_eq("status 1.2.3\n")
             .stderr_eq("");
-        support::example_command("version")
-            .args(["run", "--version"])
+        support::example_command("commands")
+            .args(["status", "--version"])
             .assert()
             .success()
-            .stdout_eq("run 1.2.3 (build abc123)\n")
+            .stdout_eq("status 1.2.3 (build abc123)\n")
             .stderr_eq("");
-        support::example_command("version")
-            .arg("internal")
-            .assert()
-            .success()
-            .stdout_eq("")
-            .stderr_eq("");
-        support::example_command("version")
-            .args(["internal", "--version"])
+        support::example_command("commands")
+            .args(["add", "--version", "value"])
             .assert()
             .failure()
             .stdout_eq("")
@@ -255,51 +234,42 @@ For more information, try '--help'.
 
     #[test]
     fn version_actions_are_scoped_in_generated_help() {
-        support::example_command("version")
-            .arg("--help")
+        support::example_command("commands")
+            .args(["status", "--help"])
             .assert()
             .success()
             .stdout_eq(snapbox::str![[r#"
-Root command with independently configured version metadata.
+Shows status without additional arguments.
 
-Usage: cli [OPTIONS] <COMMAND>
-
-Commands:
-  run       Runs the versioned command.
-  internal  Runs an unversioned command.
+Usage: cli status [OPTIONS]
 
 Options:
   -h, --help     Print help
   -V, --version  Print version
 
-"#]])
-            .stderr_eq("");
-        support::example_command("version")
-            .args(["run", "--help"])
-            .assert()
-            .success()
-            .stdout_eq(snapbox::str![[r#"
-Runs the versioned command.
-
-Usage: cli run [OPTIONS]
-
-Options:
-  -h, --help     Print help
-  -V, --version  Print version
+Common options:
+  -v, --verbose  Enables verbose output.
 
 "#]])
             .stderr_eq("");
-        support::example_command("version")
-            .args(["internal", "--help"])
+        support::example_command("commands")
+            .args(["add", "--help"])
             .assert()
             .success()
             .stdout_eq(snapbox::str![[r#"
-Runs an unversioned command.
+Adds one value.
 
-Usage: cli internal [OPTIONS]
+Usage: cli add [OPTIONS] <VALUE>
+
+Arguments:
+  <VALUE>  Value to add or remove.
 
 Options:
+  --force     Forces the operation.
   -h, --help  Print help
+
+Common options:
+  -v, --verbose  Enables verbose output.
 
 "#]])
             .stderr_eq("");

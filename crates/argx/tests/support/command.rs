@@ -6,25 +6,17 @@ use snapbox::cmd::Command;
 
 /// Compiled path for the basic public example.
 static BASIC_EXAMPLE: OnceLock<PathBuf> = OnceLock::new();
-/// Compiled path for the defaults public example.
-static DEFAULTS_EXAMPLE: OnceLock<PathBuf> = OnceLock::new();
-/// Compiled path for the version public example.
-static VERSION_EXAMPLE: OnceLock<PathBuf> = OnceLock::new();
-/// Compiled path for the subcommand public example.
-static SUBCOMMANDS_EXAMPLE: OnceLock<PathBuf> = OnceLock::new();
-/// Compiled path for the structured-help public example.
-static STRUCTURED_HELP_EXAMPLE: OnceLock<PathBuf> = OnceLock::new();
+/// Compiled path for the arguments public example.
+static ARGUMENTS_EXAMPLE: OnceLock<PathBuf> = OnceLock::new();
+/// Compiled path for the commands public example.
+static COMMANDS_EXAMPLE: OnceLock<PathBuf> = OnceLock::new();
 
 /// Returns a deterministic command targeting one real public example.
 pub(crate) fn example_command(name: &str) -> Command {
     let binary = match name {
         "basic" => BASIC_EXAMPLE.get_or_init(|| compile_example("basic")),
-        "defaults" => DEFAULTS_EXAMPLE.get_or_init(|| compile_example("defaults")),
-        "version" => VERSION_EXAMPLE.get_or_init(|| compile_example("version")),
-        "subcommands" => SUBCOMMANDS_EXAMPLE.get_or_init(|| compile_example("subcommands")),
-        "structured_help" => {
-            STRUCTURED_HELP_EXAMPLE.get_or_init(|| compile_example("structured_help"))
-        }
+        "arguments" => ARGUMENTS_EXAMPLE.get_or_init(|| compile_example("arguments")),
+        "commands" => COMMANDS_EXAMPLE.get_or_init(|| compile_example("commands")),
         other => panic!("unsupported CLI-test example `{other}`"),
     };
     Command::new(binary).env("NO_COLOR", "1")

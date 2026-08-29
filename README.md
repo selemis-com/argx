@@ -220,21 +220,18 @@ impl GetCommand {
 
 ## Examples
 
-The examples are executable documentation. Detailed behavior is documented on
-[docs.rs/argx](https://docs.rs/argx/latest/argx/).
+The examples are executable documentation. Start with `basic` for the smallest integration point or
+`complete` for an integrated reference application; the remaining examples isolate one major
+subsystem. Detailed behavior is documented on [docs.rs/argx](https://docs.rs/argx/latest/argx/).
 
 | Example | Focus | Try it |
 | --- | --- | --- |
 | [`basic`](crates/argx/examples/basic.rs) | Smallest complete parser and built-in help | `cargo run --example basic -- --help` |
-| [`configuration`](crates/argx/examples/configuration.rs) | Ordered defaults, TOML, environment, and argv configuration | `cargo run --example configuration -- --workers 8` |
-| [`subcommands`](crates/argx/examples/subcommands.rs) | Typed command selection and reusable payloads | `cargo run --example subcommands -- add hello --force` |
-| [`flatten`](crates/argx/examples/flatten.rs) | Reusable argument groups and help grouping | `cargo run --example flatten -- --help` |
-| [`defaults`](crates/argx/examples/defaults.rs) | Typed Rust defaults without text round-tripping | `cargo run --example defaults --` |
-| [`constraints`](crates/argx/examples/constraints.rs) | `requires` and `conflicts` relationships | `cargo run --example constraints -- --endpoint https://example.invalid --token secret --workspace demo` |
-| [`aliases`](crates/argx/examples/aliases.rs) | Hidden compatibility spellings and canonical help | `cargo run --example aliases -- --colour always rm` |
-| [`value_enum`](crates/argx/examples/value_enum.rs) | Finite typed values shared by parsing and generated help | `cargo run --example value_enum -- --help` |
-| [`structured_help`](crates/argx/examples/structured_help.rs) | Documentation-derived descriptions, groups, and sections | `cargo run --example structured_help -- --help` |
-| [`version`](crates/argx/examples/version.rs) | Lexically scoped short and long version actions | `cargo run --example version -- run --version` |
+| [`complete`](crates/argx/examples/complete.rs) | Integrated reference application across Argx's public surfaces | `cargo run --example complete -- get object-7 --format json` |
+| [`arguments`](crates/argx/examples/arguments.rs) | Arguments, defaults, aliases, constraints, and value enums | `cargo run --example arguments -- input.txt --format json` |
+| [`commands`](crates/argx/examples/commands.rs) | Subcommands, flattening, structured help, aliases, and versions | `cargo run --example commands -- --verbose add hello --force` |
+| [`configuration`](crates/argx/examples/configuration.rs) | Ordered defaults, environment, and argv configuration | `cargo run --example configuration -- --workers 8` |
+| [`schema`](crates/argx/examples/schema.rs) | Schema discovery and typed handler result/error contracts | `cargo run --example schema -- schema get` |
 | [`completions`](crates/argx/examples/completions.rs) | Dynamic shell-completion adapters | `cargo run --example completions -- zsh` |
 
 ## Support
