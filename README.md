@@ -5,7 +5,7 @@
 </picture>
 
 <p align="center">
-  Derive-first command-line parsing and configuration for Rust
+  Expressive command-line parsing and configuration for Rust
 </p>
 
 <br/>
