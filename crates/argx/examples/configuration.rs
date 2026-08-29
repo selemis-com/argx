@@ -22,6 +22,10 @@ struct Config {
     /// Service endpoint.
     #[argx(long, default = String::from("http://localhost:8080"))]
     endpoint: String,
+
+    /// Allowed origins, comma-separated in argv and the environment.
+    #[argx(long, delimited, default = Vec::<String>::new())]
+    origins: Vec<String>,
 }
 
 fn main() -> Result<(), argx::ConfigError> {
@@ -38,5 +42,6 @@ fn main() -> Result<(), argx::ConfigError> {
 
     println!("workers: {}", config.workers);
     println!("endpoint: {}", config.endpoint);
+    println!("origins: {}", config.origins.join(","));
     Ok(())
 }

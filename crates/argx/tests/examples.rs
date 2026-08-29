@@ -111,15 +111,15 @@ mod tests {
                 ("", "verbose mode enabled\nforce add: hello\n")
             }
             "complete" => {
-                command.args(["get", "object-7", "--format", "json"]);
-                ("get: object-7 (limit 20, json)\n", "")
+                command.args(["get", "object-7", "-O", "json"]);
+                ("{\"id\":\"object-7\",\"limit\":20}\n", "")
             }
             "configuration" => {
                 command.args(["--workers", "8", "--endpoint", "https://example.invalid"]);
-                ("workers: 8\nendpoint: https://example.invalid\n", "")
+                ("workers: 8\nendpoint: https://example.invalid\norigins: \n", "")
             }
             "schema" => {
-                command.args(["get", "object-7"]);
+                command.args(["objects", "get", "object-7"]);
                 ("id: object-7\n", "")
             }
             other => panic!("missing behavior assertion for public example `{other}`"),

@@ -6,7 +6,7 @@
 //! one command tree.
 //!
 //! ```text
-//! cargo run --example complete -- get object-7 --format json
+//! cargo run --example complete -- get object-7 -O json -F id
 //! cargo run --example complete -- put object-7 value --endpoint https://example.invalid --token secret
 //! cargo run --example complete -- completions zsh
 //! cargo run --example complete -- schema get
@@ -22,7 +22,11 @@ use std::{
     io::{self, Write},
 };
 
-use argx::{Args, Defaults, Dotenv, Environment, Parser as _, Subcommand, argx, completion::Shell};
+use argx::{
+    Args, Defaults, Dotenv, Environment, OutputFormat, Parser as _, Subcommand, argx,
+    completion::Shell,
+};
+use serde::Serialize;
 
 /// Short version displayed by `--version`.
 const VERSION: &str = "1.2.3";
@@ -42,27 +46,12 @@ struct Settings {
     endpoint: String,
 }
 
-/// Output formats shared by commands.
-#[derive(Debug, argx::ValueEnum)]
-enum Format {
-    /// Human-readable text.
-    Human,
-    /// One JSON document.
-    Json,
-    /// Newline-delimited JSON.
-    JsonLines,
-}
-
 /// Options inherited by every selected command.
 #[derive(Debug, Args)]
 struct Common {
     /// Enables verbose diagnostics.
     #[argx(short, long, global)]
     verbose: bool,
-
-    /// Output format.
-    #[argx(long, global, value_enum, default = Format::Human)]
-    format: Format,
 }
 
 /// Retrieve one object.
@@ -77,6 +66,7 @@ struct Get {
 }
 
 /// Successful result returned by `Get`.
+#[derive(Serialize)]
 #[argx(schema)]
 struct GetOutput {
     /// Returned object identifier.
@@ -129,6 +119,7 @@ struct Put {
 }
 
 /// Successful result returned by `Put`.
+#[derive(Serialize)]
 #[argx(schema)]
 struct PutOutput {
     /// Stored object identifier.
@@ -162,6 +153,7 @@ struct Completions {
 }
 
 /// Generated completion adapter.
+#[derive(Serialize)]
 #[argx(schema)]
 struct CompletionOutput {
     /// Shell script implementing the dynamic completion adapter.
@@ -206,7 +198,7 @@ enum Command {
 /// # Examples
 ///
 ///     complete get object-7
-///     complete show object-7 --format json
+///     complete show object-7 -O json -F id
 ///     complete completions bash
 #[derive(Debug, argx::Parser)]
 #[argx(name = "complete", version = VERSION, long_version = LONG_VERSION, schema)]
@@ -238,46 +230,55 @@ fn settings() -> Result<Settings, argx::ConfigError> {
     loader.layer(Environment).resolve()
 }
 
-fn main() -> Result<(), argx::ConfigError> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    if Cli::handle_completion() {
+        return Ok(());
+    }
+
     let settings = settings()?;
-    let cli = Cli::parse();
+    let invocation = Cli::try_parse_invocation().unwrap_or_else(|error| error.exit());
+    let (cli, output) = invocation.into_parts();
 
     if cli.common.verbose {
         eprintln!("workers: {}", settings.workers);
         eprintln!("default endpoint: {}", settings.endpoint);
     }
-    let format = match cli.common.format {
-        Format::Human => "human",
-        Format::Json => "json",
-        Format::JsonLines => "json-lines",
-    };
 
     match cli.command {
         Command::Get(command) => match get(command) {
-            Ok(output) => println!("get: {} (limit {}, {format})", output.id, output.limit),
+            Ok(value) => match output.format() {
+                OutputFormat::Text => println!("get: {} (limit {})", value.id, value.limit),
+                OutputFormat::Json => println!("{}", output.render_json(&value)?),
+                _ => return Err("unsupported output format".into()),
+            },
             Err(GetError::NotFound) => {
                 eprintln!("object not found");
                 std::process::exit(1);
             }
         },
         Command::Put(command) => match put(command) {
-            Ok(output) => println!("put: {} ({format})", output.id),
+            Ok(value) => match output.format() {
+                OutputFormat::Text => println!("put: {}", value.id),
+                OutputFormat::Json => println!("{}", output.render_json(&value)?),
+                _ => return Err("unsupported output format".into()),
+            },
             Err(PutError::Rejected) => {
                 eprintln!("request rejected");
                 std::process::exit(1);
             }
         },
         Command::Completions(command) => {
-            let output = match completions(command) {
-                Ok(output) => output,
+            let value = match completions(command) {
+                Ok(value) => value,
                 Err(CompletionError::Render) => {
                     eprintln!("failed to render completion script");
                     std::process::exit(1);
                 }
             };
-            if let Err(error) = io::stdout().lock().write_all(output.script.as_bytes()) {
-                eprintln!("failed to write completion script: {error}");
-                std::process::exit(1);
+            match output.format() {
+                OutputFormat::Json => println!("{}", output.render_json(&value)?),
+                OutputFormat::Text => io::stdout().lock().write_all(value.script.as_bytes())?,
+                _ => return Err("unsupported output format".into()),
             }
         }
     }

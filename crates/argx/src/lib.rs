@@ -293,6 +293,9 @@
 //! | [`Parser::try_parse_from`] | complete argv including program name | caller receives [`Error`] |
 //! | [`Parser::parse_args`] | arguments only | Argx prints and exits |
 //! | [`Parser::try_parse_args`] | arguments only | caller receives [`Error`] |
+//! | [`Parser::try_parse_invocation`] | current process, excluding program name | caller receives [`Invocation`] or [`Error`] |
+//! | [`Parser::try_parse_invocation_from`] | complete argv including program name | caller receives [`Invocation`] or [`Error`] |
+//! | [`Parser::try_parse_invocation_args`] | arguments only | caller receives [`Invocation`] or [`Error`] |
 //!
 //! The `try_parse*` methods represent built-in help and version requests as terminal actions in the
 //! error type. Embedding code can therefore preserve Argx's parser semantics while choosing its
@@ -310,6 +313,63 @@
 //!     Err(Error::DisplayHelp { help }) => assert!(help.contains("Usage:")),
 //!     _ => panic!("expected the built-in help action"),
 //! }
+//! ```
+//!
+//! # Output
+//!
+//! Argx reserves `-O` / `--output <FORMAT>` and `-F` / `--fields <FIELDS>` as global output
+//! controls. Output defaults to [`OutputFormat::Text`]; `-O json` selects [`OutputFormat::Json`].
+//! Field selectors are repeatable, comma-separated, and may use dotted paths. They require JSON
+//! output and a typed result schema for the selected handler.
+//!
+//! The invocation entry points return [`Invocation<T>`], keeping the parsed application command
+//! separate from its [`Output`] context. Applications continue to own dispatch and text rendering.
+//! For successful structured output, [`Output::render_json`] serializes the handler value and
+//! applies any schema-validated field projection. Field selection does not apply to errors.
+//!
+//! ```
+//! use argx::{OutputFormat, Parser as _, argx};
+//! use serde::Serialize;
+//!
+//! #[derive(argx::Parser)]
+//! #[argx(schema)]
+//! struct Cli {
+//!     #[argx(subcommand)]
+//!     command: Command,
+//! }
+//!
+//! #[derive(argx::Subcommand)]
+//! #[argx(schema)]
+//! enum Command {
+//!     Get(Get),
+//! }
+//!
+//! #[derive(argx::Args)]
+//! struct Get;
+//!
+//! #[derive(Serialize)]
+//! #[argx(schema)]
+//! struct GetOutput {
+//!     id: u64,
+//! }
+//!
+//! #[derive(Debug, Serialize)]
+//! #[argx(schema)]
+//! struct GetError;
+//!
+//! #[argx::argx(handler = run)]
+//! impl Get {
+//!     fn run(self) -> Result<GetOutput, GetError> {
+//!         Ok(GetOutput { id: 7 })
+//!     }
+//! }
+//!
+//! let invocation = Cli::try_parse_invocation_from(["acme", "get", "-O", "json", "-F", "id"])?;
+//! assert_eq!(invocation.output.format(), OutputFormat::Json);
+//! let Command::Get(command) = invocation.command.command;
+//! let value = command.run().unwrap();
+//! assert_eq!(invocation.output.render_json(&value)?, r#"{"id":7}"#);
+//! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
 //! # Help and version
@@ -592,19 +652,19 @@ pub use config::{
 /// use argx::Parser as _;
 ///
 /// #[derive(argx::Args)]
-/// struct Output {
+/// struct Display {
 ///     #[argx(long)]
-///     json: bool,
+///     color: bool,
 /// }
 ///
 /// #[derive(argx::Parser)]
 /// struct Cli {
 ///     #[argx(flatten)]
-///     output: Output,
+///     display: Display,
 /// }
 ///
-/// let cli = Cli::try_parse_from(["tool", "--json"])?;
-/// assert!(cli.output.json);
+/// let cli = Cli::try_parse_from(["tool", "--color"])?;
+/// assert!(cli.display.color);
 /// # Ok::<(), argx::Error>(())
 /// ```
 pub trait Args: Sized + __private::CommandArgs {}

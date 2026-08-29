@@ -154,8 +154,44 @@ observe environment values established by earlier `Dotenv` or `Environment` laye
 also controls interpolation visibility. Argx performs no file discovery.
 
 Configuration fields participate in argv only when they carry CLI metadata such as `long` or
-`short`. `#[argx(flatten)]` composes a nested `Config` across every layer. See the
+`short`. Collection fields marked `#[argx(delimited)]` use the same comma-separated syntax in argv
+and environment layers, so `--origins a,b` and `ACME_ORIGINS=a,b` resolve to the same `Vec<T>` shape.
+`#[argx(flatten)]` composes a nested `Config` across every layer. See the
 [configuration example](crates/argx/examples/configuration.rs) for a runnable version.
+
+## Output
+
+Argx reserves `-O` / `--output` and `-F` / `--fields` as global output controls. Text is the
+default. `-O json` selects structured JSON output, while repeatable comma-separated `-F` values
+select dotted fields from a schema-enabled handler result:
+
+```text
+acme get object-7 -O json
+acme get object-7 -O json -F id,owner.name
+```
+
+Use an invocation entry point when the application needs to honor these controls. The parsed
+command and output context remain separate, so applications keep ownership of dispatch and
+human-readable rendering while Argx handles JSON serialization and schema-validated projection:
+
+```rust
+use argx::{OutputFormat, Parser as _};
+
+let invocation = Cli::try_parse_invocation()?;
+let (cli, output) = invocation.into_parts();
+let value = run(cli)?;
+
+match output.format() {
+    OutputFormat::Text => println!("{value:?}"),
+    OutputFormat::Json => println!("{}", output.render_json(&value)?),
+    _ => unreachable!(),
+}
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+`--fields` requires JSON output and a typed result schema for the selected command. Field selection
+applies only to successful output. See [`Invocation`](https://docs.rs/argx/latest/argx/struct.Invocation.html)
+and [`Output`](https://docs.rs/argx/latest/argx/struct.Output.html) for the embedding API.
 
 ## Schema discovery
 
@@ -163,14 +199,25 @@ A parser marked `#[argx(schema)]` exposes its command interface as Draft 2020-12
 tooling and agents:
 
 ```text
-acme schema get
-acme get object-7 --schema
+acme schema
+acme schema objects
+acme schema objects get
+acme objects get object-7 --schema
 ```
 
-Both forms describe the selected command. `#[argx(handler = CommandType)]` can associate an
-executable leaf with typed result and error schemas, while `#[argx(schema)]` derives the underlying
-Rust data-model schemas through Schemars without requiring downstream users to depend on Schemars
-directly.
+Discovery is shallow while the selected command has children, so the root and `objects` forms list
+only their immediate child commands. Reaching a leaf such as `objects get` automatically exposes
+its complete invocation, result, error, and referenced type schemas. Use `--full` on a structural
+command when recursive expansion is useful:
+
+```text
+acme schema objects --full
+```
+
+Both discovery forms describe the same selected command. `#[argx(handler = CommandType)]` can
+associate an executable leaf with typed result and error schemas, while `#[argx(schema)]` derives
+the underlying Rust data-model schemas through Schemars without requiring downstream users to
+depend on Schemars directly.
 
 ```rust
 use argx::{Args, argx};
@@ -209,11 +256,11 @@ Detailed behavior is documented on [docs.rs/argx](https://docs.rs/argx/latest/ar
 | Example | Focus | Try it |
 | --- | --- | --- |
 | [`basic`](crates/argx/examples/basic.rs) | Smallest complete parser and built-in help | `cargo run --example basic -- --help` |
-| [`complete`](crates/argx/examples/complete.rs) | Integrated reference application showing the complete Argx API | `cargo run --example complete -- get object-7 --format json` |
+| [`complete`](crates/argx/examples/complete.rs) | Integrated reference application showing the complete Argx API | `cargo run --example complete -- get object-7 -O json -F id` |
 | [`arguments`](crates/argx/examples/arguments.rs) | Arguments, defaults, aliases, constraints, and value enums | `cargo run --example arguments -- input.txt --format json` |
 | [`commands`](crates/argx/examples/commands.rs) | Subcommands, flattening, structured help, aliases, and versions | `cargo run --example commands -- --verbose add hello --force` |
 | [`configuration`](crates/argx/examples/configuration.rs) | Ordered defaults, environment, and argv configuration | `cargo run --example configuration -- --workers 8` |
-| [`schema`](crates/argx/examples/schema.rs) | Schema discovery and typed handler result/error contracts | `cargo run --example schema -- schema get` |
+| [`schema`](crates/argx/examples/schema.rs) | Schema discovery and typed handler result/error contracts | `cargo run --example schema -- schema objects get` |
 | [`completions`](crates/argx/examples/completions.rs) | Dynamic shell-completion adapters | `cargo run --example completions -- zsh` |
 
 ## Support
