@@ -1,0 +1,44 @@
+[package]
+name = "argx"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Expressive command-line parsing and configuration for Rust."
+license.workspace = true
+readme.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/argx"
+keywords = ["cli", "configuration", "schema"]
+categories = ["command-line-interface", "development-tools"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = [
+  "-Zunstable-options",
+  "--generate-link-to-definition",
+  "--show-type-layout",
+]
+
+[lints]
+workspace = true
+
+[features]
+default = ["derive"]
+derive = ["dep:argx-derive"]
+toml = ["derive", "dep:toml_edit"]
+
+[dependencies]
+# Vendor
+schemars.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+toml_edit = { workspace = true, optional = true }
+
+# Crates
+argx-derive = { workspace = true, optional = true }
+
+[dev-dependencies]
+# Vendor
+snapbox.workspace = true
