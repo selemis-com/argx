@@ -1,12 +1,9 @@
-//! Derive-first command-line parsing and unified configuration from Rust data types.
+//! Derive-first command-line parsing and configuration from Rust data types.
 //!
 //! Argx derives static command and configuration models from Rust data types. Command metadata
 //! drives raw argv parsing, typed value binding, generated help and version output, diagnostics,
 //! dynamic shell completion, and schema discovery. Configuration metadata resolves the same typed
 //! fields across explicitly ordered defaults, files, environment values, and argv.
-//!
-//! `#[derive(Config)]` treats defaults, TOML, dotenv, process environment, and argv as ordered
-//! sources for one resolved Rust value rather than separate configuration systems.
 //!
 //! # Installation
 //!
@@ -19,6 +16,12 @@
 //! The default `derive` feature re-exports the procedural macros used throughout this guide.
 //! Enable the optional `toml` feature to add the `Toml` configuration layer. Disable default
 //! features only when a crate needs the runtime API without derive macros.
+//!
+//! ## Cargo features
+//!
+//! - `derive` is enabled by default and exports the `Parser`, `Args`, `Subcommand`, `ValueEnum`,
+//!   and `Config` derives plus the unified `argx` attribute macro.
+//! - `toml` enables the `Toml` configuration layer and implies `derive`.
 //!
 //! # Quick start
 //!
@@ -67,7 +70,7 @@
 //! parser without process exit behavior and are useful for tests, embedding, and custom error
 //! handling.
 //!
-//! # Unified configuration
+//! # Configuration
 //!
 //! `#[derive(Config)]` generates one typed configuration contract. A generated `loader()` starts
 //! empty; applications add [`Defaults`], [`Dotenv`], [`Environment`], and [`Argv`] layers
@@ -100,12 +103,25 @@
 //! they take effect only when [`Defaults`] appears in the layer stack. Non-optional fields are
 //! required only after all configured layers have been resolved.
 //!
+//! For example, an application can define increasing precedence entirely by layer order:
+//!
+//! ```text
+//! earlier layers                                      later layers
+//! Defaults -> Dotenv -> Toml -> Environment -> Argv
+//! ```
+//!
+//! This order is illustrative, not built in. Omitting or reordering a layer changes the
+//! application's configuration policy.
+//!
 //! ## Configuration attributes
 //!
 //! A `Config` declaration accepts `#[argx(prefix = "...")]`. The prefix maps ordinary fields to
 //! environment variables by uppercasing field components and joining them with `_`. For example,
 //! `#[argx(prefix = "ACME")]` maps `workers` to `ACME_WORKERS`. A flattened `server.workers`
 //! field maps to `ACME_SERVER_WORKERS`.
+//! Only generated or explicitly named mappings contribute configuration fields. Other variables,
+//! including variables that share the prefix, do not cause errors and remain available to later
+//! TOML interpolation.
 //!
 //! Configuration fields accept:
 //!
@@ -131,6 +147,138 @@
 //!
 //! [`Argv::new`] expects a complete argument vector including the program name. [`Argv::current`]
 //! captures the current process argv in that form.
+//!
+//! # Command model
+//!
+//! Argx has three derive roles:
+//!
+//! - `#[derive(Parser)]` applies to a named-field or unit struct and defines the root command.
+//! - `#[derive(Args)]` applies to a named-field or unit struct and defines reusable arguments.
+//! - `#[derive(Subcommand)]` applies to a non-empty enum. Each variant is either a unit command or
+//!   contains exactly one direct `Args` payload.
+//!
+//! Command and variant names default to kebab-case. `#[argx(name = "...")]` replaces the canonical
+//! spelling. Subcommand variants may additionally declare hidden `alias` or `aliases` spellings.
+//! Root-command aliases are deliberately unsupported so the root has one canonical identity.
+//!
+//! A field with `#[argx(subcommand)]` selects one child from a derived subcommand enum. Selection
+//! is exact; Argx does not perform prefix matching. Once a child is selected, parsing enters that
+//! child's lexical scope.
+//!
+//! A field with `#[argx(flatten)]` composes one direct `Args` declaration into the current command.
+//! Flattening does not create a new command scope: its arguments participate in the containing
+//! command's parsing, validation, and help. A flatten field's Rust documentation
+//! becomes a help-group heading when present.
+//!
+//! Named options are local to their declaring command unless marked `#[argx(global)]`. Global
+//! options remain visible in descendant scopes. If an ancestor and descendant use the same
+//! spelling, the nearest active command scope wins.
+//!
+//! # Arguments and cardinality
+//!
+//! A field is positional unless `long` or `short` is present. A bare `#[argx(long)]` infers the
+//! kebab-case field name; a bare `#[argx(short)]` infers its first character. Explicit spellings
+//! are accepted with `long = "..."` and `short = 'x'`. Named fields may add hidden long spellings
+//! with `alias` or `aliases`.
+//!
+//! The derive recognizes these field shapes syntactically:
+//!
+//! | Rust shape | Binding semantics |
+//! | --- | --- |
+//! | named `bool` | value-less switch |
+//! | `T` | exactly one required value |
+//! | `Option<T>` | zero or one value |
+//! | `Vec<T>` | zero or more values |
+//! | `Option<Vec<T>>` | optional zero-or-more collection |
+//!
+//! For a named collection, each occurrence consumes one value and the option may repeat. For a
+//! positional collection, values are consumed variadically according to the statically validated
+//! positional layout.
+//!
+//! Value conversion depends on the direct value type:
+//!
+//! - a field marked `#[argx(value_enum)]` parses through its finite [`trait@ValueEnum`] vocabulary;
+//! - `String` consumes UTF-8 text;
+//! - `OsString` and `PathBuf` preserve operating-system strings;
+//! - other value types are converted through [`std::str::FromStr`].
+//!
+//! ## Finite values
+//!
+//! Arbitrary [`std::str::FromStr`] implementations are intentionally opaque to Argx. When a value
+//! has a finite command-line vocabulary, derive [`ValueEnum`] and mark the field with
+//! `#[argx(value_enum)]`. The enum declaration then becomes the source of truth for parsing, help,
+//! and completion, so accepted values do not need to be repeated elsewhere.
+//!
+//! ```
+//! #[derive(Debug, argx::ValueEnum)]
+//! enum Output {
+//!     HumanReadable,
+//!     Json,
+//! }
+//!
+//! #[derive(argx::Parser)]
+//! struct Cli {
+//!     /// Output format.
+//!     #[argx(long, value_enum)]
+//!     output: Output,
+//! }
+//! ```
+//!
+//! Derived variants use Argx's normal kebab-case spelling, and parsing is exact and case-sensitive.
+//! The derive also implements [`std::str::FromStr`] for ordinary Rust use. The marker works through
+//! Argx's scalar, `Option`, `Vec`, and `Option<Vec<_>>` field shapes and applies the vocabulary to
+//! the logical element value.
+//!
+//! Type-shape inference is intentionally syntactic. Special treatment for `bool`, `Option`, `Vec`,
+//! `String`, `OsString`, and `PathBuf` requires a recognized standard spelling to appear directly
+//! in the field type. A type alias around one of those types is an ordinary `FromStr` value type
+//! because a procedural macro cannot resolve type aliases.
+//!
+//! ## Typed defaults
+//!
+//! Scalar value-taking named options may declare `#[argx(default = expression)]`. A typed default
+//! satisfies absence without round-tripping the expression through command-line text. Defaults are
+//! not accepted on switches, collections, positionals, flatten fields, or subcommand selectors.
+//!
+//! ## Argument relationships
+//!
+//! `requires` and `conflicts` express relationships between argument fields in one composed command
+//! context. References use Rust field names and are validated during derivation/composition.
+//!
+//! `requires` is conditional: when the source is given through argv,
+//! the target must be satisfied. A typed default counts as a satisfied target. `conflicts` rejects
+//! the case where both source and target were given; a default alone does not make an argument
+//! conflict with another argument.
+//!
+//! ```
+//! #[derive(argx::Parser)]
+//! struct Cli {
+//!     #[argx(long, requires = "token")]
+//!     remote: bool,
+//!
+//!     #[argx(long)]
+//!     token: Option<String>,
+//!
+//!     #[argx(long, conflicts = "remote")]
+//!     offline: bool,
+//! }
+//! ```
+//!
+//! # Argv grammar
+//!
+//! Argx accepts long options as either `--name value` or `--name=value`. Short options may be
+//! bundled. A value-taking short option consumes the remainder of its bundle as its value, or the
+//! next token when no remainder exists. Bundles are validated before any event from the bundle is
+//! committed, so a failing member does not partially apply earlier members.
+//!
+//! `--` stops flag interpretation in the active command scope. Ordinary flag-like detached values
+//! are refused by default. `allow_hyphen_values` permits them for a named value-taking option;
+//! `allow_negative_numbers` permits recognized negative-number spellings while continuing to
+//! reject other flag-like values. The latter is also available for positional values.
+//!
+//! Raw argv is handled as operating-system strings. On Unix, `OsString` and `PathBuf` fields can
+//! therefore receive non-UTF-8 argv without forcing a lossy conversion. `String` and `FromStr`
+//! destinations require UTF-8 and report an [`Error`] when conversion is not possible.
 //!
 //! # Entry points and embedding
 //!
@@ -164,31 +312,106 @@
 //! }
 //! ```
 //!
-//! # Command model
+//! # Help and version
 //!
-//! Argx has three derive roles:
+//! Help is generated from the same static command model used for parsing. Every command scope has
+//! built-in `-h` and `--help`. A root command or subcommand variant that declares `version` or
+//! `long_version` also receives `-V` and `--version`; if only one version expression is supplied,
+//! it is used for both forms.
 //!
-//! - `#[derive(Parser)]` applies to a named-field or unit struct and defines the root command.
-//! - `#[derive(Args)]` applies to a named-field or unit struct and defines reusable arguments.
-//! - `#[derive(Subcommand)]` applies to a non-empty enum. Each variant is either a unit command or
-//!   contains exactly one direct `Args` payload.
+//! Rust documentation participates directly in help generation:
 //!
-//! Command and variant names default to kebab-case. `#[argx(name = "...")]` replaces the canonical
-//! spelling. Subcommand variants may additionally declare hidden `alias` or `aliases` spellings.
-//! Root-command aliases are deliberately unsupported so the root has one canonical identity.
+//! - the first prose paragraph is the one-line summary used in command listings and argument rows;
+//! - the command's prose before the first level-one heading is its full description;
+//! - level-one Markdown headings become user-authored help sections after generated sections;
+//! - documentation on a flatten field becomes the flattened group's heading.
 //!
-//! A field with `#[argx(subcommand)]` selects one child from a derived subcommand enum. Selection
-//! is exact; Argx does not perform prefix matching. Once a child is selected, parsing enters that
-//! child's lexical scope.
+//! `about = "..."` explicitly replaces the command's derived descriptive text; `help = "..."`
+//! replaces a field's derived one-line summary. Hidden flag and subcommand aliases are accepted by
+//! parsing but omitted from generated help so help presents one canonical interface.
 //!
-//! A field with `#[argx(flatten)]` composes one direct `Args` declaration into the current command.
-//! Flattening does not create a new command scope: its arguments participate in the containing
-//! command's parsing, validation, and help. A flatten field's Rust documentation
-//! becomes a help-group heading when present.
+//! [`Parser::render_help`] renders the root scope directly. During parsing, help and version are
+//! represented as [`Error::DisplayHelp`] and [`Error::DisplayVersion`] terminal actions. The
+//! process-oriented parsing methods print those actions to stdout and exit successfully. Other
+//! parse/binding errors go to stderr and exit with status 2.
 //!
-//! Named options are local to their declaring command unless marked `#[argx(global)]`. Global
-//! options remain visible in descendant scopes. If an ancestor and descendant use the same
-//! spelling, the nearest active command scope wins.
+//! # Shell completions
+//!
+//! Argx generates dynamic completion adapters for Bash, Fish, Nushell, and Zsh through the
+//! [`completion`] module. Bash, Fish, and Zsh send the command line through the cursor back to the
+//! executable, while Nushell forwards the tokenized spans its external-completer API already
+//! provides. Argx normalizes either form and walks completed argv words through the same raw argv
+//! parser used for ordinary invocation. Command selection, aliases, global scope, lexical
+//! shadowing, option repeatability, conflicts, negative-number routing, and `--` therefore do not
+//! have a second shell-specific implementation.
+//!
+//! ```
+//! use argx::{Parser as _, completion::Shell};
+//!
+//! # #[derive(argx::Parser)]
+//! # #[argx(name = "acme")]
+//! # struct Cli;
+//! let script = Cli::render_completion(Shell::Zsh)?;
+//! assert!(script.contains("#compdef acme"));
+//! # Ok::<(), argx::completion::ScriptError>(())
+//! ```
+//!
+//! [`Parser::parse`] handles requests from generated adapters automatically. A binary that uses
+//! any other parser entry point for its current process should call [`Parser::handle_completion`]
+//! first and return when it yields `true`.
+//!
+//! Completion includes canonical values for fields marked `#[argx(value_enum)]`, using the same
+//! finite vocabulary already shared by parsing, help, and completion. Argx does not infer finite
+//! choices from arbitrary [`std::str::FromStr`] implementations, enumerate filesystem paths, or
+//! expose custom value completers. Hidden aliases remain accepted while reconstructing scope but
+//! are never suggested.
+//!
+//! Applications normally expose the generated text through a small `completions <shell>` command,
+//! as demonstrated by the `completions` example. The adapter can then be sourced from shell startup
+//! or saved in the shell's normal completion location. For example, assuming an application named
+//! `acme` exposes that command:
+//!
+//! ```text
+//! # Bash
+//! source <(acme completions bash)
+//!
+//! # Fish
+//! acme completions fish | source
+//!
+//! # Zsh
+//! source <(acme completions zsh)
+//!
+//! # Nushell
+//! acme completions nushell | save --force ~/.cache/acme-completions.nu
+//! source ~/.cache/acme-completions.nu
+//! ```
+//!
+//! Because these adapters call the current executable dynamically, changes to the command tree do
+//! not require regenerating a shell-specific copy of the CLI. Regenerate only when updating the
+//! adapter itself is appropriate for the application installation.
+//!
+//! # Schema discovery
+//!
+//! A parser marked `#[argx(schema)]` exposes machine-readable Draft 2020-12 JSON Schema through
+//! `-S` / `--schema` in the selected command scope and through the root
+//! `schema [COMMAND]...` pseudo-command. Both discovery forms describe the same selected command.
+//!
+//! Structural `Args` and `Subcommand` declarations opt into schema topology with the same
+//! `#[argx(schema)]` marker. Executable leaves are associated with typed result and error schemas
+//! through `#[argx(handler = CommandType)]` or an inherent `#[argx(handler = method)]` impl. For a
+//! zero-argument executable command, use an empty `Args` struct rather than a unit subcommand
+//! variant so the leaf has a concrete Rust type.
+//!
+//! `#[argx(schema)]` delegates Rust data-model schema generation to Schemars while Argx owns
+//! invocation schema projection and static command topology. The selected command's invocation is
+//! the root schema. Handler result and error schemas are bundled under `$defs.result` and
+//! `$defs.error`, with Schemars-generated type definitions under `$defs.types.$defs`. Structural
+//! paths bundle child command schemas under `$defs.subcommands.$defs`.
+//!
+//! Handler associations are traversed statically from the command types into a short-lived local
+//! registry for one discovery operation; Argx uses neither linker inventory nor global
+//! registration. Schema discovery is represented during parsing as [`Error::DisplaySchema`] and
+//! follows the same successful terminal-action policy as help and version.
 //!
 //! # `#[argx(...)]` attribute reference
 //!
@@ -263,196 +486,6 @@
 //! ordinary flag, relationship, or `help` metadata. Their types must be held directly
 //! rather than through `Option` or collection wrappers.
 //!
-//! # Arguments and cardinality
-//!
-//! A field is positional unless `long` or `short` is present. A bare `#[argx(long)]` infers the
-//! kebab-case field name; a bare `#[argx(short)]` infers its first character. Explicit spellings
-//! are accepted with `long = "..."` and `short = 'x'`. Named fields may add hidden long spellings
-//! with `alias` or `aliases`.
-//!
-//! The derive recognizes these field shapes syntactically:
-//!
-//! | Rust shape | Binding semantics |
-//! | --- | --- |
-//! | named `bool` | value-less switch |
-//! | `T` | exactly one required value |
-//! | `Option<T>` | zero or one value |
-//! | `Vec<T>` | zero or more values |
-//! | `Option<Vec<T>>` | optional zero-or-more collection |
-//!
-//! For a named collection, each occurrence consumes one value and the option may repeat. For a
-//! positional collection, values are consumed variadically according to the statically validated
-//! positional layout.
-//!
-//! Value conversion depends on the direct value type:
-//!
-//! - a field marked `#[argx(value_enum)]` parses through its finite [`trait@ValueEnum`] vocabulary;
-//! - `String` consumes UTF-8 text;
-//! - `OsString` and `PathBuf` preserve operating-system strings;
-//! - other value types are converted through [`std::str::FromStr`].
-//!
-//! ## Finite values
-//!
-//! Arbitrary [`std::str::FromStr`] implementations are intentionally opaque to Argx. When a value
-//! has a finite command-line vocabulary, derive [`ValueEnum`] and mark the field with
-//! `#[argx(value_enum)]`. The enum declaration then becomes the source of truth for parsing, help,
-//! and completion, so accepted values do not need to be repeated elsewhere.
-//!
-//! ```
-//! #[derive(Debug, argx::ValueEnum)]
-//! enum Output {
-//!     HumanReadable,
-//!     Json,
-//! }
-//!
-//! #[derive(argx::Parser)]
-//! struct Cli {
-//!     /// Output format.
-//!     #[argx(long, value_enum)]
-//!     output: Output,
-//! }
-//! ```
-//!
-//! Derived variants use Argx's normal kebab-case spelling, and parsing is exact and case-sensitive.
-//! The derive also implements [`std::str::FromStr`] for ordinary Rust use. The marker works through
-//! Argx's scalar, `Option`, `Vec`, and `Option<Vec<_>>` field shapes and applies the vocabulary to
-//! the logical element value.
-//!
-//! Type-shape inference is intentionally syntactic. Special treatment for `bool`, `Option`, `Vec`,
-//! `String`, `OsString`, and `PathBuf` requires a recognized standard spelling to appear directly
-//! in the field type. A type alias around one of those types is an ordinary `FromStr` value type
-//! because a procedural macro cannot resolve type aliases.
-//!
-//! # Argv grammar
-//!
-//! Argx accepts long options as either `--name value` or `--name=value`. Short options may be
-//! bundled. A value-taking short option consumes the remainder of its bundle as its value, or the
-//! next token when no remainder exists. Bundles are validated before any event from the bundle is
-//! committed, so a failing member does not partially apply earlier members.
-//!
-//! `--` stops flag interpretation in the active command scope. Ordinary flag-like detached values
-//! are refused by default. `allow_hyphen_values` permits them for a named value-taking option;
-//! `allow_negative_numbers` permits recognized negative-number spellings while continuing to
-//! reject other flag-like values. The latter is also available for positional values.
-//!
-//! Raw argv is handled as operating-system strings. On Unix, `OsString` and `PathBuf` fields can
-//! therefore receive non-UTF-8 argv without forcing a lossy conversion. `String` and `FromStr`
-//! destinations require UTF-8 and report an [`Error`] when conversion is not possible.
-//!
-//! # Typed defaults
-//!
-//! Scalar value-taking named options may declare `#[argx(default = expression)]`. A typed default
-//! satisfies absence without round-tripping the expression through command-line text. Defaults are
-//! not accepted on switches, collections, positionals, flatten fields, or subcommand selectors.
-//!
-//! # Argument relationships
-//!
-//! `requires` and `conflicts` express relationships between argument fields in one composed command
-//! context. References use Rust field names and are validated during derivation/composition.
-//!
-//! `requires` is conditional: when the source is given through argv,
-//! the target must be satisfied. A typed default counts as a satisfied target. `conflicts` rejects
-//! the case where both source and target were given; a default alone does not make an argument
-//! conflict with another argument.
-//!
-//! ```
-//! #[derive(argx::Parser)]
-//! struct Cli {
-//!     #[argx(long, requires = "token")]
-//!     remote: bool,
-//!
-//!     #[argx(long)]
-//!     token: Option<String>,
-//!
-//!     #[argx(long, conflicts = "remote")]
-//!     offline: bool,
-//! }
-//! ```
-//!
-//! # Help, version, and schema discovery
-//!
-//! Help is generated from the same static command model used for parsing. Every command scope has
-//! built-in `-h` and `--help`. A root command or subcommand variant that declares `version` or
-//! `long_version` also receives `-V` and `--version`; if only one version expression is supplied,
-//! it is used for both forms.
-//!
-//! Rust documentation participates directly in help generation:
-//!
-//! - the first prose paragraph is the one-line summary used in command listings and argument rows;
-//! - the command's prose before the first level-one heading is its full description;
-//! - level-one Markdown headings become user-authored help sections after generated sections;
-//! - documentation on a flatten field becomes the flattened group's heading.
-//!
-//! `about = "..."` explicitly replaces the command's derived descriptive text; `help = "..."`
-//! replaces a field's derived one-line summary. Hidden flag and subcommand aliases are accepted by
-//! parsing but omitted from generated help so help presents one canonical interface.
-//!
-//! A parser marked `#[argx(schema)]` additionally exposes `-S` and `--schema` in every selected
-//! command scope and the root `schema [COMMAND]...` pseudo-command. Structural `Args` and
-//! `Subcommand` declarations opt into topology with the same `#[argx(schema)]` marker; executable
-//! leaves are associated with result and error schemas through `#[argx(handler = ...)]`.
-//!
-//! [`Parser::render_help`] renders the root scope directly. During parsing, help, version, and
-//! schema discovery are represented as [`Error::DisplayHelp`], [`Error::DisplayVersion`], and
-//! [`Error::DisplaySchema`] terminal actions. The process-oriented parsing methods print those
-//! actions to stdout and exit successfully. Other parse/binding errors go to stderr and exit with
-//! status 2.
-//!
-//! # Shell completions
-//!
-//! Argx generates dynamic completion adapters for Bash, Fish, Nushell, and Zsh through the
-//! [`completion`] module. Bash, Fish, and Zsh send the command line through the cursor back to the
-//! executable, while Nushell forwards the tokenized spans its external-completer API already
-//! provides. Argx normalizes either form and walks completed argv words through the same raw argv
-//! parser used for ordinary invocation. Command selection, aliases, global scope, lexical
-//! shadowing, option repeatability, conflicts, negative-number routing, and `--` therefore do not
-//! have a second shell-specific implementation.
-//!
-//! ```
-//! use argx::{Parser as _, completion::Shell};
-//!
-//! # #[derive(argx::Parser)]
-//! # #[argx(name = "acme")]
-//! # struct Cli;
-//! let script = Cli::render_completion(Shell::Zsh)?;
-//! assert!(script.contains("#compdef acme"));
-//! # Ok::<(), argx::completion::ScriptError>(())
-//! ```
-//!
-//! [`Parser::parse`] handles requests from generated adapters automatically. A binary that uses
-//! any other parser entry point for its current process should call [`Parser::handle_completion`]
-//! first and return when it yields `true`.
-//!
-//! Completion includes canonical values for fields marked `#[argx(value_enum)]`, using the same
-//! finite vocabulary already shared by parsing, help, and completion. Argx does not infer finite
-//! choices from arbitrary [`std::str::FromStr`] implementations, enumerate filesystem paths, or
-//! expose custom value completers. Hidden aliases remain accepted while reconstructing scope but
-//! are never suggested.
-//!
-//! Applications normally expose the generated text through a small `completions <shell>` command,
-//! as demonstrated by the `completions` example. The adapter can then be sourced from shell startup
-//! or saved in the shell's normal completion location. For example, assuming an application named
-//! `acme` exposes that command:
-//!
-//! ```text
-//! # Bash
-//! source <(acme completions bash)
-//!
-//! # Fish
-//! acme completions fish | source
-//!
-//! # Zsh
-//! source <(acme completions zsh)
-//!
-//! # Nushell
-//! acme completions nushell | save --force ~/.cache/acme-completions.nu
-//! source ~/.cache/acme-completions.nu
-//! ```
-//!
-//! Because these adapters call the current executable dynamically, changes to the command tree do
-//! not require regenerating a shell-specific copy of the CLI. Regenerate only when updating the
-//! adapter itself is appropriate for the application installation.
-//!
 //! # Failure model
 //!
 //! Parsing is terminal on the first public action or failure. [`Error`] is owned, non-exhaustive,
@@ -488,12 +521,6 @@
 //! Subsystem for Linux (WSL); native Windows targets are not supported. The parser still uses
 //! [`OsString`] internally so supported Unix targets do not need to force argv through UTF-8.
 //!
-//! # Cargo features
-//!
-//! The default `derive` feature exports the `Parser`, `Args`, `Subcommand`, `ValueEnum`, and
-//! `Config` derives plus the unified `argx` attribute macro. The optional `toml` feature enables
-//! the `Toml` configuration layer and its `toml_edit` dependency.
-
 #![doc(
     html_logo_url = "https://raw.githubusercontent.com/selemis-com/argx/master/.github/assets/logo.jpg",
     html_favicon_url = "https://raw.githubusercontent.com/selemis-com/argx/master/.github/assets/favicon.ico"

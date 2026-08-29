@@ -1,8 +1,10 @@
-//! Machine-readable JSON Schema generation over the statically derived Argx command topology.
+//! Machine-readable JSON Schema for derived command trees and typed handler contracts.
 //!
-//! Handler associations are collected into a short-lived local registry by generated trait calls
-//! over the concrete command types. The registry is neither global registration nor linker
-//! inventory.
+//! Schema-enabled parsers expose their invocation shape through the same static command model used
+//! for parsing. Executable leaves can additionally contribute typed result and error schemas through
+//! `#[argx(handler = ...)]`. Handler associations are collected into a short-lived local registry
+//! by generated trait calls over the concrete command types; Argx uses neither global registration
+//! nor linker inventory.
 
 use std::{borrow::Cow, ffi::OsStr, fmt::Write as _};
 

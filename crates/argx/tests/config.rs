@@ -97,12 +97,6 @@ mod tests {
             .expect("resolve configuration");
 
         assert!(!config.enabled);
-
-        let config = NestedConfig::loader()
-            .layer(Defaults)
-            .resolve()
-            .expect("explicit defaults layer resolves nested defaults");
-        assert_eq!(config.server.workers, 4);
     }
 
     #[derive(Debug, argx::Config)]
@@ -119,6 +113,23 @@ mod tests {
             .layer(Dotenv::new(&path))
             .resolve()
             .expect("resolve environment file");
+
+        assert_eq!(config.endpoint, "from-env-file");
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn environment_layers_ignore_unmapped_variables() {
+        let path = temp_file(
+            "environment-extra",
+            "env",
+            "ARGX_LAYER_TEST_ENDPOINT=from-env-file\nARGX_LAYER_TEST_EXTRA=ignored\n",
+        );
+
+        let config = EnvironmentConfig::loader()
+            .layer(Dotenv::new(&path))
+            .resolve()
+            .expect("ignore unmapped environment variable");
 
         assert_eq!(config.endpoint, "from-env-file");
         let _ = fs::remove_file(path);
@@ -146,6 +157,12 @@ mod tests {
             panic!("expected source error");
         };
         assert_eq!(error.field(), Some("server.workers"));
+
+        let config = NestedConfig::loader()
+            .layer(Defaults)
+            .resolve()
+            .expect("explicit defaults layer resolves nested defaults");
+        assert_eq!(config.server.workers, 4);
     }
 
     #[cfg(feature = "toml")]

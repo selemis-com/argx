@@ -48,9 +48,9 @@ impl Location {
 
 /// A configuration source that can originate a loading error.
 ///
-/// This describes externally loaded sources only. Declared defaults and explicit
-/// overrides cannot produce source-loading diagnostics and therefore are not
-/// represented here.
+/// This describes externally loaded sources only. Defaults and argv are not
+/// represented because their failures are resolution or parser diagnostics rather
+/// than external source-loading diagnostics.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum Source {
@@ -147,7 +147,7 @@ impl Error {
         Self { kind: Box::new(kind) }
     }
 
-    /// Creates an environment-file loading or parsing error.
+    /// Creates a dotenv loading or parsing error.
     pub(crate) fn dotenv(source: DotenvError) -> Self {
         Self { kind: Box::new(ErrorKind::Dotenv { source }) }
     }
@@ -162,11 +162,6 @@ impl Error {
         Self { kind: Box::new(ErrorKind::EnvironmentContract { source }) }
     }
 
-    /// Creates an unknown variable error inside an owned environment prefix.
-    pub(crate) fn unknown_environment(scope: EnvironmentScope, variable: String) -> Self {
-        Self { kind: Box::new(ErrorKind::UnknownEnvironment { scope, variable }) }
-    }
-
     /// Returns the configuration source associated with this error.
     #[must_use]
     pub fn configuration_source(&self) -> Option<Source> {
@@ -178,9 +173,7 @@ impl Error {
             | ErrorKind::ParseToml { scope, .. }
             | ErrorKind::ParseInterpolatedToml { scope, .. } => Some(*scope),
             ErrorKind::Dotenv { .. } => Some(Source::Dotenv),
-            ErrorKind::Environment { scope, .. } | ErrorKind::UnknownEnvironment { scope, .. } => {
-                Some(scope.source())
-            }
+            ErrorKind::Environment { scope, .. } => Some(scope.source()),
         }
     }
 
@@ -195,9 +188,7 @@ impl Error {
             | ErrorKind::InterpolateToml { .. }
             | ErrorKind::ParseToml { .. }
             | ErrorKind::ParseInterpolatedToml { .. } => None,
-            ErrorKind::Dotenv { .. }
-            | ErrorKind::EnvironmentContract { .. }
-            | ErrorKind::UnknownEnvironment { .. } => None,
+            ErrorKind::Dotenv { .. } | ErrorKind::EnvironmentContract { .. } => None,
         }
     }
 
@@ -210,7 +201,6 @@ impl Error {
             ErrorKind::Dotenv { source } => source.variable(),
             ErrorKind::Environment { source, .. } => Some(source.variable()),
             ErrorKind::EnvironmentContract { source } => Some(source.variable()),
-            ErrorKind::UnknownEnvironment { variable, .. } => Some(variable),
             ErrorKind::MissingValue { .. } => None,
             #[cfg(feature = "toml")]
             ErrorKind::ReadToml { .. }
@@ -229,9 +219,7 @@ impl Error {
             | ErrorKind::ParseToml { path, .. }
             | ErrorKind::ParseInterpolatedToml { path, .. } => Some(path),
             ErrorKind::Dotenv { source } => source.path(),
-            ErrorKind::Environment { scope, .. } | ErrorKind::UnknownEnvironment { scope, .. } => {
-                scope.path()
-            }
+            ErrorKind::Environment { scope, .. } => scope.path(),
             ErrorKind::MissingValue { .. } | ErrorKind::EnvironmentContract { .. } => None,
         }
     }
@@ -250,8 +238,7 @@ impl Error {
             ErrorKind::Dotenv { source } => source.location(),
             ErrorKind::MissingValue { .. }
             | ErrorKind::Environment { .. }
-            | ErrorKind::EnvironmentContract { .. }
-            | ErrorKind::UnknownEnvironment { .. } => None,
+            | ErrorKind::EnvironmentContract { .. } => None,
             #[cfg(feature = "toml")]
             ErrorKind::ReadToml { .. } | ErrorKind::ParseInterpolatedToml { .. } => None,
         }?;
@@ -315,7 +302,7 @@ enum ErrorKind {
         /// Path containing invalid interpolated configuration.
         path: PathBuf,
     },
-    /// Environment-file reading or syntax failed.
+    /// Dotenv file reading or syntax failed.
     #[error("failed to load dotenv: {source}")]
     Dotenv {
         /// Underlying dotenv error with path context where available.
@@ -334,14 +321,6 @@ enum ErrorKind {
     EnvironmentContract {
         /// Generated contract validation failure.
         source: EnvironmentContractError,
-    },
-    /// An owned environment prefix contained an undeclared variable.
-    #[error("unknown environment variable `{variable}` under a Argx-owned prefix in {scope}")]
-    UnknownEnvironment {
-        /// Environment-like scope containing the unknown variable.
-        scope: EnvironmentScope,
-        /// Unknown variable name.
-        variable: String,
     },
 }
 
@@ -363,7 +342,7 @@ impl EnvironmentScope {
         }
     }
 
-    /// Returns the environment-file path associated with this scope, when present.
+    /// Returns the dotenv file path associated with this scope, when present.
     fn path(&self) -> Option<&Path> {
         match self {
             Self::File(path) => Some(path),

@@ -1,7 +1,7 @@
 //! Environment snapshots, binding contracts, and scalar decoding.
 
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap},
+    collections::{BTreeMap, HashMap},
     env,
     ffi::{OsStr, OsString},
     fmt,
@@ -50,7 +50,7 @@ impl Environment {
     }
 }
 
-/// Environment bindings and owned prefixes generated for one configuration contract.
+/// Environment bindings generated for one configuration contract.
 ///
 /// The type is public only because downstream derive expansions build it through
 /// Argx's hidden protocol.
@@ -58,8 +58,6 @@ impl Environment {
 pub struct EnvironmentContract {
     /// Field-to-variable bindings in declaration order.
     bindings: Vec<EnvironmentBinding>,
-    /// Prefix namespaces owned by this configuration.
-    prefixes: BTreeSet<String>,
 }
 
 /// One resolved environment binding.
@@ -79,12 +77,6 @@ impl EnvironmentContract {
             .push(EnvironmentBinding { field: String::from(field), variable: variable.into() });
     }
 
-    /// Registers one conventionally owned environment prefix.
-    #[doc(hidden)]
-    pub fn __prefix(&mut self, prefix: &str) {
-        self.prefixes.insert(String::from(prefix));
-    }
-
     /// Extends this contract with a nested configuration under `parent`.
     #[doc(hidden)]
     pub fn __extend_within(&mut self, mut nested: Self, parent: &'static str) {
@@ -93,7 +85,6 @@ impl EnvironmentContract {
             binding.field.insert_str(0, parent);
         }
         self.bindings.extend(nested.bindings);
-        self.prefixes.extend(nested.prefixes);
     }
 
     /// Rejects ambiguous environment mappings in a generated contract.
@@ -109,28 +100,6 @@ impl EnvironmentContract {
             }
         }
         Ok(())
-    }
-
-    /// Returns the first unknown variable inside an owned prefix namespace.
-    pub(crate) fn unknown_variable(&self, environment: &Environment) -> Option<String> {
-        if self.prefixes.is_empty() {
-            return None;
-        }
-
-        let known =
-            self.bindings.iter().map(|binding| binding.variable.as_str()).collect::<BTreeSet<_>>();
-        environment
-            .values
-            .keys()
-            .map(OsString::as_os_str)
-            .filter_map(|name| {
-                let name = name.to_string_lossy();
-                let owned = self.prefixes.iter().any(|prefix| {
-                    name.strip_prefix(prefix).is_some_and(|suffix| suffix.starts_with('_'))
-                });
-                (owned && !known.contains(name.as_ref())).then(|| name.into_owned())
-            })
-            .min()
     }
 }
 
@@ -232,7 +201,7 @@ enum EnvironmentValueError {
     #[error("value is not valid for the configuration field type")]
     Invalid,
     /// The requested type requires structured environment syntax Argx has not defined.
-    #[error("structured environment values are not supported; use TOML or an explicit override")]
+    #[error("structured environment values are not supported; use a TOML layer instead")]
     Structured,
 }
 

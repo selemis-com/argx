@@ -16,7 +16,7 @@ pub(crate) enum DotenvError {
     /// The environment file could not be opened or read.
     #[error("failed to read dotenv file `{}`: {source}", path.display())]
     Read {
-        /// Environment-file path.
+        /// Dotenv file path.
         path: PathBuf,
         /// Underlying filesystem error.
         source: io::Error,
@@ -29,7 +29,7 @@ pub(crate) enum DotenvError {
             .location.column,
         )]
     ParseSyntax {
-        /// Environment-file path.
+        /// Dotenv file path.
         path: PathBuf,
         /// Source location of the dotenv failure.
         location: Location,
@@ -42,7 +42,7 @@ pub(crate) enum DotenvError {
             .location.column,
         )]
     ParseMissingVariable {
-        /// Environment-file path.
+        /// Dotenv file path.
         path: PathBuf,
         /// Source location of the dotenv failure.
         location: Location,
@@ -57,7 +57,7 @@ pub(crate) enum DotenvError {
             .location.column,
         )]
     ParseNonUtf8Variable {
-        /// Environment-file path.
+        /// Dotenv file path.
         path: PathBuf,
         /// Source location of the dotenv failure.
         location: Location,

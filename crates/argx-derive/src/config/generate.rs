@@ -357,9 +357,6 @@ pub(crate) fn generate_config(
             ) -> #argx::__private::EnvironmentContract {
                 let prefix = #own_prefix;
                 let mut contract = #argx::__private::EnvironmentContract::default();
-                if let ::core::option::Option::Some(prefix) = prefix {
-                    contract.__prefix(prefix);
-                }
                 #(#environment_contract_fields)*
                 contract
             }

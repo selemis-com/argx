@@ -3,13 +3,13 @@ name = "argx"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "Expressive command line argument parser for Rust."
+description = "Derive-first command-line parser and configuration library for Rust."
 license.workspace = true
 readme.workspace = true
 repository.workspace = true
 homepage.workspace = true
 documentation = "https://docs.rs/argx"
-keywords = ["cli", "schema"]
+keywords = ["cli", "configuration", "schema"]
 categories = ["command-line-interface", "development-tools"]
 
 [package.metadata.docs.rs]
@@ -26,7 +26,7 @@ workspace = true
 [features]
 default = ["derive"]
 derive = ["dep:argx-derive"]
-toml = ["dep:toml_edit"]
+toml = ["derive", "dep:toml_edit"]
 
 [dependencies]
 # Vendor

@@ -5,7 +5,7 @@
 </picture>
 
 <p align="center">
-  Expressive command line argument parser for Rust
+  Derive-first command-line parsing and configuration for Rust
 </p>
 
 <br/>
@@ -15,20 +15,38 @@
   <a href="#license"><picture><source media="(prefers-color-scheme: dark)" srcset="https://img.shields.io/crates/l/argx?colorA=21262d&colorB=21262d&style=flat"><img src="https://img.shields.io/crates/l/argx?colorA=f6f8fa&colorB=f6f8fa&style=flat" alt="MIT OR Apache-2.0"></picture></a>
 </p>
 
-Argx is a derive-first command-line parser and unified configuration library for Rust. Rust data
-types define command and configuration surfaces while generated static metadata drives parsing,
-typed binding, help, diagnostics, and ordered configuration resolution.
+Argx is a derive-first command-line parser and configuration library for Rust. Rust types define
+its interface; generated static metadata drives parsing, typed binding, help, diagnostics,
+completions, schemas, and ordered configuration resolution.
+
+The model is deliberately small:
+
+- [`Parser`](https://docs.rs/argx/latest/argx/trait.Parser.html) defines a root command;
+- [`Args`](https://docs.rs/argx/latest/argx/trait.Args.html) defines reusable argument groups;
+- [`Subcommand`](https://docs.rs/argx/latest/argx/derive.Subcommand.html) defines typed child commands;
+- [`Config`](https://docs.rs/argx/latest/argx/trait.Config.html) resolves typed values across explicitly ordered layers;
+- one static command model drives parsing, help, completions, and schema discovery.
+
+Full API documentation and behavioral details are available on
+[docs.rs/argx](https://docs.rs/argx/latest/argx/).
+
+## Installation
 
 ```sh
 cargo add argx
 ```
 
-Argx intentionally has a small, focused feature set. It does not aim for feature parity or API
-compatibility with Clap or Usage, and diverges from their APIs where a different design better fits
-Argx. Features are added selectively as they are needed.
+### Features
 
-Full API documentation and behavioral details are available on
-[docs.rs/argx](https://docs.rs/argx/latest/argx/).
+- `derive` — enabled by default; exports the `Parser`, `Args`, `Subcommand`, `ValueEnum`, and
+  `Config` derives plus the `#[argx(...)]` attribute macro.
+- `toml` — enables TOML configuration layers and implies `derive`.
+
+Enable TOML support with:
+
+```sh
+cargo add argx --features toml
+```
 
 ## Quick start
 
@@ -82,28 +100,19 @@ Usage: acme [OPTIONS] <COMMAND>
 ...
 ```
 
-[`Parser`](https://docs.rs/argx/latest/argx/trait.Parser.html) defines a root command,
-[`Args`](https://docs.rs/argx/latest/argx/trait.Args.html) defines reusable argument groups, and
-[`Subcommand`](https://docs.rs/argx/latest/argx/derive.Subcommand.html) defines exact typed
-child-command selection. Rust field shapes determine cardinality and conversion; Rust documentation
-and `#[argx(...)]` metadata define the human-facing CLI.
+Rust field shapes determine cardinality and conversion, while Rust documentation and
+`#[argx(...)]` metadata define the user-facing CLI. The same derived model is reused for help,
+completions, and schema discovery rather than maintaining parallel descriptions of the command
+surface.
 
-Argx supports positional and named arguments, short bundles, nested subcommands, flattened argument
-groups, lexical globals, aliases, typed defaults, finite value enums,
-argument relationships, structured help, and version actions. See the
-[crate documentation](https://docs.rs/argx/latest/argx/)
-for the complete grammar, precedence rules, derive restrictions, and error behavior.
-
-## Unified configuration
+## Configuration
 
 `#[derive(argx::Config)]` resolves one typed configuration from an explicitly ordered stack of
-layers. Defaults, dotenv files, process environment, and argv all supply sparse values for the
-same Rust fields. Enable the optional `toml` feature to add TOML file layers.
-
-Enable TOML support with `cargo add argx --features toml`, then compose it like any other layer:
+layers. Defaults, dotenv files, process environment, and argv all supply sparse values for the same
+Rust fields.
 
 ```rust
-use argx::{Argv, Defaults, Environment, Toml};
+use argx::{Argv, Defaults, Environment};
 
 #[derive(argx::Config)]
 #[argx(prefix = "ACME")]
@@ -117,7 +126,6 @@ struct Config {
 
 let config = Config::loader()
     .layer(Defaults)
-    .layer(Toml::new("acme.toml"))
     .layer(Environment)
     .layer(Argv::current())
     .resolve()?;
@@ -125,49 +133,71 @@ let config = Config::loader()
 ```
 
 Layers are applied in declaration order. Later layers replace only fields they actually supply, so
-precedence is defined by composition rather than a policy built into Argx. Declared defaults are
-not implicit: they participate only when `Defaults` is added to the loader. A non-optional Rust
-field becomes required only after every configured layer has been considered.
+precedence comes from composition rather than a policy built into Argx. Declared defaults are not
+implicit: they participate only when `Defaults` is added. A non-optional field becomes required
+only after every configured layer has been considered.
 
 A configuration-level prefix maps fields to environment variables. For example,
 `#[argx(prefix = "ACME")]` maps `workers` to `ACME_WORKERS`; a flattened `server.workers` field maps
-to `ACME_SERVER_WORKERS`. `#[argx(env = "EXACT_NAME")]` selects an exact variable instead. TOML
-interpolation observes environment values established by earlier `Dotenv` or `Environment` layers,
-so layer order also controls interpolation visibility.
+to `ACME_SERVER_WORKERS`. `#[argx(env = "EXACT_NAME")]` selects an exact variable instead.
+Environment layers inspect only mapped variables; unrelated process variables are ignored.
 
-Configuration fields participate in argv only when they carry CLI metadata such as `long` or
-`short`; `#[argx(flatten)]` composes a nested `Config` across TOML, environment naming, defaults,
-and argv. See the [configuration example](crates/argx/examples/configuration.rs) and the
-[crate documentation](https://docs.rs/argx/latest/argx/) for the complete contract.
-
-## Handler schemas
-
-Argx exposes `#[argx(schema)]` as a thin Schemars-backed attribute. It derives Schemars'
-`JsonSchema` through Argx, so downstream users do not need to depend on Schemars directly.
-Import the standalone attribute once with `use argx::argx;`; derive helper attributes keep the same
-`#[argx(...)]` spelling. Schema-enabled command trees keep structural traversal separate from
-executable handlers:
+Files are explicit layers too:
 
 ```rust
-use argx::{Parser as _, argx};
+# use argx::{Config as _, Dotenv};
+# #[derive(argx::Config)] struct Config { value: Option<String> }
+let config = Config::loader()
+    .layer(Dotenv::new(".env"))
+    .resolve()?;
+# Ok::<(), argx::ConfigError>(())
+```
 
-#[derive(argx::Parser)]
-#[argx(name = "acme", schema)]
-struct Cli {
-    #[argx(subcommand)]
-    command: Commands,
-}
+With the `toml` feature enabled, `Toml::new("acme.toml")` adds a TOML layer. TOML interpolation can
+observe environment values established by earlier `Dotenv` or `Environment` layers, so layer order
+also controls interpolation visibility. Argx performs no file discovery.
 
-#[derive(argx::Subcommand)]
-#[argx(schema)]
-enum Commands {
-    Get(GetCommand),
-}
+Configuration fields participate in argv only when they carry CLI metadata such as `long` or
+`short`; `#[argx(flatten)]` composes a nested `Config` across every layer. See the
+[configuration example](crates/argx/examples/configuration.rs) for a runnable version.
 
-#[derive(argx::Args)]
-struct GetCommand {
-    id: String,
-}
+## Shell completions
+
+Argx generates dynamic completion adapters for Bash, Fish, Nushell, and Zsh from the same command
+model used for parsing. Applications commonly expose the generated adapter through a small
+`completions <shell>` command:
+
+```rust
+use argx::{Parser as _, completion::Shell};
+
+# #[derive(argx::Parser)]
+# #[argx(name = "acme")]
+# struct Cli;
+let script = Cli::render_completion(Shell::Zsh)?;
+# Ok::<(), argx::completion::ScriptError>(())
+```
+
+The adapters query the current executable dynamically, so command selection, aliases, global
+options, conflicts, finite values, and `--` follow the parser's normal semantics. See the
+[completions example](crates/argx/examples/completions.rs) for a complete command.
+
+## Schema discovery
+
+A parser marked `#[argx(schema)]` exposes its command interface as Draft 2020-12 JSON Schema for
+tooling and agents:
+
+```text
+acme schema get
+acme get object-7 --schema
+```
+
+Both forms describe the selected command. `#[argx(handler = CommandType)]` can associate an
+executable leaf with typed result and error schemas, while `#[argx(schema)]` derives the underlying
+Rust data-model schemas through Schemars without requiring downstream users to depend on Schemars
+directly.
+
+```rust
+use argx::argx;
 
 #[argx(schema)]
 struct GetOutput {
@@ -179,55 +209,27 @@ enum GetError {
     NotFound,
 }
 
+# #[derive(argx::Args)] struct GetCommand { id: String }
 #[argx(handler = GetCommand)]
 fn get(command: GetCommand) -> Result<GetOutput, GetError> {
     Ok(GetOutput { id: command.id })
 }
 ```
 
-`#[argx(schema)]` delegates Rust data-model schema generation to Schemars. Argx owns invocation
-schema projection and static command topology. Structural `Args` and `Subcommand` declarations use
-the same `#[argx(schema)]` marker; executable leaves are associated with their result and error
-schemas by `#[argx(handler = ...)]`.
-For a zero-argument executable command, use an empty `Args` struct rather than a unit subcommand
-variant so the leaf has a concrete Rust type.
-
-A parser with `#[argx(schema)]` exposes both discovery forms:
-
-```text
-acme schema get
-acme get object-7 -S
-# or: acme get object-7 --schema
-```
-
-Both emit the same Draft 2020-12 JSON Schema. The selected command's invocation is the root schema;
-handler result and error schemas are bundled under `$defs.result` and `$defs.error`, with any
-Schemars-generated type definitions under `$defs.types.$defs`. Structural paths such as `acme schema`
-bundle their subcommand schemas under `$defs.subcommands.$defs`. Handler associations are traversed
-statically from the command types into a short-lived local registry; Argx does not use linker
-inventory or global registration.
-
-The handler may also stay on the inherent implementation that owns execution:
-
-```rust
-#[argx(handler = run)]
-impl GetCommand {
-    fn run(self) -> Result<GetOutput, GetError> {
-        Ok(GetOutput { id: self.id })
-    }
-}
-```
+See the [schema example](crates/argx/examples/schema.rs) and
+[crate documentation](https://docs.rs/argx/latest/argx/) for structural schema composition and the
+exact discovery contract.
 
 ## Examples
 
 The examples are executable documentation. Start with `basic` for the smallest integration point or
-`complete` for an integrated reference application; the remaining examples isolate one major
-subsystem. Detailed behavior is documented on [docs.rs/argx](https://docs.rs/argx/latest/argx/).
+`complete` for the complete Argx API; the remaining examples isolate one major subsystem.
+Detailed behavior is documented on [docs.rs/argx](https://docs.rs/argx/latest/argx/).
 
 | Example | Focus | Try it |
 | --- | --- | --- |
 | [`basic`](crates/argx/examples/basic.rs) | Smallest complete parser and built-in help | `cargo run --example basic -- --help` |
-| [`complete`](crates/argx/examples/complete.rs) | Integrated reference application across Argx's public surfaces | `cargo run --example complete -- get object-7 --format json` |
+| [`complete`](crates/argx/examples/complete.rs) | Integrated reference application showing the complete Argx API | `cargo run --example complete -- get object-7 --format json` |
 | [`arguments`](crates/argx/examples/arguments.rs) | Arguments, defaults, aliases, constraints, and value enums | `cargo run --example arguments -- input.txt --format json` |
 | [`commands`](crates/argx/examples/commands.rs) | Subcommands, flattening, structured help, aliases, and versions | `cargo run --example commands -- --verbose add hello --force` |
 | [`configuration`](crates/argx/examples/configuration.rs) | Ordered defaults, environment, and argv configuration | `cargo run --example configuration -- --workers 8` |

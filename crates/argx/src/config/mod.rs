@@ -5,7 +5,7 @@
 //! values they supply. Declared defaults participate only through [`Defaults`]; Argx does not
 //! discover configuration or dotenv files implicitly.
 //!
-//! See the crate-level unified configuration guide for field attributes, environment naming,
+//! See the crate-level configuration guide for field attributes, environment naming,
 //! interpolation, and argv behavior.
 
 mod dotenv;
