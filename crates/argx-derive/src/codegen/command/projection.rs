@@ -84,7 +84,7 @@ pub(super) fn partial_projection(
             quote!(::std::vec::Vec<::std::vec::Vec<u8>>)
         }
         _ if field.is_switch() => quote!((bool, bool)),
-        _ => quote!((::std::option::Option<#facade::__private::RawValue>, bool)),
+        _ => quote!((::std::option::Option<::std::vec::Vec<u8>>, bool)),
     }).collect::<Vec<_>>();
 
     let (partial, partial_constructor, declaration) = if has_nested {

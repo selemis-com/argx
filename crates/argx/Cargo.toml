@@ -30,7 +30,10 @@ derive = ["dep:argx-derive"]
 [dependencies]
 # Vendor
 schemars.workspace = true
+serde.workspace = true
 serde_json.workspace = true
+thiserror.workspace = true
+toml_edit.workspace = true
 
 # Crates
 argx-derive = { workspace = true, optional = true }

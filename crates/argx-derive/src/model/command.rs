@@ -209,7 +209,6 @@ impl Field {
         validate_value_shape(&binding.ty, shape, binding.span)?;
         let kind = argument_kind(&binding, &mut attributes)?;
         validate_argument_value_policies(&attributes, &kind, shape, binding.span)?;
-        let env = argument_env(&attributes, &kind, shape, binding.span)?;
         validate_argument_default(&attributes, &kind, shape, binding.span)?;
 
         let diagnostic = argument_diagnostic(&binding, &kind);
@@ -235,7 +234,6 @@ impl Field {
                 diagnostic,
                 global: attributes.global,
                 shape,
-                env,
                 has_default,
                 requires: attributes.requires.into_iter().map(|value| value.value()).collect(),
                 conflicts: attributes.conflicts.into_iter().map(|value| value.value()).collect(),
@@ -300,7 +298,6 @@ fn validate_structural_metadata(
         attributes.short.is_some(),
         !attributes.aliases.is_empty(),
         attributes.global,
-        attributes.env.is_some(),
         attributes.default.is_some(),
         attributes.allow_hyphen_values,
         attributes.allow_negative_numbers,
@@ -372,23 +369,6 @@ fn validate_argument_value_policies(
         return Err(syn::Error::new(span, "value policies are not valid on bool fields"));
     }
     Ok(())
-}
-
-/// Normalizes an environment fallback after validating that the field can consume one value.
-fn argument_env(
-    attributes: &attrs::FieldAttrs,
-    kind: &ArgumentKind,
-    shape: Shape,
-    span: Span,
-) -> syn::Result<Option<String>> {
-    let Some(env) = attributes.env.as_ref() else {
-        return Ok(None);
-    };
-    if !matches!(kind, ArgumentKind::Flag { .. }) || matches!(shape, Shape::Bool | Shape::Many) {
-        return Err(syn::Error::new(span, "`env` is only supported on scalar value-taking flags"));
-    }
-    validate_env_name(&env.value(), env.span())?;
-    Ok(Some(env.value()))
 }
 
 /// Validates that a typed default is attached only to a scalar value-taking flag.
@@ -747,17 +727,6 @@ fn validate_value_enum_generics(fields: &[Field], generics: &syn::Generics) -> s
                 "`value_enum` cannot depend on the containing struct's generic parameters; use a concrete ValueEnum type",
             ));
         }
-    }
-    Ok(())
-}
-
-/// Validates an explicit environment variable name without deferring invalid keys to runtime.
-fn validate_env_name(name: &str, span: Span) -> syn::Result<()> {
-    if name.is_empty() || name.contains('=') || name.contains('\0') {
-        return Err(syn::Error::new(
-            span,
-            "environment variable name must be non-empty and cannot contain `=` or NUL",
-        ));
     }
     Ok(())
 }

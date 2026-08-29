@@ -13,7 +13,7 @@
 //! implementations, enumerate filesystem paths, or expose custom value completers.
 //!
 //! Conflict suppression is likewise intentionally lexical: arguments already supplied on argv are
-//! considered, while environment fallbacks and typed defaults remain the binding layer's concern.
+//! considered, while typed defaults remain the binding layer's concern.
 //! Because the shell invokes the application for each completion request, applications should let
 //! [`crate::Parser::parse`] or [`crate::Parser::handle_completion`] run before expensive startup or
 //! writing application output.
@@ -97,28 +97,18 @@ impl FromStr for Shell {
 }
 
 /// Failure while generating a shell completion adapter.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum ScriptError {
     /// The executable name cannot be represented safely as one shell command word.
+    #[error(
+        "cannot generate completions for `{name}`: the command name must be one plain shell word, must not start with `-`, and may contain only ASCII letters, digits, `-`, `_`, `.`, or `+`"
+    )]
     InvalidCommandName {
         /// Rejected executable name.
         name: String,
     },
 }
-
-impl fmt::Display for ScriptError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidCommandName { name } => write!(
-                formatter,
-                "cannot generate completions for `{name}`: the command name must be one plain shell word, must not start with `-`, and may contain only ASCII letters, digits, `-`, `_`, `.`, or `+`",
-            ),
-        }
-    }
-}
-
-impl std::error::Error for ScriptError {}
 
 /// Generates a dynamic completion adapter for `command` and `shell`.
 ///

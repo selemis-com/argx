@@ -8,8 +8,6 @@ use snapbox::cmd::Command;
 static BASIC_EXAMPLE: OnceLock<PathBuf> = OnceLock::new();
 /// Compiled path for the defaults public example.
 static DEFAULTS_EXAMPLE: OnceLock<PathBuf> = OnceLock::new();
-/// Compiled path for the environment public example.
-static ENVIRONMENT_EXAMPLE: OnceLock<PathBuf> = OnceLock::new();
 /// Compiled path for the version public example.
 static VERSION_EXAMPLE: OnceLock<PathBuf> = OnceLock::new();
 /// Compiled path for the subcommand public example.
@@ -22,7 +20,6 @@ pub(crate) fn example_command(name: &str) -> Command {
     let binary = match name {
         "basic" => BASIC_EXAMPLE.get_or_init(|| compile_example("basic")),
         "defaults" => DEFAULTS_EXAMPLE.get_or_init(|| compile_example("defaults")),
-        "environment" => ENVIRONMENT_EXAMPLE.get_or_init(|| compile_example("environment")),
         "version" => VERSION_EXAMPLE.get_or_init(|| compile_example("version")),
         "subcommands" => SUBCOMMANDS_EXAMPLE.get_or_init(|| compile_example("subcommands")),
         "structured_help" => {

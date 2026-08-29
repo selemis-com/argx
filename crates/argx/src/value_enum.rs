@@ -4,8 +4,6 @@
 //! value enum supplies one canonical lexical vocabulary that generated binding, help, and machine
 //! contracts can all project without duplicating the accepted values in documentation.
 
-use std::fmt;
-
 use crate::error::display_bytes;
 
 /// A finite set of canonical command-line values.
@@ -27,7 +25,8 @@ pub trait ValueEnum: Sized {
 }
 
 /// Error returned by the `FromStr` implementation generated for a [`trait@ValueEnum`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("{}", display_value_enum_values(.values))]
 pub struct ValueEnumError {
     /// Canonical values expected by the generated parser.
     values: &'static [&'static str],
@@ -42,24 +41,21 @@ impl ValueEnumError {
     }
 }
 
-impl fmt::Display for ValueEnumError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.values.is_empty() {
-            return formatter.write_str("no values are accepted");
-        }
-
-        formatter.write_str("expected one of: ")?;
-        for (index, value) in self.values.iter().enumerate() {
-            if index > 0 {
-                formatter.write_str(", ")?;
-            }
-            formatter.write_str(&display_bytes(value.as_bytes()))?;
-        }
-        Ok(())
+/// Renders the finite accepted vocabulary for a value-enum diagnostic.
+fn display_value_enum_values(values: &[&str]) -> String {
+    if values.is_empty() {
+        return String::from("no values are accepted");
     }
-}
 
-impl std::error::Error for ValueEnumError {}
+    let mut rendered = String::from("expected one of: ");
+    for (index, value) in values.iter().enumerate() {
+        if index > 0 {
+            rendered.push_str(", ");
+        }
+        rendered.push_str(&display_bytes(value.as_bytes()));
+    }
+    rendered
+}
 
 #[cfg(test)]
 mod tests {

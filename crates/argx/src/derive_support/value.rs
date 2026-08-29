@@ -1,29 +1,14 @@
 //! Value-conversion entry points used by generated binding code.
 //!
 //! The public facade keeps these functions hidden, but generated downstream code needs stable paths
-//! to them. They preserve the source of a value long enough for diagnostics to distinguish `argv`
-//! conversion failures from environment conversion failures.
-
-/// One unconverted value supplied by argv or an external fallback source.
-#[derive(Debug)]
-pub enum RawValue {
-    /// Encoded bytes borrowed from argv and copied into binding state.
-    Argv(Vec<u8>),
-    /// Operating-system value supplied by one environment variable.
-    Environment {
-        /// Environment variable that supplied this value.
-        name: &'static str,
-        /// Unconverted operating-system value.
-        value: std::ffi::OsString,
-    },
-}
+//! to them.
 
 /// Converts one raw value directly into a UTF-8 string.
 ///
 /// # Errors
 ///
 /// Returns an error when the value is not valid UTF-8.
-pub fn text_value(value: RawValue, name: &'static str) -> Result<String, crate::Error> {
+pub fn text_value(value: Vec<u8>, name: &'static str) -> Result<String, crate::Error> {
     crate::binding::text_value(value, name)
 }
 
@@ -41,7 +26,7 @@ pub fn text_values(values: Vec<Vec<u8>>, name: &'static str) -> Result<Vec<Strin
 /// # Errors
 ///
 /// Returns an error for invalid UTF-8 or a destination conversion failure.
-pub fn parsed_value<T>(value: RawValue, name: &'static str) -> Result<T, crate::Error>
+pub fn parsed_value<T>(value: Vec<u8>, name: &'static str) -> Result<T, crate::Error>
 where
     T: std::str::FromStr,
     T::Err: std::fmt::Display,
@@ -67,7 +52,7 @@ where
 /// # Errors
 ///
 /// Returns an error for invalid UTF-8 or a value outside the enum's canonical vocabulary.
-pub fn value_enum_value<T>(value: RawValue, name: &'static str) -> Result<T, crate::Error>
+pub fn value_enum_value<T>(value: Vec<u8>, name: &'static str) -> Result<T, crate::Error>
 where
     T: crate::ValueEnum,
 {
@@ -94,7 +79,7 @@ where
 /// # Errors
 ///
 /// Returns an error when argv bytes cannot be reconstructed as an operating-system string.
-pub fn os_value<T>(value: RawValue, name: &'static str) -> Result<T, crate::Error>
+pub fn os_value<T>(value: Vec<u8>, name: &'static str) -> Result<T, crate::Error>
 where
     T: From<std::ffi::OsString>,
 {

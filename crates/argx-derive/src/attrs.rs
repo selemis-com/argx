@@ -63,8 +63,6 @@ pub(crate) struct FieldAttrs {
     pub subcommand: bool,
     /// Whether this named argument remains in scope for descendant commands.
     pub global: bool,
-    /// Environment variable consulted when the argument is absent from argv.
-    pub env: Option<LitStr>,
     /// Typed Rust expression used when the argument is absent.
     pub default: Option<Expr>,
     /// Long flag spelling, or an instruction to infer it.
@@ -181,15 +179,6 @@ pub(crate) fn field(attributes: &[Attribute]) -> syn::Result<FieldAttrs> {
                     return Err(meta.error("`global` takes no value"));
                 }
                 parsed.global = true;
-                Ok(())
-            } else if meta.path.is_ident("env") {
-                if parsed.env.is_some() {
-                    return Err(meta.error("duplicate `env` attribute"));
-                }
-                if !meta.input.peek(Token![=]) {
-                    return Err(meta.error("`env` requires a string value"));
-                }
-                parsed.env = Some(meta.value()?.parse::<LitStr>()?);
                 Ok(())
             } else if meta.path.is_ident("default") {
                 if parsed.default.is_some() {

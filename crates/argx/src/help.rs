@@ -281,21 +281,10 @@ fn flag_label(flag: &VisibleFlag<'_>) -> String {
     spellings_label(&flag.shorts, &flag.longs, flag.flag.takes_value.then_some(flag.flag.name))
 }
 
-/// Renders help text plus finite-value and environment metadata.
+/// Renders help text plus finite-value metadata.
 fn flag_help(flag: &Flag<'_>) -> String {
     let mut help = flag.help.unwrap_or("").to_owned();
     append_accepted_values(&mut help, flag.accepted_values);
-    if let Some(env) = flag.env {
-        if !help.is_empty() {
-            help.push(' ');
-        }
-        help.push_str("[env: ");
-        help.push_str(&display_bytes(env.as_bytes()));
-        if flag.required_if_env_unset {
-            help.push_str("; required if unset");
-        }
-        help.push(']');
-    }
     help
 }
 
@@ -417,7 +406,6 @@ mod tests {
         name: "profile",
         help: Some("Select a profile"),
         longs: &["profile"],
-        env: Some("TOOL_PROFILE"),
         ..Flag::VALUE
     };
     static INPUT: Arg<'static> =
@@ -450,13 +438,12 @@ mod tests {
     };
 
     #[test]
-    fn command_and_environment_metadata_cannot_inject_terminal_controls() {
+    fn command_and_value_metadata_cannot_inject_terminal_controls() {
         let token = Flag {
             key: 99,
             name: "token",
             help: None,
             longs: &["token"],
-            env: Some("TOOL_TOKEN\n\u{1b}[31m"),
             accepted_values: &["safe", "bad\n\u{1b}[31m"],
             ..Flag::VALUE
         };
@@ -465,12 +452,10 @@ mod tests {
         let help = render(&[&command]);
 
         assert!(!help.contains("tool\n\u{1b}"));
-        assert!(!help.contains("TOOL_TOKEN\n\u{1b}"));
         assert!(!help.contains("bad\n\u{1b}"));
         assert!(!help.contains('\u{1b}'));
         assert!(help.contains(r"bad\n"));
         assert!(help.contains(r"tool\n"));
-        assert!(help.contains(r"[env: TOOL_TOKEN\n"));
     }
 
     #[test]
@@ -492,7 +477,7 @@ Commands:
 Options:
   -v, --verbose        Enable verbose output
   --output <OUTPUT>    Write to this path
-  --profile <PROFILE>  Select a profile [env: TOOL_PROFILE]
+  --profile <PROFILE>  Select a profile
   -h, --help           Print help
 
 "#]],

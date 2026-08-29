@@ -1,15 +1,15 @@
 //! Typed binding over raw parser events.
 //!
 //! Binding is intentionally staged. The raw parser first consumes the complete token stream, then
-//! generated code checks scalar occurrence counts, applies environment fallbacks, checks required
-//! values and relationships, and finally converts raw values into destination Rust types. This
+//! generated code checks scalar occurrence counts and required values and relationships, then
+//! converts raw values into destination Rust types. This
 //! ordering is part of the public diagnostic contract: an earlier syntax error is not masked by a
 //! later duplicate, missing value, or conversion failure.
 
 use std::{ffi::OsString, fmt, str::FromStr};
 
 use crate::{
-    __private::{ActionKind, CommandArgs, RawValue},
+    __private::{ActionKind, CommandArgs},
     Error, InvalidValue, ValueEnum, ValueEnumError,
     argv::{Error as RawError, Event},
     error::display_bytes,
@@ -120,13 +120,8 @@ fn render_version(name: &str, version: &str) -> String {
 /// # Errors
 ///
 /// Returns an error when the value is not valid UTF-8.
-pub(crate) fn text_value(value: RawValue, name: &'static str) -> Result<String, Error> {
-    match value {
-        RawValue::Argv(value) => text_bytes(value, name),
-        RawValue::Environment { name: environment, value } => {
-            environment_text(value, name, environment)
-        }
-    }
+pub(crate) fn text_value(value: Vec<u8>, name: &'static str) -> Result<String, Error> {
+    text_bytes(value, name)
 }
 
 /// Converts repeated raw values to UTF-8 text.
@@ -147,32 +142,19 @@ pub(crate) fn text_values(values: Vec<Vec<u8>>, name: &'static str) -> Result<Ve
 /// # Errors
 ///
 /// Returns an error when the value is not UTF-8 or the destination rejects the text.
-pub(crate) fn parsed_value<T>(value: RawValue, name: &'static str) -> Result<T, Error>
+pub(crate) fn parsed_value<T>(value: Vec<u8>, name: &'static str) -> Result<T, Error>
 where
     T: FromStr,
     T::Err: fmt::Display,
 {
-    match value {
-        RawValue::Argv(value) => {
-            let text = text_bytes(value, name)?;
-            T::from_str(&text).map_err(|reason| {
-                Error::InvalidValue(Box::new(InvalidValue {
-                    name,
-                    value: text,
-                    reason: reason.to_string(),
-                }))
-            })
-        }
-        RawValue::Environment { name: environment, value } => {
-            let text = environment_text(value, name, environment)?;
-            T::from_str(&text).map_err(|reason| Error::InvalidEnvironmentValue {
-                name,
-                environment,
-                value: OsString::from(text.as_str()),
-                reason: reason.to_string(),
-            })
-        }
-    }
+    let text = text_bytes(value, name)?;
+    T::from_str(&text).map_err(|reason| {
+        Error::InvalidValue(Box::new(InvalidValue {
+            name,
+            value: text,
+            reason: reason.to_string(),
+        }))
+    })
 }
 
 /// Converts repeated raw values through UTF-8 and [`FromStr`].
@@ -204,28 +186,18 @@ where
 /// # Errors
 ///
 /// Returns an error when the value is not UTF-8 or is not one of the enum's canonical values.
-pub(crate) fn value_enum_value<T>(value: RawValue, name: &'static str) -> Result<T, Error>
+pub(crate) fn value_enum_value<T>(value: Vec<u8>, name: &'static str) -> Result<T, Error>
 where
     T: ValueEnum,
 {
-    let reason = || ValueEnumError::new(T::VALUES).to_string();
-    match value {
-        RawValue::Argv(value) => {
-            let text = text_bytes(value, name)?;
-            T::from_value(&text).ok_or_else(|| {
-                Error::InvalidValue(Box::new(InvalidValue { name, value: text, reason: reason() }))
-            })
-        }
-        RawValue::Environment { name: environment, value } => {
-            let text = environment_text(value, name, environment)?;
-            T::from_value(&text).ok_or_else(|| Error::InvalidEnvironmentValue {
-                name,
-                environment,
-                value: OsString::from(text.as_str()),
-                reason: reason(),
-            })
-        }
-    }
+    let text = text_bytes(value, name)?;
+    T::from_value(&text).ok_or_else(|| {
+        Error::InvalidValue(Box::new(InvalidValue {
+            name,
+            value: text,
+            reason: ValueEnumError::new(T::VALUES).to_string(),
+        }))
+    })
 }
 
 /// Converts repeated raw values through a finite [`trait@ValueEnum`] vocabulary.
@@ -260,15 +232,11 @@ where
 /// # Errors
 ///
 /// Returns an error when argv bytes cannot be reconstructed as an operating-system string.
-pub(crate) fn os_value<T>(value: RawValue, name: &'static str) -> Result<T, Error>
+pub(crate) fn os_value<T>(value: Vec<u8>, name: &'static str) -> Result<T, Error>
 where
     T: From<OsString>,
 {
-    let value = match value {
-        RawValue::Argv(value) => os_string(value, name)?,
-        RawValue::Environment { value, .. } => value,
-    };
-    Ok(T::from(value))
+    Ok(T::from(os_string(value, name)?))
 }
 
 /// Converts repeated raw values to operating-system-backed destination types.
@@ -290,20 +258,6 @@ where
 /// Converts encoded bytes into UTF-8 text.
 fn text_bytes(value: Vec<u8>, name: &'static str) -> Result<String, Error> {
     String::from_utf8(value).map_err(|bad| Error::InvalidUtf8 { name, value: bad.into_bytes() })
-}
-
-/// Converts one environment value to text while preserving its source in failures.
-fn environment_text(
-    value: OsString,
-    name: &'static str,
-    environment: &'static str,
-) -> Result<String, Error> {
-    value.into_string().map_err(|value| Error::InvalidEnvironmentValue {
-        name,
-        environment,
-        value,
-        reason: String::from("value is not valid UTF-8"),
-    })
 }
 
 /// Reconstructs an operating-system string from bytes emitted by the raw argv parser.

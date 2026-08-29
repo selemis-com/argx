@@ -33,7 +33,7 @@ pub enum ConstraintKind {
 pub struct ArgumentState {
     /// Canonical user-facing label used by diagnostics.
     pub diagnostic: &'static str,
-    /// Whether argv or environment fallback supplied this argument.
+    /// Whether argv supplied this argument.
     pub given: bool,
     /// Whether the argument has a value after considering typed defaults.
     pub satisfied: bool,
@@ -183,8 +183,6 @@ pub struct Flag<'a> {
     pub shorts: &'a [u8],
     /// Whether this flag remains in scope for descendant commands.
     pub global: bool,
-    /// Environment variable consulted when argv does not supply this flag.
-    pub env: Option<&'a str>,
     /// Whether one occurrence consumes a value.
     pub takes_value: bool,
     /// Canonical finite values accepted by this option, when declared as a `ValueEnum`.
@@ -193,8 +191,6 @@ pub struct Flag<'a> {
     pub repeatable: bool,
     /// Whether this flag must occur at least once.
     pub required: bool,
-    /// Whether the final value is required when the configured environment variable is unset.
-    pub required_if_env_unset: bool,
     /// Whether absence is satisfied by a typed Rust default expression.
     pub has_default: bool,
     /// Whether a detached value may itself be flag-like.
@@ -215,12 +211,10 @@ impl Flag<'static> {
         aliases: &[],
         shorts: &[],
         global: false,
-        env: None,
         takes_value: false,
         accepted_values: &[],
         repeatable: false,
         required: false,
-        required_if_env_unset: false,
         has_default: false,
         allow_hyphen_values: false,
         allow_negative_numbers: false,

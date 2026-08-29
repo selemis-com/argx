@@ -80,7 +80,6 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
         let diagnostic = &argument.diagnostic;
         let help = option_str(argument.help.as_deref());
         let global = argument.global;
-        let env = option_str(argument.env.as_deref());
         let takes_value = !field.is_switch();
         let accepted_values = if argument.value_enum {
             let ty = &field.value_binding().ty;
@@ -89,12 +88,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
             quote!(&[])
         };
         let repeatable = argument.shape == model::Shape::Many;
-        let required = argument.shape == model::Shape::Required
-            && argument.env.is_none()
-            && !argument.has_default;
-        let required_if_env_unset = argument.shape == model::Shape::Required
-            && argument.env.is_some()
-            && !argument.has_default;
+        let required = argument.shape == model::Shape::Required && !argument.has_default;
         let has_default = argument.has_default;
         let allow_hyphen_values = argument.allow_hyphen_values;
         let allow_negative_numbers = argument.allow_negative_numbers;
@@ -108,12 +102,10 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                 aliases: &[#(#aliases),*],
                 shorts: &[#(#shorts),*],
                 global: #global,
-                env: #env,
                 takes_value: #takes_value,
                 accepted_values: #accepted_values,
                 repeatable: #repeatable,
                 required: #required,
-                required_if_env_unset: #required_if_env_unset,
                 has_default: #has_default,
                 allow_hyphen_values: #allow_hyphen_values,
                 allow_negative_numbers: #allow_negative_numbers,
@@ -217,12 +209,12 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
     let flag_apply = flags.iter().enumerate().map(|(index, (field_index, field))| {
         let table = format_ident!("ARGX_FLAG_{index}");
         let key = key::ident("FLAG", Some(index));
-        apply_arm(field, *field_index, &table, &key, true, &facade)
+        apply_arm(field, *field_index, &table, &key, true)
     });
     let arg_apply = args.iter().enumerate().map(|(index, (field_index, field))| {
         let table = format_ident!("ARGX_ARG_{index}");
         let key = key::ident("ARG", Some(index));
-        apply_arm(field, *field_index, &table, &key, false, &facade)
+        apply_arm(field, *field_index, &table, &key, false)
     });
     let flattened_apply = command.fields.iter().enumerate().filter_map(|(field_index, field)| {
         if !matches!(&field.semantics, model::FieldSemantics::Flatten) {
@@ -264,56 +256,6 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
             }
         }
     });
-
-    // Environment fallbacks are generated only for eligible direct scalar flags. Flattened and
-    // selected subcommand states recurse into their own independently generated fallback logic.
-    let own_env_apply = command.fields.iter().enumerate().filter_map(|(field_index, field)| {
-        let argument = field.argument()?;
-        let env = argument.env.as_deref()?;
-        let slot = syn::Index::from(field_index);
-        Some(quote! {
-            if partial.#slot.0.is_none() {
-                if let ::std::option::Option::Some(value) = ::std::env::var_os(#env) {
-                    partial.#slot.0 = ::std::option::Option::Some(
-                        #facade::__private::RawValue::Environment {
-                            name: #env,
-                            value,
-                        },
-                    );
-                }
-            }
-        })
-    });
-    let flattened_env_apply =
-        command.fields.iter().enumerate().filter_map(|(field_index, field)| {
-            if !matches!(&field.semantics, model::FieldSemantics::Flatten) {
-                return None;
-            }
-            let ty = &field.binding.ty;
-            let slot = syn::Index::from(field_index);
-            Some(quote! {
-                <#ty as #facade::__private::CommandArgs>::apply_env(&mut partial.#slot);
-            })
-        });
-    let subcommand_env_apply = subcommand.map(|(field_index, field)| {
-        let ty = &field.binding.ty;
-        let slot = syn::Index::from(field_index);
-        quote! {
-            <#ty as #facade::__private::Subcommands>::apply_env(&mut partial.#slot);
-        }
-    });
-
-    let env_partial = if command.fields.iter().any(|field| {
-        field.argument().is_some_and(|argument| argument.env.is_some())
-            || matches!(
-                &field.semantics,
-                model::FieldSemantics::Flatten | model::FieldSemantics::Subcommand
-            )
-    }) {
-        quote!(partial)
-    } else {
-        quote!(_partial)
-    };
 
     let flag_state = flags.iter().enumerate().map(|(index, (field_index, field))| {
         let key = key::ident("FLAG", Some(index));
@@ -642,12 +584,6 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                     #(#flattened_apply)*
                     #subcommand_apply
                     false
-                }
-
-                fn apply_env(#env_partial: &mut Self::Partial) {
-                    #(#own_env_apply)*
-                    #(#flattened_env_apply)*
-                    #subcommand_env_apply
                 }
 
                 fn argument_state(

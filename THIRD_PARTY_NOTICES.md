@@ -4,7 +4,7 @@ This page lists the licenses of the projects used in `argx`.
 
 ## Overview of licenses
 
-- [Apache License 2.0](#Apache-2.0) (42)
+- [Apache License 2.0](#Apache-2.0) (46)
 - [MIT License](#MIT) (6)
 - [Unicode License v3](#Unicode-3.0) (1)
 
@@ -696,11 +696,13 @@ Apache License 2.0
 - [escargot]( https://github.com/crate-ci/escargot.git ) 0.5.15
 - [is_terminal_polyfill]( https://github.com/polyfill-rs/is_terminal_polyfill ) 1.70.2
 - [once_cell_polyfill]( https://github.com/polyfill-rs/once_cell_polyfill ) 1.70.2
+- [serde_spanned]( https://github.com/toml-rs/toml ) 1.1.1
 - [snapbox-macros]( https://github.com/assert-rs/snapbox/ ) 1.1.0
 - [snapbox]( https://github.com/assert-rs/snapbox/ ) 1.2.2
 - [toml_datetime]( https://github.com/toml-rs/toml ) 1.1.1+spec-1.1.0
 - [toml_edit]( https://github.com/toml-rs/toml ) 0.25.13+spec-1.1.0
 - [toml_parser]( https://github.com/toml-rs/toml ) 1.1.3+spec-1.1.0
+- [toml_writer]( https://github.com/toml-rs/toml ) 1.1.2+spec-1.1.0
 
 #### License
 ```
@@ -1355,6 +1357,8 @@ Apache License 2.0
 - [serde_json]( https://github.com/serde-rs/json ) 1.0.151
 - [syn]( https://github.com/dtolnay/syn ) 2.0.118
 - [syn]( https://github.com/dtolnay/syn ) 3.0.4
+- [thiserror-impl]( https://github.com/dtolnay/thiserror ) 2.0.20
+- [thiserror]( https://github.com/dtolnay/thiserror ) 2.0.20
 - [unicode-ident]( https://github.com/dtolnay/unicode-ident ) 1.0.24
 - [utf8parse]( https://github.com/alacritty/vte ) 0.2.2
 

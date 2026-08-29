@@ -189,20 +189,6 @@ pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
 
     // Every post-parse validation stage delegates only into the selected payload branch. Unit
     // variants need no generated arm because they have no nested binding state.
-    let env_arms = subcommand
-        .variants
-        .iter()
-        .enumerate()
-        .filter_map(|(index, variant)| {
-            let ty = variant.binding.payload.as_ref()?;
-            let partial_variant = format_ident!("V{index}");
-            Some(quote! {
-                Partial::#partial_variant(selected) => {
-                    <#ty as #facade::__private::CommandArgs>::apply_env(selected);
-                }
-            })
-        })
-        .collect::<Vec<_>>();
     let occurrence_arms = subcommand
         .variants
         .iter()
@@ -245,17 +231,6 @@ pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
             })
         })
         .collect::<Vec<_>>();
-    let env_partial = if env_arms.is_empty() { quote!(_partial) } else { quote!(partial) };
-    let env_body = if env_arms.is_empty() {
-        TokenStream::new()
-    } else {
-        quote! {
-            match partial {
-                #(#env_arms,)*
-                _ => {}
-            }
-        }
-    };
     let occurrence_partial =
         if occurrence_arms.is_empty() { quote!(_partial) } else { quote!(partial) };
     let required_partial =
@@ -361,10 +336,6 @@ pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
                     };
                     #(#select_branches)*
                     false
-                }
-
-                fn apply_env(#env_partial: &mut Self::Partial) {
-                    #env_body
                 }
 
                 fn check_occurrences(

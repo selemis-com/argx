@@ -29,6 +29,40 @@ Argx. Features are added selectively as they are needed.
 Full API documentation and behavioral details are available on
 [docs.rs/argx](https://docs.rs/argx/latest/argx/).
 
+## Unified configuration
+
+Argx resolves one typed configuration from an explicitly ordered stack of layers. Configuration
+files, environment values and command-line arguments are different ways to supply values for the
+same Rust fields; the application receives only the final resolved `Config`.
+
+```rust
+use argx::{Argv, Config as _, Defaults, Env, Toml};
+
+#[derive(argx::Config)]
+#[argx(prefix = "ACME")]
+struct Config {
+    #[argx(long, default = 4)]
+    workers: usize,
+
+    #[argx(long)]
+    endpoint: String,
+}
+
+let config = Config::loader()
+    .layer(Defaults)
+    .layer(Toml::new("acme.toml"))
+    .layer(Env)
+    .layer(Argv::current())
+    .resolve()?;
+# Ok::<(), argx::ConfigError>(())
+```
+
+Layers are applied in declaration order. A later layer replaces only fields it actually supplies,
+so precedence is composition rather than a policy built into Argx. A field does not become required
+on the CLI merely because its resolved Rust type is non-optional; it is required only after every
+configured layer has been considered. `#[argx(flatten)]` composes nested configuration across TOML,
+environment names and CLI options.
+
 ## Quick start
 
 ```rust
@@ -88,7 +122,7 @@ child-command selection. Rust field shapes determine cardinality and conversion;
 and `#[argx(...)]` metadata define the human-facing CLI.
 
 Argx supports positional and named arguments, short bundles, nested subcommands, flattened argument
-groups, lexical globals, aliases, typed defaults, environment fallbacks, finite value enums,
+groups, lexical globals, aliases, typed defaults, finite value enums,
 argument relationships, structured help, and version actions. See the
 [crate documentation](https://docs.rs/argx/latest/argx/)
 for the complete grammar, precedence rules, derive restrictions, and error behavior.
@@ -179,7 +213,6 @@ The examples are executable documentation. Detailed behavior is documented on
 | [`basic`](crates/argx/examples/basic.rs) | Smallest complete parser and built-in help | `cargo run --example basic -- --help` |
 | [`subcommands`](crates/argx/examples/subcommands.rs) | Typed command selection and reusable payloads | `cargo run --example subcommands -- add hello --force` |
 | [`flatten`](crates/argx/examples/flatten.rs) | Reusable argument groups and help grouping | `cargo run --example flatten -- --help` |
-| [`environment`](crates/argx/examples/environment.rs) | `argv` → environment → default precedence | `ARGX_PORT=8080 cargo run --example environment --` |
 | [`defaults`](crates/argx/examples/defaults.rs) | Typed Rust defaults without text round-tripping | `cargo run --example defaults --` |
 | [`constraints`](crates/argx/examples/constraints.rs) | `requires` and `conflicts` relationships | `cargo run --example constraints -- --endpoint https://example.invalid --token secret --workspace demo` |
 | [`aliases`](crates/argx/examples/aliases.rs) | Hidden compatibility spellings and canonical help | `cargo run --example aliases -- --colour always rm` |

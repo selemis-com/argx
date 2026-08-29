@@ -17,6 +17,7 @@ mod attrs;
 mod case;
 mod codegen;
 mod command_schema;
+mod config;
 mod crate_name;
 mod handler;
 mod key;
@@ -45,6 +46,16 @@ use syn::{
 pub fn derive_parser(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     expand_command(&input, true).unwrap_or_else(syn::Error::into_compile_error).into()
+}
+
+/// Derives a typed Argx configuration contract.
+///
+/// Configuration fields resolve through explicitly ordered layers. Defaults, TOML, environment
+/// sources, and argv therefore contribute to one typed value rather than independent models.
+#[proc_macro_derive(Config, attributes(argx))]
+pub fn derive_config(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    config::config(&input).unwrap_or_else(syn::Error::into_compile_error).into()
 }
 
 /// Derives reusable command arguments for a struct.

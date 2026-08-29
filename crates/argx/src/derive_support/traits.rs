@@ -75,13 +75,10 @@ pub trait CommandArgs: Sized {
     /// raw argv parsing completes so syntax errors take precedence over binding errors.
     fn apply(partial: &mut Self::Partial, event: &Event<'_, '_>) -> bool;
 
-    /// Applies environment fallbacks to arguments left absent by argv.
-    fn apply_env(partial: &mut Self::Partial);
-
     /// Returns presence state for one argument owned by this composed command.
     fn argument_state(partial: &Self::Partial, key: Key) -> Option<ArgumentState>;
 
-    /// Validates normalized argument relationships after source fallback and requiredness.
+    /// Validates normalized argument relationships after requiredness.
     ///
     /// # Errors
     ///
@@ -102,14 +99,13 @@ pub trait CommandArgs: Sized {
     /// Returns an error when a required argument was not supplied.
     fn check_required(partial: &mut Self::Partial) -> Result<(), crate::Error>;
 
-    /// Validates occurrences, applies environment fallbacks, and checks requiredness.
+    /// Validates occurrences and checks requiredness.
     ///
     /// # Errors
     ///
     /// Returns an error when typed cardinality or requiredness is not satisfied.
     fn check(partial: &mut Self::Partial) -> Result<(), crate::Error> {
         Self::check_occurrences(partial)?;
-        Self::apply_env(partial);
         Self::check_required(partial)?;
         Self::check_constraints(partial)
     }
@@ -142,9 +138,6 @@ pub trait Subcommands: Sized {
     /// Returns `false` for events not owned by the selected branch so an ancestor declaration can
     /// bind an inherited global argument.
     fn apply(partial: &mut Self::Partial, event: &Event<'_, '_>) -> bool;
-
-    /// Applies environment fallbacks in the selected command tree.
-    fn apply_env(partial: &mut Self::Partial);
 
     /// Validates scalar occurrence policy in the selected command tree.
     ///

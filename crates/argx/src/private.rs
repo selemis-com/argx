@@ -9,6 +9,12 @@
 pub use schemars;
 
 pub(crate) use crate::command::scope::{Named, long as resolve_long, short as resolve_short};
+/// Configuration derive support named by generated code.
+#[doc(hidden)]
+pub use crate::config::__private::{
+    ConfigState, Environment, EnvironmentContract, EnvironmentError, TomlInput, environment_name,
+    parse_environment_field, serde,
+};
 /// Schema-discovery support named by generated code.
 #[doc(hidden)]
 pub use crate::schema_discovery::{
@@ -33,7 +39,7 @@ pub use crate::{
             CommandArgs, HandlerResult, HandlerSchemas, InvocableCommandHandler, Subcommands,
         },
         value::{
-            RawValue, os_value, os_values, parsed_value, parsed_values, text_value, text_values,
+            os_value, os_values, parsed_value, parsed_values, text_value, text_values,
             value_enum_value, value_enum_values,
         },
     },

@@ -8,7 +8,6 @@
 
 use std::{
     borrow::Cow,
-    fmt,
     io::{self, Write as _},
     process,
 };
@@ -30,65 +29,77 @@ pub struct InvalidValue {
 /// Help, version, and schema discovery are represented explicitly rather than printed by the
 /// parser core. All other variants describe the first syntax, cardinality, relationship, or
 /// conversion failure selected by the binding pipeline.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum Error {
     /// Generated help requested through the built-in help switch.
+    #[error("{help}")]
     DisplayHelp {
         /// Fully rendered help text for the selected command scope.
         help: String,
     },
     /// Version information requested through the built-in version action.
+    #[error("{version}")]
     DisplayVersion {
         /// Fully rendered version text for the selected command scope.
         version: String,
     },
     /// Machine-readable command schema requested through built-in discovery.
+    #[error("{schema}")]
     DisplaySchema {
         /// Pretty-printed JSON schema document for the selected command scope.
         schema: String,
     },
     /// A flag-like token did not match any declared flag.
+    #[error("unknown flag `{}`", display_bytes(.token))]
     UnknownFlag {
         /// Encoded token supplied by the caller.
         token: Vec<u8>,
     },
     /// A flag that consumes a value did not receive one.
+    #[error("missing value for `{name}`")]
     MissingValue {
         /// Canonical user-facing argument label.
         name: &'static str,
     },
     /// A value was attached to a switch that does not accept one.
+    #[error("`{name}` does not accept a value")]
     UnexpectedValue {
         /// Canonical user-facing argument label.
         name: &'static str,
     },
     /// A word could not be assigned to any positional argument.
+    #[error("unexpected argument `{}`", display_bytes(.token))]
     UnexpectedArgument {
         /// Encoded token supplied by the caller.
         token: Vec<u8>,
     },
     /// A word did not match any child command when command selection was required.
+    #[error("unknown command `{}`", display_bytes(.token))]
     UnknownCommand {
         /// Encoded token supplied by the caller.
         token: Vec<u8>,
     },
     /// A required subcommand field was not selected.
+    #[error("required subcommand `{name}` was not provided")]
     MissingSubcommand {
         /// Canonical field name.
         name: &'static str,
     },
     /// A required field was not supplied.
+    #[error("required argument `{name}` was not provided")]
     MissingRequired {
         /// Canonical user-facing argument label.
         name: &'static str,
     },
     /// A scalar argument was supplied more than once.
+    #[error("argument `{name}` cannot be used more than once")]
     DuplicateArgument {
         /// Canonical user-facing argument label.
         name: &'static str,
     },
     /// An argument required by another supplied argument was not available.
+    #[error("argument `{name}` is required when `{required_by}` is used")]
     MissingRequirement {
         /// Canonical user-facing label of the missing argument.
         name: &'static str,
@@ -96,6 +107,7 @@ pub enum Error {
         required_by: &'static str,
     },
     /// Two arguments declared to conflict were supplied together.
+    #[error("argument `{name}` cannot be used with `{other}`")]
     ConflictingArguments {
         /// Canonical user-facing label of the argument declaring the conflict.
         name: &'static str,
@@ -103,6 +115,7 @@ pub enum Error {
         other: &'static str,
     },
     /// A text value was not valid UTF-8.
+    #[error("value `{}` for `{name}` is not valid UTF-8", display_bytes(.value))]
     InvalidUtf8 {
         /// Canonical user-facing argument label.
         name: &'static str,
@@ -110,19 +123,18 @@ pub enum Error {
         value: Vec<u8>,
     },
     /// A UTF-8 value could not be converted to the field's Rust type.
+    #[error(
+        "invalid value `{}` for `{}`: {}",
+        display_bytes(.0.value.as_bytes()),
+        .0.name,
+        display_bytes(.0.reason.as_bytes())
+    )]
     InvalidValue(Box<InvalidValue>),
-    /// A value supplied by an environment variable could not be converted.
-    InvalidEnvironmentValue {
-        /// Canonical user-facing argument label.
-        name: &'static str,
-        /// Environment variable that supplied the value.
-        environment: &'static str,
-        /// Operating-system value read from the environment.
-        value: std::ffi::OsString,
-        /// Conversion failure reported by Argx or the target type.
-        reason: String,
-    },
     /// Encoded argument bytes could not be reconstructed as an operating-system string.
+    #[error(
+        "value `{}` for `{name}` cannot be reconstructed as an operating-system string",
+        display_bytes(.value)
+    )]
     InvalidOsValue {
         /// Canonical user-facing argument label.
         name: &'static str,
@@ -215,70 +227,6 @@ struct ExitOutput<'a> {
     code: i32,
 }
 
-impl fmt::Display for Error {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::DisplayHelp { help } => formatter.write_str(help),
-            Self::DisplayVersion { version } => formatter.write_str(version),
-            Self::DisplaySchema { schema } => formatter.write_str(schema),
-            Self::UnknownFlag { token } => {
-                write!(formatter, "unknown flag `{}`", display_bytes(token))
-            }
-            Self::MissingValue { name } => write!(formatter, "missing value for `{name}`"),
-            Self::UnexpectedValue { name } => {
-                write!(formatter, "`{name}` does not accept a value")
-            }
-            Self::UnexpectedArgument { token } => {
-                write!(formatter, "unexpected argument `{}`", display_bytes(token))
-            }
-            Self::UnknownCommand { token } => {
-                write!(formatter, "unknown command `{}`", display_bytes(token))
-            }
-            Self::MissingSubcommand { name } => {
-                write!(formatter, "required subcommand `{name}` was not provided")
-            }
-            Self::MissingRequired { name } => {
-                write!(formatter, "required argument `{name}` was not provided")
-            }
-            Self::DuplicateArgument { name } => {
-                write!(formatter, "argument `{name}` cannot be used more than once")
-            }
-            Self::MissingRequirement { name, required_by } => {
-                write!(formatter, "argument `{name}` is required when `{required_by}` is used")
-            }
-            Self::ConflictingArguments { name, other } => {
-                write!(formatter, "argument `{name}` cannot be used with `{other}`")
-            }
-            Self::InvalidUtf8 { name, value } => write!(
-                formatter,
-                "value `{}` for `{name}` is not valid UTF-8",
-                display_bytes(value)
-            ),
-            Self::InvalidValue(error) => write!(
-                formatter,
-                "invalid value `{}` for `{}`: {}",
-                display_bytes(error.value.as_bytes()),
-                error.name,
-                display_bytes(error.reason.as_bytes())
-            ),
-            Self::InvalidEnvironmentValue { name, environment, value, reason } => write!(
-                formatter,
-                "invalid value `{}` from environment variable `{}` for `{name}`: {}",
-                display_bytes(value.as_os_str().as_encoded_bytes()),
-                display_bytes(environment.as_bytes()),
-                display_bytes(reason.as_bytes()),
-            ),
-            Self::InvalidOsValue { name, value } => write!(
-                formatter,
-                "value `{}` for `{name}` cannot be reconstructed as an operating-system string",
-                display_bytes(value)
-            ),
-        }
-    }
-}
-
-impl std::error::Error for Error {}
-
 /// Lossily renders encoded argument bytes while escaping terminal control characters.
 pub(crate) fn display_bytes(value: &[u8]) -> String {
     String::from_utf8_lossy(value).escape_debug().to_string()
@@ -286,8 +234,6 @@ pub(crate) fn display_bytes(value: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::ffi::OsString;
-
     use super::*;
 
     #[test]
@@ -389,21 +335,6 @@ Usage: tool [OPTIONS]
     }
 
     #[test]
-    fn environment_names_do_not_emit_terminal_controls() {
-        let rendered = Error::InvalidEnvironmentValue {
-            name: "--port",
-            environment: "TOOL_PORT\n\u{1b}[31m",
-            value: OsString::from("bad"),
-            reason: String::from("invalid"),
-        }
-        .to_string();
-
-        assert!(!rendered.contains('\n'));
-        assert!(!rendered.contains('\u{1b}'));
-        assert!(rendered.contains(r"environment variable `TOOL_PORT\n"));
-    }
-
-    #[test]
     fn relationship_errors_name_both_participating_arguments() {
         assert_eq!(
             Error::MissingRequirement { name: "--token", required_by: "--endpoint" }.to_string(),
@@ -429,16 +360,6 @@ Usage: tool [OPTIONS]
             }))
             .to_string(),
             r"invalid value `bad\nvalue` for `--port`: invalid\nnumber",
-        );
-        assert_eq!(
-            Error::InvalidEnvironmentValue {
-                name: "--port",
-                environment: "TOOL_PORT",
-                value: OsString::from("bad\nvalue"),
-                reason: String::from("invalid\nnumber"),
-            }
-            .to_string(),
-            r"invalid value `bad\nvalue` from environment variable `TOOL_PORT` for `--port`: invalid\nnumber",
         );
         assert_eq!(
             Error::InvalidOsValue { name: "path", value: b"bad\npath".to_vec() }.to_string(),

@@ -19,7 +19,6 @@ mod tests {
             ("renamed_dependency", "cli_args"),
             ("typed", "argx"),
             ("defaults", "argx"),
-            ("environment", "argx"),
             ("flatten", "argx"),
             ("subcommands", "argx"),
             ("handler", "argx"),
@@ -155,24 +154,6 @@ error: `requires` target `command` is not an argument field
 error: `requires` and `conflicts` are only valid on argument fields
 error: `requires` and `conflicts` are only valid on argument fields
 error[E0080]: evaluation panicked: constraint target must name exactly one argument field in the composed command
-
-"#]],
-        );
-    }
-
-    #[test]
-    fn invalid_environment_declarations_are_rejected_deterministically() {
-        support::assert_ui_failure(
-            "invalid_env",
-            "argx",
-            snapbox::str![[r#"
-error: `env` is only supported on scalar value-taking flags
-error: `env` is only supported on scalar value-taking flags
-error: `env` is only supported on scalar value-taking flags
-error: duplicate `env` attribute
-error: environment variable name must be non-empty and cannot contain `=` or NUL
-error: environment variable name must be non-empty and cannot contain `=` or NUL
-error: `env` requires a string value
 
 "#]],
         );

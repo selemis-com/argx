@@ -17,7 +17,6 @@ mod tests {
         "completions",
         "constraints",
         "defaults",
-        "environment",
         "flatten",
         "structured_help",
         "subcommands",
@@ -133,10 +132,6 @@ mod tests {
                 )
             }
             "defaults" => ("", "port: 3000\nprofile: development\n"),
-            "environment" => {
-                command.env_remove("ARGX_PORT").env_remove("ARGX_CONFIG");
-                ("", "port: 3000\n")
-            }
             "flatten" => {
                 command.args(["--verbose", "--config", "./argx.toml"]);
                 ("", "verbose mode enabled\nconfig: ./argx.toml\n")

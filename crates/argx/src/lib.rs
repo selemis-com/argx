@@ -5,6 +5,10 @@
 //! and completion. Normal applications therefore define the command
 //! once rather than maintaining separate parser, help, and discovery schemas.
 //!
+//! `#[derive(Config)]` extends the same input model across defaults, TOML, dotenv, process
+//! environment, and argv. These are treated as ordered sources for one resolved Rust value rather
+//! than as separate configuration systems.
+//!
 //! # Installation
 //!
 //! Add Argx with its default derive support:
@@ -167,7 +171,6 @@
 //! | `alias = "name"` | add one hidden long spelling to a named option |
 //! | `aliases = ["a", "b"]` | add multiple hidden long spellings to a named option |
 //! | `global` | keep a named option visible in descendant command scopes |
-//! | `env = "NAME"` | use an environment fallback for a scalar value-taking named option |
 //! | `default = expression` | use a typed Rust default for a scalar value-taking named option |
 //! | `requires = "field"` | require another argument when this argument is supplied |
 //! | `requires = ["a", "b"]` | require multiple arguments |
@@ -269,23 +272,18 @@
 //! therefore receive non-UTF-8 argv without forcing a lossy conversion. `String` and `FromStr`
 //! destinations require UTF-8 and report an [`Error`] when conversion is not possible.
 //!
-//! # Value sources
+//! # Typed defaults
 //!
-//! Scalar value-taking named options may declare `#[argx(env = "NAME")]` and
-//! `#[argx(default = expression)]`. Argv is authoritative when supplied; the environment is
-//! consulted only when argv did not provide the option. A typed default satisfies absence without
-//! round-tripping the expression through command-line text.
-//!
-//! Environment and typed-default metadata are intentionally restricted to scalar value-taking
-//! named options. They are not accepted on switches, collections, positionals, flatten fields, or
-//! subcommand selectors.
+//! Scalar value-taking named options may declare `#[argx(default = expression)]`. A typed default
+//! satisfies absence without round-tripping the expression through command-line text. Defaults are
+//! not accepted on switches, collections, positionals, flatten fields, or subcommand selectors.
 //!
 //! # Argument relationships
 //!
 //! `requires` and `conflicts` express relationships between argument fields in one composed command
 //! context. References use Rust field names and are validated during derivation/composition.
 //!
-//! `requires` is conditional: when the source is given through argv or its environment fallback,
+//! `requires` is conditional: when the source is given through argv,
 //! the target must be satisfied. A typed default counts as a satisfied target. `conflicts` rejects
 //! the case where both source and target were given; a default alone does not make an argument
 //! conflict with another argument.
@@ -439,6 +437,7 @@ mod argv;
 mod binding;
 mod command;
 pub mod completion;
+pub mod config;
 mod derive_support;
 mod error;
 mod help;
@@ -471,7 +470,12 @@ pub use derive_support::traits::HandlerSchemaSource;
 extern crate self as argx;
 
 #[cfg(feature = "derive")]
+pub use argx_derive::Config;
+#[cfg(feature = "derive")]
 pub use argx_derive::{Args, CommandSchema, Parser, Subcommand, ValueEnum, argx};
+pub use config::{
+    Argv, Config, Defaults, Env, EnvFile, Error as ConfigError, Layer, Loader as ConfigLoader, Toml,
+};
 
 /// Marks a reusable argument group derived with `#[derive(Args)]`.
 ///

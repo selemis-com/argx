@@ -175,8 +175,6 @@ pub(crate) struct Argument {
     pub global: bool,
     /// Syntactic value shape relevant to CLI cardinality.
     pub shape: Shape,
-    /// Environment variable consulted when argv does not supply this argument.
-    pub env: Option<String>,
     /// Whether absence is satisfied by a typed Rust default.
     pub has_default: bool,
     /// Field names that must be satisfied when this argument is supplied.
@@ -305,7 +303,7 @@ mod tests {
                 /// Enable verbose output.
                 #[argx(short, long, global)]
                 verbose: bool,
-                #[argx(long, env = "ARGX_OUTPUT", default = std::path::PathBuf::from("out"))]
+                #[argx(long, default = std::path::PathBuf::from("out"))]
                 output: Option<std::path::PathBuf>,
                 #[argx(flatten)]
                 shared: Shared,
@@ -336,7 +334,6 @@ mod tests {
         assert!(matches!(&argument.kind, ArgumentKind::Flag { .. }));
         assert_eq!(argument.diagnostic, "--output");
         assert_eq!(argument.shape, Shape::Optional);
-        assert_eq!(argument.env.as_deref(), Some("ARGX_OUTPUT"));
         assert!(argument.has_default);
         assert_eq!(output.value_binding().conversion, ValueConversion::Os);
         assert!(output.binding.default.is_some());
@@ -683,17 +680,6 @@ mod tests {
         let error = command_error(
             parse_quote! {
                 struct Cli {
-                    #[argx(long, env = "TOOL_VALUE")]
-                    value: Vec<String>,
-                }
-            },
-            true,
-        );
-        assert_eq!(error, "`env` is only supported on scalar value-taking flags");
-
-        let error = command_error(
-            parse_quote! {
-                struct Cli {
                     #[argx(long, default = true)]
                     value: bool,
                 }
@@ -906,7 +892,7 @@ mod tests {
     }
 
     #[test]
-    fn spelling_and_environment_validation_rejects_invalid_values() {
+    fn spelling_validation_rejects_invalid_values() {
         let error = command_error(
             parse_quote! {
                 struct Cli {
@@ -930,20 +916,6 @@ mod tests {
         assert_eq!(
             error,
             "long flag must be non-empty, must not start with `-`, and cannot contain `=`, whitespace, or controls",
-        );
-
-        let error = command_error(
-            parse_quote! {
-                struct Cli {
-                    #[argx(long, env = "BAD=NAME")]
-                    value: String,
-                }
-            },
-            true,
-        );
-        assert_eq!(
-            error,
-            "environment variable name must be non-empty and cannot contain `=` or NUL"
         );
     }
 }

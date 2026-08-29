@@ -74,7 +74,6 @@ pub(super) fn apply_arm(
     table: &proc_macro2::Ident,
     key: &proc_macro2::Ident,
     flag: bool,
-    facade: &TokenStream,
 ) -> TokenStream {
     let slot = syn::Index::from(field_index);
     let event_meta = if flag { quote!(flag) } else { quote!(arg) };
@@ -117,9 +116,7 @@ pub(super) fn apply_arm(
                 if partial.#slot.0.is_some() {
                     partial.#slot.1 = true;
                 } else {
-                    partial.#slot.0 = ::std::option::Option::Some(
-                        #facade::__private::RawValue::Argv(value.to_vec()),
-                    );
+                    partial.#slot.0 = ::std::option::Option::Some(value.to_vec());
                 }
                 true
             },

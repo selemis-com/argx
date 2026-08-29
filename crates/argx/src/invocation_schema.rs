@@ -204,11 +204,7 @@ fn argument_name<'a>(command: &'a Command<'_>, key: Key) -> Option<&'a str> {
 
 /// Returns whether satisfying one required target necessarily needs an explicit invocation value.
 fn requires_explicit_value(command: &Command<'_>, key: Key) -> bool {
-    command
-        .flags
-        .iter()
-        .find(|flag| flag.key == key)
-        .is_none_or(|flag| flag.env.is_none() && !flag.has_default)
+    command.flags.iter().find(|flag| flag.key == key).is_none_or(|flag| !flag.has_default)
 }
 
 /// Builds a schema fragment that rejects simultaneous presence of two invocation properties.

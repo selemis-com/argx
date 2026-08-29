@@ -22,7 +22,7 @@ mod tests {
         #[argx(short, long, global)]
         verbose: bool,
         /// Documentation overridden by explicit field help.
-        #[argx(long = "output", env = "ARGX_OUTPUT", help = "Optional output path")]
+        #[argx(long = "output", help = "Optional output path")]
         output: Option<String>,
         /// Input value to process.
         input: String,
@@ -216,7 +216,6 @@ mod tests {
                 diagnostic: "--output",
                 help: Some("Optional output path"),
                 longs: &["output"],
-                env: Some("ARGX_OUTPUT"),
                 ..Flag::VALUE
             },
         );
