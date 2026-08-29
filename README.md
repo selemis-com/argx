@@ -159,40 +159,6 @@ and environment layers, so `--origins a,b` and `ACME_ORIGINS=a,b` resolve to the
 `#[argx(flatten)]` composes a nested `Config` across every layer. See the
 [configuration example](crates/argx/examples/configuration.rs) for a runnable version.
 
-## Output
-
-Argx reserves `-O` / `--output` and `-F` / `--fields` as global output controls. Text is the
-default. `-O json` selects structured JSON output, while repeatable comma-separated `-F` values
-select dotted fields from a schema-enabled handler result:
-
-```text
-acme get object-7 -O json
-acme get object-7 -O json -F id,owner.name
-```
-
-Use an invocation entry point when the application needs to honor these controls. The parsed
-command and output context remain separate, so applications keep ownership of dispatch and
-human-readable rendering while Argx handles JSON serialization and schema-validated projection:
-
-```rust
-use argx::{OutputFormat, Parser as _};
-
-let invocation = Cli::try_parse_invocation()?;
-let (cli, output) = invocation.into_parts();
-let value = run(cli)?;
-
-match output.format() {
-    OutputFormat::Text => println!("{value:?}"),
-    OutputFormat::Json => println!("{}", output.render_json(&value)?),
-    _ => unreachable!(),
-}
-# Ok::<(), Box<dyn std::error::Error>>(())
-```
-
-`--fields` requires JSON output and a typed result schema for the selected command. Field selection
-applies only to successful output. See [`Invocation`](https://docs.rs/argx/latest/argx/struct.Invocation.html)
-and [`Output`](https://docs.rs/argx/latest/argx/struct.Output.html) for the embedding API.
-
 ## Schema discovery
 
 A parser marked `#[argx(schema)]` exposes its command interface as Draft 2020-12 JSON Schema for
