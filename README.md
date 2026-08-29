@@ -38,9 +38,9 @@ cargo add argx
 
 ### Features
 
-- `derive` — enabled by default. It exports the `Parser`, `Args`, `Subcommand`, `ValueEnum`, and
+- `derive` is enabled by default. It exports the `Parser`, `Args`, `Subcommand`, `ValueEnum`, and
   `Config` derives plus the `#[argx(...)]` attribute macro.
-- `toml` — enables TOML configuration layers and implies `derive`.
+- `toml` enables TOML configuration layers and implies `derive`.
 
 Enable TOML support with:
 
@@ -129,7 +129,6 @@ let config = Config::loader()
     .layer(Environment)
     .layer(Argv::current())
     .resolve()?;
-# Ok::<(), argx::ConfigError>(())
 ```
 
 Layers are applied in declaration order. Later layers replace only fields they actually supply, so
@@ -145,12 +144,9 @@ Environment layers inspect only mapped variables. Unrelated process variables ar
 Files are explicit layers too:
 
 ```rust
-# use argx::{Config as _, Dotenv};
-# #[derive(argx::Config)] struct Config { value: Option<String> }
 let config = Config::loader()
     .layer(Dotenv::new(".env"))
     .resolve()?;
-# Ok::<(), argx::ConfigError>(())
 ```
 
 With the `toml` feature enabled, `Toml::new("acme.toml")` adds a TOML layer. TOML interpolation can
@@ -177,7 +173,12 @@ Rust data-model schemas through Schemars without requiring downstream users to d
 directly.
 
 ```rust
-use argx::argx;
+use argx::{Args, argx};
+
+#[derive(Args)]
+struct GetCommand {
+    id: String,
+}
 
 #[argx(schema)]
 struct GetOutput {
@@ -189,7 +190,6 @@ enum GetError {
     NotFound,
 }
 
-# #[derive(argx::Args)] struct GetCommand { id: String }
 #[argx(handler = GetCommand)]
 fn get(command: GetCommand) -> Result<GetOutput, GetError> {
     Ok(GetOutput { id: command.id })
@@ -199,26 +199,6 @@ fn get(command: GetCommand) -> Result<GetOutput, GetError> {
 See the [schema example](crates/argx/examples/schema.rs) and
 [crate documentation](https://docs.rs/argx/latest/argx/) for structural schema composition and the
 exact discovery contract.
-
-## Shell completions
-
-Argx generates dynamic completion adapters for Bash, Fish, Nushell, and Zsh from the same command
-model used for parsing. Applications commonly expose the generated adapter through a small
-`completions <shell>` command:
-
-```rust
-use argx::{Parser as _, completion::Shell};
-
-# #[derive(argx::Parser)]
-# #[argx(name = "acme")]
-# struct Cli;
-let script = Cli::render_completion(Shell::Zsh)?;
-# Ok::<(), argx::completion::ScriptError>(())
-```
-
-The adapters query the current executable dynamically, so command selection, aliases, global
-options, conflicts, finite values, and `--` follow the parser's normal semantics. See the
-[completions example](crates/argx/examples/completions.rs) for a complete command.
 
 ## Examples
 
