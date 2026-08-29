@@ -46,13 +46,4 @@ pub mod __private {
         name
     }
 
-    pub trait TomlInput: serde::de::DeserializeOwned + Sized {
-        type Config: Config<__Toml = Self>;
-        fn into_overrides(self) -> <Self::Config as Config>::Overrides;
-    }
-
-    pub trait ConfigState: Default + Sized {
-        type Config: Config<Overrides = Self>;
-        fn merge(&mut self, higher: Self);
-    }
 }

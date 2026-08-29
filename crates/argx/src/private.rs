@@ -12,7 +12,7 @@ pub(crate) use crate::command::scope::{Named, long as resolve_long, short as res
 /// Configuration derive support named by generated code.
 #[doc(hidden)]
 pub use crate::config::__private::{
-    Config, ConfigState, Environment, EnvironmentContract, EnvironmentError, TomlInput, environment_name,
+    Config, Environment, EnvironmentContract, EnvironmentError, environment_name,
     parse_environment_field, serde,
 };
 /// Schema-discovery support named by generated code.

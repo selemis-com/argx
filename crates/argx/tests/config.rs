@@ -35,35 +35,28 @@ mod tests {
     use super::*;
 
     #[test]
-    fn later_layers_override_earlier_layers() {
+    fn layer_order_defines_precedence() {
         let path = temp_file("precedence", "toml", "workers = 8\nendpoint = \"from-toml\"\n");
 
-        let config = AppConfig::loader()
+        let toml_then_argv = AppConfig::loader()
             .layer(Defaults)
             .layer(Toml::new(&path))
             .layer(Argv::new(["app", "--workers", "16", "--endpoint", "from-cli"]))
             .resolve()
             .expect("resolve configuration");
+        assert_eq!(toml_then_argv.workers, 16);
+        assert_eq!(toml_then_argv.endpoint, "from-cli");
+        assert!(toml_then_argv.enabled);
 
-        assert_eq!(config.workers, 16);
-        assert_eq!(config.endpoint, "from-cli");
-        assert!(config.enabled);
-        let _ = fs::remove_file(path);
-    }
-
-    #[test]
-    fn changing_layer_order_changes_precedence() {
-        let path = temp_file("reordered", "toml", "workers = 8\nendpoint = \"from-toml\"\n");
-
-        let config = AppConfig::loader()
+        let argv_then_toml = AppConfig::loader()
             .layer(Defaults)
             .layer(Argv::new(["app", "--workers", "16", "--endpoint", "from-cli"]))
             .layer(Toml::new(&path))
             .resolve()
-            .expect("resolve configuration");
+            .expect("resolve reordered configuration");
+        assert_eq!(argv_then_toml.workers, 8);
+        assert_eq!(argv_then_toml.endpoint, "from-toml");
 
-        assert_eq!(config.workers, 8);
-        assert_eq!(config.endpoint, "from-toml");
         let _ = fs::remove_file(path);
     }
 
@@ -123,6 +116,18 @@ mod tests {
     struct ServerConfig {
         #[argx(long, default = 4)]
         workers: usize,
+    }
+
+    #[test]
+    fn flattened_defaults_require_a_defaults_layer() {
+        let error = NestedConfig::loader()
+            .resolve()
+            .expect_err("nested defaults must not apply implicitly");
+
+        let argx::ConfigError::Source(error) = error else {
+            panic!("expected source error");
+        };
+        assert_eq!(error.field(), Some("server.workers"));
     }
 
     #[test]

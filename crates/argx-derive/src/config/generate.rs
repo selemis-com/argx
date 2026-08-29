@@ -93,13 +93,14 @@ pub(crate) fn generate_config(
     });
     let merges = config.fields.iter().map(|field| {
         let ident = &field.ident;
+        let ty = &field.ty;
         if field.nested {
             quote! {
                 if let ::core::option::Option::Some(higher) = higher.#ident {
-                    self.#ident = ::core::option::Option::Some(match self.#ident.take() {
-                        ::core::option::Option::Some(mut lower) => {
-                            #argx::__private::ConfigState::merge(&mut lower, higher);
-                            lower
+                    lower.#ident = ::core::option::Option::Some(match lower.#ident.take() {
+                        ::core::option::Option::Some(mut nested_lower) => {
+                            <#ty as #argx::__private::Config>::__merge(&mut nested_lower, higher);
+                            nested_lower
                         }
                         ::core::option::Option::None => higher,
                     });
@@ -108,7 +109,7 @@ pub(crate) fn generate_config(
         } else {
             quote! {
                 if let ::core::option::Option::Some(value) = higher.#ident {
-                    self.#ident = ::core::option::Option::Some(value);
+                    lower.#ident = ::core::option::Option::Some(value);
                 }
             }
         }
@@ -139,12 +140,12 @@ pub(crate) fn generate_config(
         let ty = &field.ty;
         if field.nested {
             quote! {
-                #ident: self.#ident.map(
-                    <<#ty as #argx::__private::Config>::__Toml as #argx::__private::TomlInput>::into_overrides,
+                #ident: input.#ident.map(
+                    <#ty as #argx::__private::Config>::__toml_overrides,
                 )
             }
         } else {
-            quote!(#ident: self.#ident)
+            quote!(#ident: input.#ident)
         }
     });
 
@@ -244,7 +245,7 @@ pub(crate) fn generate_config(
         if field.nested {
             return quote! {
                 #ident: <#ty as #argx::__private::Config>::__finalize(
-                    resolved.#ident.unwrap_or_else(<#ty as #argx::__private::Config>::__defaults),
+                    resolved.#ident.unwrap_or_default(),
                 )
                 .map_err(|error| error.__within(#name))?
             };
@@ -267,7 +268,7 @@ pub(crate) fn generate_config(
         impl #ident {
             /// Creates an empty ordered configuration loader.
             pub fn loader() -> #argx::ConfigLoader<Self> {
-                <Self as #argx::__private::Config>::loader()
+                #argx::ConfigLoader::default()
             }
         }
 
@@ -281,15 +282,6 @@ pub(crate) fn generate_config(
         impl ::core::fmt::Debug for #overrides_ident {
             fn fmt(&self, formatter: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
                 formatter.write_str(::core::stringify!(#overrides_ident))
-            }
-        }
-
-        impl #argx::__private::ConfigState for #overrides_ident {
-            type Config = #ident;
-
-            fn merge(&mut self, higher: Self) {
-                #discard_higher
-                #(#merges)*
             }
         }
 
@@ -322,16 +314,6 @@ pub(crate) fn generate_config(
             }
         }
 
-        impl #argx::__private::TomlInput for #toml_ident {
-            type Config = #ident;
-
-            fn into_overrides(self) -> <Self::Config as #argx::__private::Config>::Overrides {
-                #overrides_ident {
-                    #(#toml_into_overrides,)*
-                }
-            }
-        }
-
         impl #argx::__private::Config for #ident {
             type Overrides = #overrides_ident;
             type __Toml = #toml_ident;
@@ -351,6 +333,17 @@ pub(crate) fn generate_config(
                 let mut overrides = <#overrides_ident as ::core::default::Default>::default();
                 #(#cli_overrides)*
                 overrides
+            }
+
+            fn __merge(lower: &mut Self::Overrides, higher: Self::Overrides) {
+                #discard_higher
+                #(#merges)*
+            }
+
+            fn __toml_overrides(input: Self::__Toml) -> Self::Overrides {
+                #overrides_ident {
+                    #(#toml_into_overrides,)*
+                }
             }
 
             fn __defaults() -> Self::Overrides {

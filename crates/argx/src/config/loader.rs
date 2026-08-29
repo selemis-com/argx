@@ -20,21 +20,15 @@ use crate::config::{
 /// A typed configuration contract.
 pub trait Config: Sized {
     /// The generated sparse representation used while resolving layers.
-    type Overrides: __private::ConfigState<Config = Self>;
+    type Overrides: Default;
 
     /// The generated sparse TOML input representation.
     #[doc(hidden)]
-    type __Toml: __private::TomlInput<Config = Self>;
+    type __Toml: serde::de::DeserializeOwned;
 
     /// Generated sparse command-line adapter.
     #[doc(hidden)]
     type __CliArgs: crate::__private::CommandArgs;
-
-    /// Creates an empty ordered configuration loader.
-    #[doc(hidden)]
-    fn loader() -> Loader<Self> {
-        Loader { layers: Vec::new(), marker: PhantomData }
-    }
 
     /// Parses explicit argv values into the generated sparse configuration state.
     #[doc(hidden)]
@@ -51,11 +45,19 @@ pub trait Config: Sized {
     #[doc(hidden)]
     fn __defaults() -> Self::Overrides;
 
+    /// Merges one higher-precedence sparse state into another.
+    #[doc(hidden)]
+    fn __merge(lower: &mut Self::Overrides, higher: Self::Overrides);
+
+    /// Converts generated sparse TOML input into configuration state.
+    #[doc(hidden)]
+    fn __toml_overrides(input: Self::__Toml) -> Self::Overrides;
+
     /// Decodes one TOML scope into typed values for this configuration.
     #[doc(hidden)]
     fn __toml(input: &str) -> Result<Self::Overrides, __private::TomlError> {
         let input = toml::from_str::<Self::__Toml>(input)?;
-        Ok(<Self::__Toml as __private::TomlInput>::into_overrides(input))
+        Ok(Self::__toml_overrides(input))
     }
 
     /// Returns the generated environment binding contract for this configuration.
@@ -76,10 +78,21 @@ pub trait Config: Sized {
 
 /// A configuration layer accepted by [`Loader::layer`].
 ///
-/// Built-in layer types convert into this opaque wrapper. Layers are applied
-/// in declaration order, and later layers replace only values they supply.
+/// Built-in layer types convert into this enum. Layers are applied in
+/// declaration order, and later layers replace only values they supply.
 #[derive(Clone, Debug)]
-pub struct Layer(LayerKind);
+pub enum Layer {
+    /// Declared field defaults.
+    Defaults,
+    /// One TOML file.
+    Toml(Toml),
+    /// One dotenv-format file.
+    Dotenv(Dotenv),
+    /// The current process environment.
+    Environment,
+    /// One complete command-line argument vector.
+    Argv(Argv),
+}
 
 /// Declared field defaults.
 #[derive(Clone, Copy, Debug, Default)]
@@ -147,47 +160,32 @@ impl Argv {
 
 impl From<Defaults> for Layer {
     fn from(_: Defaults) -> Self {
-        Self(LayerKind::Defaults)
+        Self::Defaults
     }
 }
 
 impl From<Toml> for Layer {
     fn from(layer: Toml) -> Self {
-        Self(LayerKind::Toml(layer))
+        Self::Toml(layer)
     }
 }
 
 impl From<Dotenv> for Layer {
     fn from(layer: Dotenv) -> Self {
-        Self(LayerKind::Dotenv(layer))
+        Self::Dotenv(layer)
     }
 }
 
 impl From<Environment> for Layer {
     fn from(_: Environment) -> Self {
-        Self(LayerKind::Environment)
+        Self::Environment
     }
 }
 
 impl From<Argv> for Layer {
     fn from(layer: Argv) -> Self {
-        Self(LayerKind::Argv(layer))
+        Self::Argv(layer)
     }
-}
-
-#[derive(Clone, Debug)]
-/// Internal representation of the built-in configuration layers.
-enum LayerKind {
-    /// Declared field defaults.
-    Defaults,
-    /// One TOML file.
-    Toml(Toml),
-    /// One dotenv-format file.
-    Dotenv(Dotenv),
-    /// The current process environment.
-    Environment,
-    /// One complete command-line argument vector.
-    Argv(Argv),
 }
 
 /// Resolves a configuration from an ordered stack of layers.
@@ -197,6 +195,12 @@ pub struct Loader<C: Config> {
     layers: Vec<Layer>,
     /// Associates the loader with its resolved configuration type.
     marker: PhantomData<fn() -> C>,
+}
+
+impl<C: Config> Default for Loader<C> {
+    fn default() -> Self {
+        Self { layers: Vec::new(), marker: PhantomData }
+    }
 }
 
 impl<C: Config> fmt::Debug for Loader<C> {
@@ -228,14 +232,14 @@ impl<C: Config> Loader<C> {
         let mut environment = EnvironmentValues::default();
 
         for layer in self.layers {
-            match layer.0 {
-                LayerKind::Defaults => {
-                    __private::ConfigState::merge(&mut state, C::__defaults());
+            match layer {
+                Layer::Defaults => {
+                    C::__merge(&mut state, C::__defaults());
                 }
-                LayerKind::Toml(layer) => {
+                Layer::Toml(layer) => {
                     merge_toml::<C>(&mut state, &layer.path, &environment)?;
                 }
-                LayerKind::Dotenv(layer) => {
+                Layer::Dotenv(layer) => {
                     let higher =
                         load_dotenv(&layer.path, &environment).map_err(SourceError::dotenv)?;
                     merge_environment::<C>(
@@ -246,7 +250,7 @@ impl<C: Config> Loader<C> {
                     )?;
                     environment.overlay(higher);
                 }
-                LayerKind::Environment => {
+                Layer::Environment => {
                     let higher = EnvironmentValues::process();
                     merge_environment::<C>(
                         &mut state,
@@ -256,9 +260,9 @@ impl<C: Config> Loader<C> {
                     )?;
                     environment.overlay(higher);
                 }
-                LayerKind::Argv(layer) => {
+                Layer::Argv(layer) => {
                     let higher = C::__parse_cli(layer.values)?;
-                    __private::ConfigState::merge(&mut state, higher);
+                    C::__merge(&mut state, higher);
                 }
             }
         }
@@ -288,7 +292,7 @@ fn merge_toml<C: Config>(
             expansion.substituted,
         )
     })?;
-    __private::ConfigState::merge(resolved, higher);
+    C::__merge(resolved, higher);
     Ok(())
 }
 
@@ -304,6 +308,6 @@ fn merge_environment<C: Config>(
     }
     let higher = C::__environment_with_prefix(environment, None)
         .map_err(|source| SourceError::environment(scope, source))?;
-    __private::ConfigState::merge(resolved, higher);
+    C::__merge(resolved, higher);
     Ok(())
 }

@@ -111,7 +111,7 @@ impl Field {
                     env = Some(value);
                     return Ok(());
                 }
-                if meta.path.is_ident("flatten") || meta.path.is_ident("nested") {
+                if meta.path.is_ident("flatten") {
                     if nested {
                         return Err(meta.error("duplicate `flatten` attribute"));
                     }
