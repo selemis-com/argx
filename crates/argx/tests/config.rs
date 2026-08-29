@@ -6,6 +6,7 @@ use std::{fs, path::PathBuf};
 use argx::Toml;
 use argx::{Argv, Defaults, Dotenv};
 
+#[cfg(feature = "toml")]
 #[derive(Debug, argx::Config)]
 struct AppConfig {
     /// Worker count.
@@ -19,6 +20,13 @@ struct AppConfig {
     /// Value required after all layers are resolved.
     #[argx(long)]
     endpoint: String,
+}
+
+#[derive(Debug, argx::Config)]
+struct BooleanConfig {
+    /// Whether the feature is enabled.
+    #[argx(long, default = true)]
+    enabled: bool,
 }
 
 fn temp_file(name: &str, extension: &str, contents: &str) -> PathBuf {
@@ -82,13 +90,19 @@ mod tests {
 
     #[test]
     fn boolean_cli_values_can_override_both_directions() {
-        let config = AppConfig::loader()
+        let config = BooleanConfig::loader()
             .layer(Defaults)
-            .layer(Argv::new(["app", "--enabled", "false", "--endpoint", "http://localhost"]))
+            .layer(Argv::new(["app", "--enabled", "false"]))
             .resolve()
             .expect("resolve configuration");
 
         assert!(!config.enabled);
+
+        let config = NestedConfig::loader()
+            .layer(Defaults)
+            .resolve()
+            .expect("explicit defaults layer resolves nested defaults");
+        assert_eq!(config.server.workers, 4);
     }
 
     #[derive(Debug, argx::Config)]
@@ -149,6 +163,7 @@ mod tests {
         let _ = fs::remove_file(path);
     }
 
+    #[cfg(feature = "toml")]
     #[derive(Debug, argx::Config)]
     struct InterpolatedConfig {
         endpoint: String,
