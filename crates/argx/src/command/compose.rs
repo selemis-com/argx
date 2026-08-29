@@ -19,107 +19,58 @@ pub const fn table_len<T>(groups: &[&[T]]) -> usize {
     total
 }
 
-/// Concatenates flag-table groups into one static array while preserving group order.
+/// Concatenates table groups into one static array while preserving group order.
 ///
 /// # Panics
 ///
 /// Panics during const evaluation if `N` is not [`table_len`] of `groups`.
+const fn concat<T: Copy, const N: usize>(groups: &[&[T]], placeholder: T) -> [T; N] {
+    let mut joined = [placeholder; N];
+    let mut at = 0;
+    let mut group = 0;
+    while group < groups.len() {
+        let entries = groups[group];
+        let mut index = 0;
+        while index < entries.len() {
+            joined[at] = entries[index];
+            at += 1;
+            index += 1;
+        }
+        group += 1;
+    }
+    assert!(at == N, "concatenated table length must match table_len");
+    joined
+}
+
+/// Concatenates flag-table groups into one static array while preserving group order.
 pub const fn concat_flags<const N: usize>(
     groups: &[&[&'static Flag<'static>]],
 ) -> [&'static Flag<'static>; N] {
     static PLACEHOLDER: Flag<'static> = Flag::BOOL;
-    let mut joined = [&PLACEHOLDER; N];
-    let mut at = 0;
-    let mut group = 0;
-    while group < groups.len() {
-        let entries = groups[group];
-        let mut index = 0;
-        while index < entries.len() {
-            joined[at] = entries[index];
-            at += 1;
-            index += 1;
-        }
-        group += 1;
-    }
-    assert!(at == N, "concatenated flag-table length must match table_len");
-    joined
+    concat(groups, &PLACEHOLDER)
 }
 
 /// Concatenates positional-table groups into one static array while preserving group order.
-///
-/// # Panics
-///
-/// Panics during const evaluation if `N` is not [`table_len`] of `groups`.
 pub const fn concat_args<const N: usize>(
     groups: &[&[&'static Arg<'static>]],
 ) -> [&'static Arg<'static>; N] {
     static PLACEHOLDER: Arg<'static> = Arg::REQUIRED;
-    let mut joined = [&PLACEHOLDER; N];
-    let mut at = 0;
-    let mut group = 0;
-    while group < groups.len() {
-        let entries = groups[group];
-        let mut index = 0;
-        while index < entries.len() {
-            joined[at] = entries[index];
-            at += 1;
-            index += 1;
-        }
-        group += 1;
-    }
-    assert!(at == N, "concatenated positional-table length must match table_len");
-    joined
+    concat(groups, &PLACEHOLDER)
 }
 
 /// Concatenates constraint-table groups into one static array while preserving group order.
-///
-/// # Panics
-///
-/// Panics during const evaluation if `N` is not [`table_len`] of `groups`.
 pub const fn concat_constraints<const N: usize>(groups: &[&[Constraint]]) -> [Constraint; N] {
     const PLACEHOLDER: Constraint =
         Constraint { kind: ConstraintKind::Requires, source: 0, target: 0 };
-    let mut joined = [PLACEHOLDER; N];
-    let mut at = 0;
-    let mut group = 0;
-    while group < groups.len() {
-        let entries = groups[group];
-        let mut index = 0;
-        while index < entries.len() {
-            joined[at] = entries[index];
-            at += 1;
-            index += 1;
-        }
-        group += 1;
-    }
-    assert!(at == N, "concatenated constraint-table length must match table_len");
-    joined
+    concat(groups, PLACEHOLDER)
 }
 
 /// Concatenates help-group slices into one static array while preserving composition order.
-///
-/// # Panics
-///
-/// Panics during const evaluation if `N` is not [`table_len`] of `groups`.
 pub const fn concat_help_groups<const N: usize>(
     groups: &[&[&'static HelpGroup<'static>]],
 ) -> [&'static HelpGroup<'static>; N] {
     static PLACEHOLDER: HelpGroup<'static> = HelpGroup::EMPTY;
-    let mut joined = [&PLACEHOLDER; N];
-    let mut at = 0;
-    let mut group = 0;
-    while group < groups.len() {
-        let entries = groups[group];
-        let mut index = 0;
-        while index < entries.len() {
-            joined[at] = entries[index];
-            at += 1;
-            index += 1;
-        }
-        group += 1;
-    }
-    assert!(at == N, "concatenated help-group length must match table_len");
-    joined
+    concat(groups, &PLACEHOLDER)
 }
 
 /// Resolves exactly one semantic argument key by its Rust declaration field name.

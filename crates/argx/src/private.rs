@@ -34,7 +34,7 @@ pub use crate::{
             HELP_ACTION, HelpGroup, HelpSection, Key, SCHEMA_ACTION, key_base,
         },
     },
-    derive_support::{
+    generated::{
         traits::{
             CommandArgs, HandlerResult, HandlerSchemas, InvocableCommandHandler, Subcommands,
         },

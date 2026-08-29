@@ -6,10 +6,10 @@ use syn::{Data, DeriveInput, Fields, GenericParam, visit::Visit as _};
 
 use super::{
     CommandSemantics, GenericName, GenericUse, HelpSection, Subcommand, SubcommandBinding, Variant,
-    VariantBinding, ident_name,
+    VariantBinding,
     shape::{peel_option, peel_vec},
 };
-use crate::{attrs, case};
+use crate::{attrs, support};
 
 impl Subcommand {
     /// Parses and validates a subcommand enum before code generation.
@@ -40,8 +40,8 @@ impl Subcommand {
                     "schema discovery is only valid on Parser declarations",
                 ));
             }
-            let rust_name = ident_name(&variant.ident);
-            let name = attributes.name.unwrap_or_else(|| case::to_kebab(&rust_name));
+            let rust_name = support::ident_name(&variant.ident);
+            let name = attributes.name.unwrap_or_else(|| support::to_kebab(&rust_name));
             let docs = attrs::doc_help(&variant.attrs);
             let about = attributes.about.clone().or(docs.summary);
             let description = attributes.about.or(docs.description);

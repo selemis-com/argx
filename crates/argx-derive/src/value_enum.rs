@@ -6,7 +6,7 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{Data, DeriveInput, Fields};
 
-use crate::{case, crate_name};
+use crate::support;
 
 /// Generates one canonical finite CLI vocabulary and exact parser.
 pub(crate) fn value_enum(input: &DeriveInput) -> syn::Result<TokenStream> {
@@ -41,8 +41,8 @@ pub(crate) fn value_enum(input: &DeriveInput) -> syn::Result<TokenStream> {
                 "ValueEnum variants cannot contain fields",
             ));
         }
-        let rust_name = ident_name(&variant.ident);
-        let value = case::to_kebab(&rust_name);
+        let rust_name = support::ident_name(&variant.ident);
+        let value = support::to_kebab(&rust_name);
         if !seen.insert(value.clone()) {
             return Err(syn::Error::new_spanned(
                 &variant.ident,
@@ -52,7 +52,7 @@ pub(crate) fn value_enum(input: &DeriveInput) -> syn::Result<TokenStream> {
         variants.push((&variant.ident, value));
     }
 
-    let facade = crate_name::facade_path();
+    let facade = support::facade_path();
     let ident = &input.ident;
     let values = variants.iter().map(|(_, value)| value);
     let matches = variants.iter().map(|(variant, value)| quote!(#value => Self::#variant,));
@@ -79,10 +79,4 @@ pub(crate) fn value_enum(input: &DeriveInput) -> syn::Result<TokenStream> {
             }
         }
     })
-}
-
-/// Returns an identifier without Rust's raw-identifier prefix.
-fn ident_name(ident: &syn::Ident) -> String {
-    let name = ident.to_string();
-    name.strip_prefix("r#").unwrap_or(&name).to_owned()
 }

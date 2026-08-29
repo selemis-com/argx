@@ -12,7 +12,7 @@ use serde_json::{Map, Value};
 use crate::{
     Error,
     command::model::{Command, Key},
-    derive_support::traits::{HandlerSchemaSource, HandlerSchemas},
+    generated::traits::{HandlerSchemaSource, HandlerSchemas},
 };
 
 /// One executable command association collected from generated schema topology.

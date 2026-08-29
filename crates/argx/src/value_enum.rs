@@ -2,7 +2,7 @@
 //!
 //! [`trait@ValueEnum`] is the explicit finite alternative to arbitrary `FromStr` parsing. A derived
 //! value enum supplies one canonical lexical vocabulary that generated binding, help, and machine
-//! contracts can all project without duplicating the accepted values in documentation.
+//! schemas can all project without duplicating the accepted values in documentation.
 
 use crate::error::display_bytes;
 

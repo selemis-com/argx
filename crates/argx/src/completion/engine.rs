@@ -19,8 +19,8 @@ use crate::{
         model::{Action, Arg, Command, ConstraintKind, Flag, Key, SCHEMA_ACTION},
         scope::{Named, long as resolve_long, short as resolve_short},
     },
-    derive_support::traits::CommandArgs,
     error::display_bytes,
+    generated::traits::CommandArgs,
 };
 
 /// Handles one private completion request for `T` from the current process.

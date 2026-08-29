@@ -8,7 +8,7 @@ use syn::{
     punctuated::Punctuated,
 };
 
-use crate::crate_name;
+use crate::support;
 
 /// Parsed arguments to the free-function handler form.
 struct HandlerArguments {
@@ -122,7 +122,7 @@ fn expand_association(
     output: &Type,
     conditional: &[Attribute],
 ) -> syn::Result<TokenStream> {
-    let facade = crate_name::facade_path();
+    let facade = support::facade_path();
     let resolution = quote! {
         <#output as #facade::__private::HandlerResult>::schemas(generator)
     };

@@ -204,12 +204,6 @@ pub(crate) enum ArgumentKind {
     Positional,
 }
 
-/// Returns an identifier without Rust's raw-identifier prefix.
-fn ident_name(ident: &syn::Ident) -> String {
-    let name = ident.to_string();
-    name.strip_prefix("r#").unwrap_or(&name).to_owned()
-}
-
 /// One generic parameter name relevant while inspecting a composed field type.
 #[derive(Debug)]
 enum GenericName {

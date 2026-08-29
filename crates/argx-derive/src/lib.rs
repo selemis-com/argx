@@ -14,15 +14,14 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 mod attrs;
-mod case;
 mod codegen;
 mod command_schema;
 mod config;
-mod crate_name;
 mod handler;
 mod key;
 mod model;
 mod schema;
+mod support;
 mod value_enum;
 
 use proc_macro::TokenStream;

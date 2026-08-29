@@ -1,9 +1,9 @@
 //! Private static projection of normalized command semantics.
 //!
 //! These immutable tables are generated once per derive and shared by parsing, help rendering,
-//! typed binding, and machine-contract discovery. Typed binding refers back to arguments through
-//! stable [`Key`] values, while semantic Rust value types remain in a separate lazy projection so
-//! parsing does not require contract support.
+//! typed binding, and machine-readable schema discovery. Typed binding refers back to arguments
+//! through stable [`Key`] values, while semantic Rust value types remain in a separate lazy
+//! projection so parsing does not require schema support.
 
 /// Stable semantic identity assigned to one command or argument declaration.
 pub type Key = u64;
@@ -117,7 +117,7 @@ pub static SCHEMA_ACTION: Action<'static> = Action {
     kind: ActionKind::Schema,
 };
 
-/// Static command semantics shared by parsing, help generation, and contract discovery.
+/// Static command semantics shared by parsing, help generation, and schema discovery.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Command<'a> {
     /// Command name as exposed on the command line.

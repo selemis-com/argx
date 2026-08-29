@@ -7,10 +7,9 @@ use syn::{Data, DeriveInput, Fields, GenericParam, Type, visit::Visit as _};
 use super::{
     Argument, ArgumentKind, Command, CommandBinding, CommandSemantics, Field, FieldBinding,
     FieldSemantics, GenericName, GenericUse, HelpSection, Shape, ValueBinding, ValueConversion,
-    ident_name,
     shape::{peel_option, peel_vec, rendered_path, validate_value_shape},
 };
-use crate::{attrs, case};
+use crate::{attrs, support};
 
 impl Command {
     /// Parses and validates one command into the canonical derive-time model.
@@ -73,8 +72,8 @@ impl Command {
 
         // Only after validation do we derive human-facing metadata. This keeps inferred names and
         // doc-derived help in the same semantic representation as explicit attribute overrides.
-        let rust_name = ident_name(&input.ident);
-        let name = attributes.name.unwrap_or_else(|| case::to_kebab(&rust_name));
+        let rust_name = support::ident_name(&input.ident);
+        let name = attributes.name.unwrap_or_else(|| support::to_kebab(&rust_name));
         if name.is_empty() {
             return Err(syn::Error::new(Span::call_site(), "command name cannot be empty"));
         }
@@ -121,7 +120,7 @@ impl Field {
             syn::Error::new_spanned(field, "Parser and Args fields must be named")
         })?;
         let attributes = attrs::field(&field.attrs)?;
-        let name = ident_name(&ident);
+        let name = support::ident_name(&ident);
         let binding = FieldBinding {
             span: ident.span(),
             ident,
@@ -332,7 +331,7 @@ fn argument_kind(
         .long
         .take()
         .map(|long| match long {
-            attrs::Inferred::Infer => case::to_kebab(&binding.name),
+            attrs::Inferred::Infer => support::to_kebab(&binding.name),
             attrs::Inferred::Explicit(value) => value,
         })
         .into_iter()

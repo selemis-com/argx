@@ -10,7 +10,7 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
 use super::option_str;
-use crate::{crate_name, key, model};
+use crate::{key, model, support};
 
 mod binding;
 mod metadata;
@@ -22,7 +22,7 @@ use projection::partial_projection;
 
 /// Generates static parse metadata and typed binding for one command struct.
 pub(crate) fn command(command: &model::Command) -> TokenStream {
-    let facade = crate_name::facade_path();
+    let facade = support::facade_path();
     let ident = &command.binding.ident;
     let binding_generics = binding_generics(command, &facade);
     let (impl_generics, ty_generics, where_clause) = binding_generics.split_for_impl();

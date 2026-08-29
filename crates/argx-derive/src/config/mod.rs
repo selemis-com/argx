@@ -8,7 +8,7 @@ use input::Config;
 use proc_macro2::{Span, TokenStream};
 use syn::{DeriveInput, LitStr, Result};
 
-use crate::crate_name::{facade_name, facade_path};
+use crate::support::{facade_name, facade_path};
 
 /// Expands one typed Argx configuration declaration.
 pub(crate) fn config(input: &DeriveInput) -> Result<TokenStream> {

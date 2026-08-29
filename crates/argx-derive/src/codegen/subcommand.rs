@@ -10,11 +10,11 @@ use quote::{format_ident, quote};
 use syn::{Generics, parse_quote};
 
 use super::option_str;
-use crate::{crate_name, key, model};
+use crate::{key, model, support};
 
 /// Generates static child-command tables and typed enum binding.
 pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
-    let facade = crate_name::facade_path();
+    let facade = support::facade_path();
     let ident = &subcommand.binding.ident;
     let generics = subcommand_generics(subcommand, &facade);
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();

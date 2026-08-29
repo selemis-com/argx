@@ -4,7 +4,7 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{Data, DeriveInput};
 
-use crate::{crate_name, model};
+use crate::{model, support};
 
 /// Derives schema traversal for one structural command declaration.
 pub(crate) fn command_schema(input: &DeriveInput) -> syn::Result<TokenStream> {
@@ -32,7 +32,7 @@ fn command_group(input: &DeriveInput) -> syn::Result<TokenStream> {
         ));
     };
 
-    let facade = crate_name::facade_path();
+    let facade = support::facade_path();
     let ident = &command.binding.ident;
     let generics = &command.binding.generics;
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
@@ -65,7 +65,7 @@ fn subcommand_group(input: &DeriveInput) -> syn::Result<TokenStream> {
         }
     }
 
-    let facade = crate_name::facade_path();
+    let facade = support::facade_path();
     let ident = &subcommand.binding.ident;
     let generics = &subcommand.binding.generics;
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
