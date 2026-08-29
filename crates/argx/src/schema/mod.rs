@@ -139,9 +139,8 @@ pub(crate) fn display_schema(path: &[&Command<'_>], registry: &Registry) -> Erro
 /// Structural commands bundle child command schemas under `$defs.subcommands.$defs`.
 fn command_schema(path: &[&Command<'_>], registry: &Registry, location: &[String]) -> Value {
     let command = path.last().copied().expect("schema discovery always has a root command");
-    let mut schema =
-        serde_json::to_value(invocation::invocation_schema_for_path(path))
-            .expect("invocation schema must serialize");
+    let mut schema = serde_json::to_value(invocation::invocation_schema_for_path(path))
+        .expect("invocation schema must serialize");
     let object = schema.as_object_mut().expect("invocation schemas are objects");
 
     if !location.is_empty() {

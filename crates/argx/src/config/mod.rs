@@ -1,9 +1,12 @@
 //! Unified application configuration resolution.
 //!
-//! Configuration is resolved from an explicitly ordered stack of layers. Each
-//! layer contributes sparse values for the same derived configuration, and later
-//! layers override only values they supply. Applications consume only the final
-//! resolved value.
+//! Derive `argx::Config`, create the generated `Config::loader()`, and append only the layers the
+//! application wants. Layers are sparse and resolved in call order: later layers override only
+//! values they supply. Declared defaults participate only through [`Defaults`]; Argx does not
+//! discover configuration or dotenv files implicitly.
+//!
+//! See the crate-level unified configuration guide for field attributes, environment naming,
+//! interpolation, and argv behavior.
 
 mod dotenv;
 mod environment;
@@ -29,10 +32,11 @@ pub enum Error {
 pub mod __private {
     pub use serde;
 
-    pub use super::loader::Config;
-
-    pub use super::environment::{
-        Environment, EnvironmentContract, EnvironmentError, parse_environment_field,
+    pub use super::{
+        environment::{
+            Environment, EnvironmentContract, EnvironmentError, parse_environment_field,
+        },
+        loader::Config,
     };
 
     pub type TomlError = toml_edit::de::Error;
@@ -45,5 +49,4 @@ pub mod __private {
         name.push_str(field);
         name
     }
-
 }

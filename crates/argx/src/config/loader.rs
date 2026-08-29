@@ -76,10 +76,11 @@ pub trait Config: Sized {
     fn __finalize(resolved: Self::Overrides) -> Result<Self, SourceError>;
 }
 
-/// A configuration layer accepted by [`Loader::layer`].
+/// The common representation of a layer accepted by [`Loader::layer`].
 ///
-/// Built-in layer types convert into this enum. Layers are applied in
-/// declaration order, and later layers replace only values they supply.
+/// Applications normally pass [`Defaults`], [`Toml`], [`Dotenv`], [`Environment`], or [`Argv`]
+/// directly rather than constructing this enum. Layers are applied in declaration order, and
+/// later layers replace only values they supply.
 #[derive(Clone, Debug)]
 pub enum Layer {
     /// Declared field defaults.
@@ -94,11 +95,17 @@ pub enum Layer {
     Argv(Argv),
 }
 
-/// Declared field defaults.
+/// A layer containing defaults declared with `#[argx(default)]`.
+///
+/// Deriving `Config` does not apply defaults automatically. They contribute values only when this
+/// layer is added to the loader.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Defaults;
 
-/// One TOML file layer.
+/// One explicitly selected TOML file layer.
+///
+/// Unknown fields are rejected. Interpolation can observe environment values accumulated by
+/// earlier [`Dotenv`] and [`Environment`] layers.
 #[derive(Clone, Debug)]
 pub struct Toml {
     /// Filesystem path read by this layer.
@@ -113,7 +120,10 @@ impl Toml {
     }
 }
 
-/// One dotenv-format file layer.
+/// One explicitly selected dotenv-format file layer.
+///
+/// Argx does not search for dotenv files. Values loaded here also become available to later TOML
+/// interpolation.
 #[derive(Clone, Debug)]
 pub struct Dotenv {
     /// Filesystem path read by this layer.
@@ -128,11 +138,16 @@ impl Dotenv {
     }
 }
 
-/// The current process environment.
+/// A layer containing the current process environment.
+///
+/// Values contributed here also become available to later TOML interpolation.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Environment;
 
-/// One command-line layer.
+/// One complete command-line argument-vector layer.
+///
+/// Only configuration fields carrying CLI metadata participate in this layer; a flattened nested
+/// configuration composes its own exposed argv fields.
 #[derive(Clone, Debug)]
 pub struct Argv {
     /// Complete argument vector including the program name.
@@ -188,7 +203,10 @@ impl From<Argv> for Layer {
     }
 }
 
-/// Resolves a configuration from an ordered stack of layers.
+/// Resolves a derived configuration from an explicitly ordered stack of layers.
+///
+/// A loader starts empty. Add only the sources the application wants, in increasing precedence
+/// order, then call [`Self::resolve`].
 #[must_use = "a configuration loader has no effect until it is resolved"]
 pub struct Loader<C: Config> {
     /// Layers to apply in declaration order.

@@ -157,7 +157,6 @@ pub fn derive_subcommand(input: TokenStream) -> TokenStream {
     expand_subcommand(&input).unwrap_or_else(syn::Error::into_compile_error).into()
 }
 
-
 /// Builds the semantic model and emits one command declaration.
 fn expand_command(input: &DeriveInput, root: bool) -> syn::Result<proc_macro2::TokenStream> {
     let command = model::Command::from_input(input, root)?;

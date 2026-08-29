@@ -15,8 +15,9 @@
   <a href="#license"><picture><source media="(prefers-color-scheme: dark)" srcset="https://img.shields.io/crates/l/argx?colorA=21262d&colorB=21262d&style=flat"><img src="https://img.shields.io/crates/l/argx?colorA=f6f8fa&colorB=f6f8fa&style=flat" alt="MIT OR Apache-2.0"></picture></a>
 </p>
 
-Argx is a derive-first command-line argument parser for Rust. Rust structs and enums define the
-command tree while generated static metadata drives parsing, typed binding, help, and diagnostics.
+Argx is a derive-first command-line parser and unified configuration library for Rust. Rust data
+types define command and configuration surfaces while generated static metadata drives parsing,
+typed binding, help, diagnostics, and ordered configuration resolution.
 
 ```sh
 cargo add argx
@@ -28,40 +29,6 @@ Argx. Features are added selectively as they are needed.
 
 Full API documentation and behavioral details are available on
 [docs.rs/argx](https://docs.rs/argx/latest/argx/).
-
-## Unified configuration
-
-Argx resolves one typed configuration from an explicitly ordered stack of layers. Configuration
-files, environment values and command-line arguments are different ways to supply values for the
-same Rust fields; the application receives only the final resolved `Config`.
-
-```rust
-use argx::{Argv, Defaults, Environment, Toml};
-
-#[derive(argx::Config)]
-#[argx(prefix = "ACME")]
-struct Config {
-    #[argx(long, default = 4)]
-    workers: usize,
-
-    #[argx(long)]
-    endpoint: String,
-}
-
-let config = Config::loader()
-    .layer(Defaults)
-    .layer(Toml::new("acme.toml"))
-    .layer(Environment)
-    .layer(Argv::current())
-    .resolve()?;
-# Ok::<(), argx::ConfigError>(())
-```
-
-Layers are applied in declaration order. A later layer replaces only fields it actually supplies,
-so precedence is composition rather than a policy built into Argx. A field does not become required
-on the CLI merely because its resolved Rust type is non-optional; it is required only after every
-configured layer has been considered. `#[argx(flatten)]` composes nested configuration across TOML,
-environment names and CLI options.
 
 ## Quick start
 
@@ -126,6 +93,50 @@ groups, lexical globals, aliases, typed defaults, finite value enums,
 argument relationships, structured help, and version actions. See the
 [crate documentation](https://docs.rs/argx/latest/argx/)
 for the complete grammar, precedence rules, derive restrictions, and error behavior.
+
+## Unified configuration
+
+`#[derive(argx::Config)]` resolves one typed configuration from an explicitly ordered stack of
+layers. Defaults, TOML, dotenv files, process environment, and argv all supply sparse values for
+the same Rust fields.
+
+```rust
+use argx::{Argv, Defaults, Environment, Toml};
+
+#[derive(argx::Config)]
+#[argx(prefix = "ACME")]
+struct Config {
+    #[argx(long, default = 4)]
+    workers: usize,
+
+    #[argx(long)]
+    endpoint: String,
+}
+
+let config = Config::loader()
+    .layer(Defaults)
+    .layer(Toml::new("acme.toml"))
+    .layer(Environment)
+    .layer(Argv::current())
+    .resolve()?;
+# Ok::<(), argx::ConfigError>(())
+```
+
+Layers are applied in declaration order. Later layers replace only fields they actually supply, so
+precedence is defined by composition rather than a policy built into Argx. Declared defaults are
+not implicit: they participate only when `Defaults` is added to the loader. A non-optional Rust
+field becomes required only after every configured layer has been considered.
+
+A configuration-level prefix maps fields to environment variables. For example,
+`#[argx(prefix = "ACME")]` maps `workers` to `ACME_WORKERS`; a flattened `server.workers` field maps
+to `ACME_SERVER_WORKERS`. `#[argx(env = "EXACT_NAME")]` selects an exact variable instead. TOML
+interpolation observes environment values established by earlier `Dotenv` or `Environment` layers,
+so layer order also controls interpolation visibility.
+
+Configuration fields participate in argv only when they carry CLI metadata such as `long` or
+`short`; `#[argx(flatten)]` composes a nested `Config` across TOML, environment naming, defaults,
+and argv. See the [configuration example](crates/argx/examples/configuration.rs) and the
+[crate documentation](https://docs.rs/argx/latest/argx/) for the complete contract.
 
 ## Handler schemas
 
@@ -213,6 +224,7 @@ The examples are executable documentation. Detailed behavior is documented on
 | Example | Focus | Try it |
 | --- | --- | --- |
 | [`basic`](crates/argx/examples/basic.rs) | Smallest complete parser and built-in help | `cargo run --example basic -- --help` |
+| [`configuration`](crates/argx/examples/configuration.rs) | Ordered defaults, TOML, environment, and argv configuration | `cargo run --example configuration -- --workers 8` |
 | [`subcommands`](crates/argx/examples/subcommands.rs) | Typed command selection and reusable payloads | `cargo run --example subcommands -- add hello --force` |
 | [`flatten`](crates/argx/examples/flatten.rs) | Reusable argument groups and help grouping | `cargo run --example flatten -- --help` |
 | [`defaults`](crates/argx/examples/defaults.rs) | Typed Rust defaults without text round-tripping | `cargo run --example defaults --` |
@@ -221,6 +233,7 @@ The examples are executable documentation. Detailed behavior is documented on
 | [`value_enum`](crates/argx/examples/value_enum.rs) | Finite typed values shared by parsing and generated help | `cargo run --example value_enum -- --help` |
 | [`structured_help`](crates/argx/examples/structured_help.rs) | Documentation-derived descriptions, groups, and sections | `cargo run --example structured_help -- --help` |
 | [`version`](crates/argx/examples/version.rs) | Lexically scoped short and long version actions | `cargo run --example version -- run --version` |
+| [`completions`](crates/argx/examples/completions.rs) | Dynamic shell-completion adapters | `cargo run --example completions -- zsh` |
 
 ## Support
 

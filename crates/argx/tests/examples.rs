@@ -15,6 +15,7 @@ mod tests {
         "aliases",
         "basic",
         "completions",
+        "configuration",
         "constraints",
         "defaults",
         "flatten",
@@ -111,6 +112,10 @@ mod tests {
                 ("", "color: always\ncommand: remove\n")
             }
             "basic" => ("", ""),
+            "configuration" => {
+                command.args(["--workers", "8", "--endpoint", "https://example.invalid"]);
+                ("workers: 8\nendpoint: https://example.invalid\n", "")
+            }
             "constraints" => {
                 command.args([
                     "--endpoint",

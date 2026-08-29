@@ -1,13 +1,12 @@
-//! Derive-first command-line argument parsing from Rust data types.
+//! Derive-first command-line parsing and unified configuration from Rust data types.
 //!
-//! Argx derives a static command model from Rust structs and enums. The same model drives raw argv
-//! parsing, typed value binding, generated help and version output, diagnostics, dynamic shell
-//! and completion. Normal applications therefore define the command
-//! once rather than maintaining separate parser, help, and discovery schemas.
+//! Argx derives static command and configuration models from Rust data types. Command metadata
+//! drives raw argv parsing, typed value binding, generated help and version output, diagnostics,
+//! dynamic shell completion, and schema discovery. Configuration metadata resolves the same typed
+//! fields across explicitly ordered defaults, files, environment values, and argv.
 //!
-//! `#[derive(Config)]` extends the same input model across defaults, TOML, dotenv, process
-//! environment, and argv. These are treated as ordered sources for one resolved Rust value rather
-//! than as separate configuration systems.
+//! `#[derive(Config)]` treats defaults, TOML, dotenv, process environment, and argv as ordered
+//! sources for one resolved Rust value rather than separate configuration systems.
 //!
 //! # Installation
 //!
@@ -66,6 +65,70 @@
 //! [`Parser::parse`] is the ordinary process entry point. The `try_parse*` methods expose the same
 //! parser without process exit behavior and are useful for tests, embedding, and custom error
 //! handling.
+//!
+//! # Unified configuration
+//!
+//! `#[derive(Config)]` generates one typed configuration contract. A generated `loader()` starts
+//! empty; applications add [`Defaults`], [`Toml`], [`Dotenv`], [`Environment`], and [`Argv`] layers
+//! explicitly, in the precedence order they want:
+//!
+//! ```
+//! use argx::{Argv, Defaults};
+//!
+//! #[derive(Debug, argx::Config)]
+//! struct Config {
+//!     #[argx(long, default = 4)]
+//!     workers: usize,
+//!
+//!     #[argx(long)]
+//!     endpoint: String,
+//! }
+//!
+//! let config = Config::loader()
+//!     .layer(Defaults)
+//!     .layer(Argv::new(["acme", "--endpoint", "http://localhost"]))
+//!     .resolve()?;
+//!
+//! assert_eq!(config.workers, 4);
+//! assert_eq!(config.endpoint, "http://localhost");
+//! # Ok::<(), argx::ConfigError>(())
+//! ```
+//!
+//! Layers are sparse and are applied in call order. A later layer replaces only fields it supplies;
+//! an absent value never masks an earlier one. Declared field defaults are therefore not implicit:
+//! they take effect only when [`Defaults`] appears in the layer stack. Non-optional fields are
+//! required only after all configured layers have been resolved.
+//!
+//! ## Configuration attributes
+//!
+//! A `Config` declaration accepts `#[argx(prefix = "...")]`. The prefix maps ordinary fields to
+//! environment variables by uppercasing field components and joining them with `_`. For example,
+//! `#[argx(prefix = "ACME")]` maps `workers` to `ACME_WORKERS`. A flattened `server.workers`
+//! field maps to `ACME_SERVER_WORKERS`.
+//!
+//! Configuration fields accept:
+//!
+//! | Attribute | Meaning |
+//! | --- | --- |
+//! | `default` | use the field type's [`std::default::Default`] implementation in a [`Defaults`] layer |
+//! | `default = expression` | use a typed Rust expression in a [`Defaults`] layer |
+//! | `env = "NAME"` | map the field to one exact environment variable |
+//! | `flatten` | compose one direct nested `Config` across every layer |
+//! | `long`, `short` | expose the field through argv using the normal named-option spelling rules |
+//! | `alias`, `aliases`, `global`, `value_enum`, `allow_hyphen_values`, `allow_negative_numbers`, `help` | forward normal CLI metadata to the generated argv field |
+//!
+//! A field participates in [`Argv`] only when it has CLI metadata such as `long` or `short`.
+//! Configuration-only fields need no CLI annotation. A flattened field always composes its nested
+//! argv surface, but does not itself accept `default` or `env`.
+//!
+//! [`Toml`] reads exactly the path supplied to the layer and rejects unknown fields. Argx performs
+//! no configuration-file discovery. [`Dotenv`] likewise reads exactly the supplied dotenv path;
+//! [`Environment`] contributes the current process environment. TOML interpolation can observe
+//! environment values accumulated by earlier `Dotenv` and `Environment` layers, so moving an
+//! environment layer after a TOML layer also removes it from that TOML layer's interpolation scope.
+//!
+//! [`Argv::new`] expects a complete argument vector including the program name. [`Argv::current`]
+//! captures the current process argv in that form.
 //!
 //! # Entry points and embedding
 //!
@@ -188,14 +251,14 @@
 //! Long and alias spellings are written without leading dashes. A short spelling is one visible
 //! ASCII character other than `-` or `=`.
 //!
-//! `alias` / `aliases` and `global` require a named option. `env` and `default` are restricted to
-//! scalar value-taking named options, so they cannot be used on switches or collections.
+//! `alias` / `aliases` and `global` require a named option. `default` is restricted to scalar
+//! value-taking named options, so it cannot be used on switches or collections.
 //! `allow_hyphen_values` is named-option only; `allow_negative_numbers` may also be used on a
 //! positional value. Value policies do not apply to `bool` switches.
 //!
 //! `requires` and `conflicts` refer to Rust field names in the composed command context, including
 //! fields contributed by `flatten`. Structural `flatten` and `subcommand` fields cannot also carry
-//! ordinary flag, value-source, relationship, or `help` metadata. Their types must be held directly
+//! ordinary flag, relationship, or `help` metadata. Their types must be held directly
 //! rather than through `Option` or collection wrappers.
 //!
 //! # Arguments and cardinality
@@ -425,8 +488,8 @@
 //!
 //! # Cargo features
 //!
-//! The default `derive` feature exports the `Parser`, `Args`, `Subcommand`, and `ValueEnum` derives
-//! plus the unified `argx` attribute macro.
+//! The default `derive` feature exports the `Parser`, `Args`, `Subcommand`, `ValueEnum`, and
+//! `Config` derives plus the unified `argx` attribute macro.
 
 #![doc(
     html_logo_url = "https://raw.githubusercontent.com/selemis-com/argx/master/.github/assets/logo.jpg",
@@ -692,10 +755,7 @@ pub trait Parser: Sized + __private::CommandArgs {
     /// ```
     #[must_use]
     fn render_help() -> String {
-        help::render_with_schema(
-            &[Self::COMMAND],
-            <Self as __private::CommandArgs>::SCHEMA_ENABLED,
-        )
+        help::render_with_schema(&[Self::COMMAND], <Self as __private::CommandArgs>::SCHEMA_ENABLED)
     }
 }
 
