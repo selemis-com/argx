@@ -12,10 +12,14 @@ mod dotenv;
 mod environment;
 mod error;
 mod loader;
+#[cfg(feature = "toml")]
 mod toml;
 
 pub use error::{Error as SourceError, Source};
-pub use loader::{Argv, Defaults, Dotenv, Environment, Layer, Loader, Toml};
+pub use loader::{Argv, Defaults, Dotenv, Environment, Layer, Loader};
+#[cfg(feature = "toml")]
+#[cfg_attr(docsrs, doc(cfg(feature = "toml")))]
+pub use loader::Toml;
 
 /// Failure while resolving a configuration from its declared layers.
 #[derive(Debug, thiserror::Error)]
@@ -39,6 +43,7 @@ pub mod __private {
         loader::Config,
     };
 
+    #[cfg(feature = "toml")]
     pub type TomlError = toml_edit::de::Error;
 
     #[must_use]

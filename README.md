@@ -97,8 +97,10 @@ for the complete grammar, precedence rules, derive restrictions, and error behav
 ## Unified configuration
 
 `#[derive(argx::Config)]` resolves one typed configuration from an explicitly ordered stack of
-layers. Defaults, TOML, dotenv files, process environment, and argv all supply sparse values for
-the same Rust fields.
+layers. Defaults, dotenv files, process environment, and argv all supply sparse values for the
+same Rust fields. Enable the optional `toml` feature to add TOML file layers.
+
+Enable TOML support with `cargo add argx --features toml`, then compose it like any other layer:
 
 ```rust
 use argx::{Argv, Defaults, Environment, Toml};

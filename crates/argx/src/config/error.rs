@@ -1,17 +1,21 @@
 //! Public loading diagnostics and their internal context.
 
 use std::{
-    fmt, io,
+    fmt,
     path::{Path, PathBuf},
 };
 
+#[cfg(feature = "toml")]
+use std::io;
+#[cfg(feature = "toml")]
 use toml_edit::de as toml;
 
 use crate::config::{
     dotenv::DotenvError,
     environment::{EnvironmentContractError, EnvironmentError},
-    toml::TomlInterpolationError,
 };
+#[cfg(feature = "toml")]
+use crate::config::toml::TomlInterpolationError;
 
 /// One-based source location used by configuration diagnostics.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -51,6 +55,7 @@ impl Location {
 #[non_exhaustive]
 pub enum Source {
     /// A TOML file layer.
+    #[cfg(feature = "toml")]
     Toml,
     /// A dotenv-format file layer.
     Dotenv,
@@ -61,6 +66,7 @@ pub enum Source {
 impl fmt::Display for Source {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            #[cfg(feature = "toml")]
             Self::Toml => formatter.write_str("TOML"),
             Self::Dotenv => formatter.write_str("environment file"),
             Self::Environment => formatter.write_str("process environment"),
@@ -101,11 +107,13 @@ impl Error {
     }
 
     /// Creates a TOML read error.
+    #[cfg(feature = "toml")]
     pub(crate) fn read_toml(scope: Source, path: &Path, source: io::Error) -> Self {
         Self { kind: Box::new(ErrorKind::ReadToml { scope, path: path.to_path_buf(), source }) }
     }
 
     /// Creates a TOML interpolation error.
+    #[cfg(feature = "toml")]
     pub(crate) fn interpolate_toml(
         scope: Source,
         path: &Path,
@@ -117,6 +125,7 @@ impl Error {
     }
 
     /// Creates a TOML decoding error.
+    #[cfg(feature = "toml")]
     pub(crate) fn parse_toml(
         scope: Source,
         path: &Path,
@@ -163,6 +172,7 @@ impl Error {
     pub fn configuration_source(&self) -> Option<Source> {
         match self.kind.as_ref() {
             ErrorKind::MissingValue { .. } | ErrorKind::EnvironmentContract { .. } => None,
+            #[cfg(feature = "toml")]
             ErrorKind::ReadToml { scope, .. }
             | ErrorKind::InterpolateToml { scope, .. }
             | ErrorKind::ParseToml { scope, .. }
@@ -180,11 +190,12 @@ impl Error {
         match self.kind.as_ref() {
             ErrorKind::MissingValue { field } => Some(field),
             ErrorKind::Environment { source, .. } => Some(source.field()),
+            #[cfg(feature = "toml")]
             ErrorKind::ReadToml { .. }
             | ErrorKind::InterpolateToml { .. }
             | ErrorKind::ParseToml { .. }
-            | ErrorKind::ParseInterpolatedToml { .. }
-            | ErrorKind::Dotenv { .. }
+            | ErrorKind::ParseInterpolatedToml { .. } => None,
+            ErrorKind::Dotenv { .. }
             | ErrorKind::EnvironmentContract { .. }
             | ErrorKind::UnknownEnvironment { .. } => None,
         }
@@ -194,13 +205,15 @@ impl Error {
     #[must_use]
     pub fn environment_variable(&self) -> Option<&str> {
         match self.kind.as_ref() {
+            #[cfg(feature = "toml")]
             ErrorKind::InterpolateToml { source, .. } => source.variable(),
             ErrorKind::Dotenv { source } => source.variable(),
             ErrorKind::Environment { source, .. } => Some(source.variable()),
             ErrorKind::EnvironmentContract { source } => Some(source.variable()),
             ErrorKind::UnknownEnvironment { variable, .. } => Some(variable),
-            ErrorKind::MissingValue { .. }
-            | ErrorKind::ReadToml { .. }
+            ErrorKind::MissingValue { .. } => None,
+            #[cfg(feature = "toml")]
+            ErrorKind::ReadToml { .. }
             | ErrorKind::ParseToml { .. }
             | ErrorKind::ParseInterpolatedToml { .. } => None,
         }
@@ -210,6 +223,7 @@ impl Error {
     #[must_use]
     pub fn path(&self) -> Option<&Path> {
         match self.kind.as_ref() {
+            #[cfg(feature = "toml")]
             ErrorKind::ReadToml { path, .. }
             | ErrorKind::InterpolateToml { path, .. }
             | ErrorKind::ParseToml { path, .. }
@@ -229,15 +243,17 @@ impl Error {
     #[must_use]
     pub fn location(&self) -> Option<(usize, usize)> {
         let location = match self.kind.as_ref() {
+            #[cfg(feature = "toml")]
             ErrorKind::InterpolateToml { source, .. } => Some(source.location()),
+            #[cfg(feature = "toml")]
             ErrorKind::ParseToml { location, .. } => *location,
             ErrorKind::Dotenv { source } => source.location(),
             ErrorKind::MissingValue { .. }
-            | ErrorKind::ReadToml { .. }
-            | ErrorKind::ParseInterpolatedToml { .. }
             | ErrorKind::Environment { .. }
             | ErrorKind::EnvironmentContract { .. }
             | ErrorKind::UnknownEnvironment { .. } => None,
+            #[cfg(feature = "toml")]
+            ErrorKind::ReadToml { .. } | ErrorKind::ParseInterpolatedToml { .. } => None,
         }?;
         Some((location.line, location.column))
     }
@@ -254,6 +270,7 @@ enum ErrorKind {
     },
     /// A configured TOML path could not be read.
     #[error("failed to read {scope} configuration `{}`: {source}", path.display())]
+    #[cfg(feature = "toml")]
     ReadToml {
         /// Scope associated with the path.
         scope: Source,
@@ -264,6 +281,7 @@ enum ErrorKind {
     },
     /// A configured TOML file could not resolve one environment placeholder.
     #[error("failed to interpolate {scope} configuration `{}`: {source}", path.display())]
+    #[cfg(feature = "toml")]
     InterpolateToml {
         /// Scope associated with the path.
         scope: Source,
@@ -274,6 +292,7 @@ enum ErrorKind {
     },
     /// A configured TOML file could not be decoded into the typed configuration layer.
     #[error("failed to parse {scope} configuration `{}`: {source}", path.display())]
+    #[cfg(feature = "toml")]
     ParseToml {
         /// Scope associated with the path.
         scope: Source,
@@ -289,6 +308,7 @@ enum ErrorKind {
         "failed to parse {scope} configuration `{}` after environment interpolation",
         path.display(),
     )]
+    #[cfg(feature = "toml")]
     ParseInterpolatedToml {
         /// Scope associated with the path.
         scope: Source,

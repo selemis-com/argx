@@ -2,20 +2,24 @@
 
 use std::{
     ffi::OsString,
-    fmt, fs,
+    fmt,
     marker::PhantomData,
-    path::{Path, PathBuf},
+    path::PathBuf,
 };
 
+#[cfg(feature = "toml")]
+use std::{fs, path::Path};
+#[cfg(feature = "toml")]
 use toml_edit::de as toml;
 
 use crate::config::{
     __private,
     dotenv::load_dotenv,
     environment::{Environment as EnvironmentValues, EnvironmentContract, EnvironmentError},
-    error::{EnvironmentScope, Error as SourceError, Source},
-    toml::expand_toml,
+    error::{EnvironmentScope, Error as SourceError},
 };
+#[cfg(feature = "toml")]
+use crate::config::{error::Source, toml::expand_toml};
 
 /// A typed configuration contract.
 pub trait Config: Sized {
@@ -55,6 +59,7 @@ pub trait Config: Sized {
 
     /// Decodes one TOML scope into typed values for this configuration.
     #[doc(hidden)]
+    #[cfg(feature = "toml")]
     fn __toml(input: &str) -> Result<Self::Overrides, __private::TomlError> {
         let input = toml::from_str::<Self::__Toml>(input)?;
         Ok(Self::__toml_overrides(input))
@@ -78,14 +83,16 @@ pub trait Config: Sized {
 
 /// The common representation of a layer accepted by [`Loader::layer`].
 ///
-/// Applications normally pass [`Defaults`], [`Toml`], [`Dotenv`], [`Environment`], or [`Argv`]
-/// directly rather than constructing this enum. Layers are applied in declaration order, and
+/// Applications normally pass [`Defaults`], [`Dotenv`], [`Environment`], or [`Argv`] directly
+/// rather than constructing this enum. With the `toml` feature enabled, `Toml` is available as
+/// an additional file layer. Layers are applied in declaration order, and
 /// later layers replace only values they supply.
 #[derive(Clone, Debug)]
 pub enum Layer {
     /// Declared field defaults.
     Defaults,
     /// One TOML file.
+    #[cfg(feature = "toml")]
     Toml(Toml),
     /// One dotenv-format file.
     Dotenv(Dotenv),
@@ -102,6 +109,8 @@ pub enum Layer {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Defaults;
 
+#[cfg(feature = "toml")]
+#[cfg_attr(docsrs, doc(cfg(feature = "toml")))]
 /// One explicitly selected TOML file layer.
 ///
 /// Unknown fields are rejected. Interpolation can observe environment values accumulated by
@@ -112,6 +121,7 @@ pub struct Toml {
     path: PathBuf,
 }
 
+#[cfg(feature = "toml")]
 impl Toml {
     /// Creates a TOML layer from one filesystem path.
     #[must_use]
@@ -179,6 +189,7 @@ impl From<Defaults> for Layer {
     }
 }
 
+#[cfg(feature = "toml")]
 impl From<Toml> for Layer {
     fn from(layer: Toml) -> Self {
         Self::Toml(layer)
@@ -254,6 +265,7 @@ impl<C: Config> Loader<C> {
                 Layer::Defaults => {
                     C::__merge(&mut state, C::__defaults());
                 }
+                #[cfg(feature = "toml")]
                 Layer::Toml(layer) => {
                     merge_toml::<C>(&mut state, &layer.path, &environment)?;
                 }
@@ -289,6 +301,7 @@ impl<C: Config> Loader<C> {
     }
 }
 
+#[cfg(feature = "toml")]
 /// Reads, interpolates, decodes, and merges one TOML layer.
 fn merge_toml<C: Config>(
     resolved: &mut C::Overrides,

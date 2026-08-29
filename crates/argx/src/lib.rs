@@ -17,7 +17,8 @@
 //! ```
 //!
 //! The default `derive` feature re-exports the procedural macros used throughout this guide.
-//! Disable default features only when a crate needs the runtime API without derive macros.
+//! Enable the optional `toml` feature to add the `Toml` configuration layer. Disable default
+//! features only when a crate needs the runtime API without derive macros.
 //!
 //! # Quick start
 //!
@@ -69,8 +70,8 @@
 //! # Unified configuration
 //!
 //! `#[derive(Config)]` generates one typed configuration contract. A generated `loader()` starts
-//! empty; applications add [`Defaults`], [`Toml`], [`Dotenv`], [`Environment`], and [`Argv`] layers
-//! explicitly, in the precedence order they want:
+//! empty; applications add [`Defaults`], [`Dotenv`], [`Environment`], and [`Argv`] layers explicitly,
+//! in the precedence order they want. The optional `toml` feature adds `Toml`:
 //!
 //! ```
 //! use argx::{Argv, Defaults};
@@ -121,8 +122,8 @@
 //! Configuration-only fields need no CLI annotation. A flattened field always composes its nested
 //! argv surface, but does not itself accept `default` or `env`.
 //!
-//! [`Toml`] reads exactly the path supplied to the layer and rejects unknown fields. Argx performs
-//! no configuration-file discovery. [`Dotenv`] likewise reads exactly the supplied dotenv path;
+//! With the `toml` feature enabled, `Toml` reads exactly the path supplied to the layer and
+//! rejects unknown fields. Argx performs no configuration-file discovery. [`Dotenv`] likewise reads exactly the supplied dotenv path;
 //! [`Environment`] contributes the current process environment. TOML interpolation can observe
 //! environment values accumulated by earlier `Dotenv` and `Environment` layers, so moving an
 //! environment layer after a TOML layer also removes it from that TOML layer's interpolation scope.
@@ -489,7 +490,8 @@
 //! # Cargo features
 //!
 //! The default `derive` feature exports the `Parser`, `Args`, `Subcommand`, `ValueEnum`, and
-//! `Config` derives plus the unified `argx` attribute macro.
+//! `Config` derives plus the unified `argx` attribute macro. The optional `toml` feature enables
+//! the `Toml` configuration layer and its `toml_edit` dependency.
 
 #![doc(
     html_logo_url = "https://raw.githubusercontent.com/selemis-com/argx/master/.github/assets/logo.jpg",
@@ -533,8 +535,11 @@ pub use argx_derive::Config;
 #[cfg(feature = "derive")]
 pub use argx_derive::{Args, Parser, Subcommand, ValueEnum, argx};
 pub use config::{
-    Argv, Defaults, Dotenv, Environment, Error as ConfigError, Layer, Loader as ConfigLoader, Toml,
+    Argv, Defaults, Dotenv, Environment, Error as ConfigError, Layer, Loader as ConfigLoader,
 };
+#[cfg(feature = "toml")]
+#[cfg_attr(docsrs, doc(cfg(feature = "toml")))]
+pub use config::Toml;
 
 /// Marks a reusable argument group derived with `#[derive(Args)]`.
 ///

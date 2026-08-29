@@ -2,7 +2,9 @@
 
 use std::{fs, path::PathBuf};
 
-use argx::{Argv, Defaults, Dotenv, Toml};
+use argx::{Argv, Defaults, Dotenv};
+#[cfg(feature = "toml")]
+use argx::Toml;
 
 #[derive(Debug, argx::Config)]
 struct AppConfig {
@@ -34,6 +36,7 @@ fn temp_file(name: &str, extension: &str, contents: &str) -> PathBuf {
 mod tests {
     use super::*;
 
+    #[cfg(feature = "toml")]
     #[test]
     fn layer_order_defines_precedence() {
         let path = temp_file("precedence", "toml", "workers = 8\nendpoint = \"from-toml\"\n");
@@ -60,6 +63,7 @@ mod tests {
         let _ = fs::remove_file(path);
     }
 
+    #[cfg(feature = "toml")]
     #[test]
     fn absent_values_do_not_mask_earlier_layers() {
         let path = temp_file("sparse", "toml", "workers = 8\nendpoint = \"from-toml\"\n");
@@ -130,6 +134,7 @@ mod tests {
         assert_eq!(error.field(), Some("server.workers"));
     }
 
+    #[cfg(feature = "toml")]
     #[test]
     fn flatten_composes_nested_layers() {
         let path = temp_file("nested", "toml", "[server]\nworkers = 8\n");
@@ -149,6 +154,7 @@ mod tests {
         endpoint: String,
     }
 
+    #[cfg(feature = "toml")]
     #[test]
     fn interpolation_observes_only_earlier_environment_layers() {
         let env = temp_file("interpolation", "env", "ARGX_LAYER_HOST=example.invalid\n");
