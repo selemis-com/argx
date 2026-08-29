@@ -3,7 +3,7 @@
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
-use crate::{key, model};
+use crate::args::{key, model};
 
 /// Generated static table expressions for one command declaration.
 #[derive(Debug)]

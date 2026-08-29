@@ -9,7 +9,7 @@ use super::{
     VariantBinding,
     shape::{peel_option, peel_vec},
 };
-use crate::{attrs, support};
+use crate::{args::attrs, support};
 
 impl Subcommand {
     /// Parses and validates a subcommand enum before code generation.

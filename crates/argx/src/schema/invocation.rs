@@ -8,9 +8,8 @@
 
 use serde_json::{Map, Value};
 
-use crate::command::{
-    model::{Command, ConstraintKind, Flag, Key},
-    scope::{Named, long as resolve_long, short as resolve_short},
+use crate::cli::command::{
+    Command, ConstraintKind, Flag, Key, Named, long as resolve_long, short as resolve_short,
 };
 
 /// JSON Schema dialect used by Argx invocation schemas.
@@ -223,7 +222,7 @@ fn conflict_schema(source: &str, target: &str) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::command::model::{Arg, Constraint};
+    use crate::cli::command::{Arg, Constraint};
 
     #[test]
     fn projects_normalized_argv_semantics_into_json_schema() {

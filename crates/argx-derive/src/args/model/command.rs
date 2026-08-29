@@ -9,7 +9,7 @@ use super::{
     FieldSemantics, GenericName, GenericUse, HelpSection, Shape, ValueBinding, ValueConversion,
     shape::{peel_option, peel_vec, rendered_path, validate_value_shape},
 };
-use crate::{attrs, support};
+use crate::{args::attrs, support};
 
 impl Command {
     /// Parses and validates one command into the canonical derive-time model.

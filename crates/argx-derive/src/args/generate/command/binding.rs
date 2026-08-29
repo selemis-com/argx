@@ -4,7 +4,7 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{Generics, parse_quote};
 
-use crate::model;
+use crate::args::model;
 
 /// Adds the conversion bounds required by generated typed binding.
 pub(super) fn binding_generics(command: &model::Command, facade: &TokenStream) -> Generics {

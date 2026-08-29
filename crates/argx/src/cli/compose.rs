@@ -6,7 +6,7 @@
 //! positional layout, built-in action collisions, and relationship target resolution. Invalid
 //! composition becomes a compile-time const-evaluation failure rather than a runtime parser state.
 
-use super::model::{Action, Arg, Constraint, ConstraintKind, Flag, HelpGroup, Key};
+use super::command::{Action, Arg, Constraint, ConstraintKind, Flag, HelpGroup, Key};
 
 /// Returns the total number of entries across several static table slices.
 pub const fn table_len<T>(groups: &[&[T]]) -> usize {

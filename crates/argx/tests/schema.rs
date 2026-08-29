@@ -1,4 +1,4 @@
-//! Machine-readable schema discovery integration tests.
+//! Machine-readable schema and handler-association integration tests.
 
 #[cfg(test)]
 #[cfg(feature = "derive")]
@@ -223,5 +223,47 @@ mod tests {
         assert_eq!(document["title"], "echo");
         assert!(document["$defs"].get("result").is_some());
         assert!(document["$defs"].get("error").is_some());
+    }
+
+    #[derive(argx::Args)]
+    struct HandlerArgs {
+        value: String,
+    }
+
+    #[argx(schema)]
+    struct HandlerOutput {
+        value: String,
+    }
+
+    #[argx(schema)]
+    #[derive(Debug)]
+    enum HandlerError {
+        Failed,
+    }
+
+    #[argx(handler = HandlerArgs)]
+    fn handler(args: HandlerArgs) -> Result<HandlerOutput, HandlerError> {
+        if args.value.is_empty() {
+            Err(HandlerError::Failed)
+        } else {
+            Ok(HandlerOutput { value: args.value })
+        }
+    }
+
+    #[test]
+    fn handlers_associate_invocation_result_and_error_schemas() {
+        let mut generator = schemars::SchemaGenerator::default();
+        let schemas =
+            <HandlerArgs as argx::HandlerSchemaSource>::handler_schemas(&mut generator);
+        let result = serde_json::to_value(&schemas.result).expect("result schema should serialize");
+        let error = serde_json::to_value(&schemas.error).expect("error schema should serialize");
+
+        assert_eq!(result["$ref"], "#/$defs/HandlerOutput");
+        assert_eq!(error["$ref"], "#/$defs/HandlerError");
+        assert!(generator.definitions().contains_key("HandlerOutput"));
+        assert!(generator.definitions().contains_key("HandlerError"));
+        let result = handler(HandlerArgs { value: String::from("ok") })
+            .expect("handler should succeed");
+        assert_eq!(result.value, "ok");
     }
 }

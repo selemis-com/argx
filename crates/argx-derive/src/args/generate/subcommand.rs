@@ -10,7 +10,7 @@ use quote::{format_ident, quote};
 use syn::{Generics, parse_quote};
 
 use super::option_str;
-use crate::{key, model, support};
+use crate::{args::{key, model}, support};
 
 /// Generates static child-command tables and typed enum binding.
 pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {

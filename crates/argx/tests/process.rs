@@ -2,7 +2,7 @@
 //!
 //! This layer owns observable process policy: exit status and the exact bytes written to stdout and
 //! stderr by ordinary `Parser::parse` entry points. Parser semantics should normally be asserted in
-//! `argv.rs` or `typed.rs`; these tests stay intentionally small so subprocess snapshots do not
+//! `argv.rs` or `parser.rs`; these tests stay intentionally small so subprocess snapshots do not
 //! become a second semantic test suite.
 
 #[path = "support/command.rs"]

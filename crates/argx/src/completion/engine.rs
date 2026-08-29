@@ -11,16 +11,16 @@ use super::{
     PROTOCOL_COMMAND, PROTOCOL_ENV, PROTOCOL_LINE_ENV, PROTOCOL_VERSION, PROTOCOL_WORDS_ENV,
 };
 use crate::{
-    argv::{
+    cli::argv::{
         ArgvParser, Error as ArgvError, Event, accepts_detached_flag_value,
         routes_negative_number_to_arg,
     },
-    command::{
-        model::{Action, Arg, Command, ConstraintKind, Flag, Key, SCHEMA_ACTION},
-        scope::{Named, long as resolve_long, short as resolve_short},
+    cli::command::{
+        Action, Arg, Command, ConstraintKind, Flag, Key, Named, SCHEMA_ACTION,
+        long as resolve_long, short as resolve_short,
     },
     error::display_bytes,
-    generated::traits::CommandArgs,
+    cli::protocol::CommandArgs,
 };
 
 /// Handles one private completion request for `T` from the current process.
@@ -982,7 +982,7 @@ mod tests {
 
     #[test]
     fn positional_finite_values_follow_raw_flag_and_alias_routing() {
-        use crate::command::model::Command as RuntimeCommand;
+        use crate::cli::command::Command as RuntimeCommand;
 
         static ARG: Arg<'static> = Arg {
             name: "mode",

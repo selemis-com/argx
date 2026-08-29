@@ -9,9 +9,9 @@
 use crate::{
     __private::{ActionKind, CommandArgs},
     Error,
-    argv::{Error as RawError, Event},
+    cli::argv::{Error as RawError, Event},
     error::display_bytes,
-    help,
+    cli::help,
 };
 
 /// Parses already-separated argument references into one derived command value.
@@ -43,8 +43,8 @@ fn parse_refs_inner<T: CommandArgs>(
     registry: Option<&crate::__private::SchemaRegistry>,
 ) -> Result<T, Error> {
     let mut partial = T::start();
-    let mut parser: crate::argv::ArgvParser<'static, '_, '_> =
-        crate::argv::ArgvParser::new_with_schema(T::COMMAND, argv, registry.is_some());
+    let mut parser: crate::cli::argv::ArgvParser<'static, '_, '_> =
+        crate::cli::argv::ArgvParser::new_with_schema(T::COMMAND, argv, registry.is_some());
 
     while let Some(event) = parser.next_event() {
         let event = match event {

@@ -13,8 +13,8 @@ mod invocation;
 
 use crate::{
     Error,
-    command::model::{Command, Key},
-    generated::traits::{HandlerSchemaSource, HandlerSchemas},
+    cli::command::{Command, Key},
+    cli::protocol::{HandlerSchemaSource, HandlerSchemas},
 };
 
 /// One executable command association collected from generated schema topology.

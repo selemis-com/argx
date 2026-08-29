@@ -10,7 +10,7 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
 use super::option_str;
-use crate::{key, model, support};
+use crate::{args::{key, model}, support};
 
 mod binding;
 mod metadata;

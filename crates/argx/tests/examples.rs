@@ -1,7 +1,7 @@
 //! Public-example inventory and behavior tests.
 //!
 //! This layer protects the repository's documented example surface. It deliberately does not
-//! duplicate the exact help and diagnostic snapshots in `cli.rs`; instead it proves that every
+//! duplicate the exact help and diagnostic snapshots in `process.rs`; instead it proves that every
 //! checked-in public example is part of the expected inventory, actually routes `--help` through
 //! Argx, and successfully demonstrates the representative invocation advertised by its docs.
 
