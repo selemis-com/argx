@@ -161,26 +161,6 @@ Configuration fields participate in argv only when they carry CLI metadata such 
 `short`. `#[argx(flatten)]` composes a nested `Config` across every layer. See the
 [configuration example](crates/argx/examples/configuration.rs) for a runnable version.
 
-## Shell completions
-
-Argx generates dynamic completion adapters for Bash, Fish, Nushell, and Zsh from the same command
-model used for parsing. Applications commonly expose the generated adapter through a small
-`completions <shell>` command:
-
-```rust
-use argx::{Parser as _, completion::Shell};
-
-# #[derive(argx::Parser)]
-# #[argx(name = "acme")]
-# struct Cli;
-let script = Cli::render_completion(Shell::Zsh)?;
-# Ok::<(), argx::completion::ScriptError>(())
-```
-
-The adapters query the current executable dynamically, so command selection, aliases, global
-options, conflicts, finite values, and `--` follow the parser's normal semantics. See the
-[completions example](crates/argx/examples/completions.rs) for a complete command.
-
 ## Schema discovery
 
 A parser marked `#[argx(schema)]` exposes its command interface as Draft 2020-12 JSON Schema for
@@ -219,6 +199,26 @@ fn get(command: GetCommand) -> Result<GetOutput, GetError> {
 See the [schema example](crates/argx/examples/schema.rs) and
 [crate documentation](https://docs.rs/argx/latest/argx/) for structural schema composition and the
 exact discovery contract.
+
+## Shell completions
+
+Argx generates dynamic completion adapters for Bash, Fish, Nushell, and Zsh from the same command
+model used for parsing. Applications commonly expose the generated adapter through a small
+`completions <shell>` command:
+
+```rust
+use argx::{Parser as _, completion::Shell};
+
+# #[derive(argx::Parser)]
+# #[argx(name = "acme")]
+# struct Cli;
+let script = Cli::render_completion(Shell::Zsh)?;
+# Ok::<(), argx::completion::ScriptError>(())
+```
+
+The adapters query the current executable dynamically, so command selection, aliases, global
+options, conflicts, finite values, and `--` follow the parser's normal semantics. See the
+[completions example](crates/argx/examples/completions.rs) for a complete command.
 
 ## Examples
 
