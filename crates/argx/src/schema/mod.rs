@@ -13,8 +13,10 @@ mod invocation;
 
 use crate::{
     Error,
-    cli::command::{Command, Key},
-    cli::protocol::{HandlerSchemaSource, HandlerSchemas},
+    cli::{
+        command::{Command, Key},
+        protocol::{HandlerSchemaSource, HandlerSchemas},
+    },
 };
 
 /// One executable command association collected from generated schema topology.

@@ -751,7 +751,10 @@ pub trait Parser: Sized + __private::CommandArgs {
     /// ```
     #[must_use]
     fn render_help() -> String {
-        cli::help::render_with_schema(&[Self::COMMAND], <Self as __private::CommandArgs>::SCHEMA_ENABLED)
+        cli::help::render_with_schema(
+            &[Self::COMMAND],
+            <Self as __private::CommandArgs>::SCHEMA_ENABLED,
+        )
     }
 }
 

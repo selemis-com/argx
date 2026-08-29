@@ -1,8 +1,8 @@
 //! Binding contracts implemented by generated parser, argument, and subcommand declarations.
 
-use crate::{
-    cli::argv::Event,
-    cli::command::{ArgumentState, Command, Key},
+use crate::cli::{
+    argv::Event,
+    command::{ArgumentState, Command, Key},
 };
 
 /// JSON Schemas produced from one handler's concrete `Result<Success, Error>` type.

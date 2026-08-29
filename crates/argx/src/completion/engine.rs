@@ -11,16 +11,18 @@ use super::{
     PROTOCOL_COMMAND, PROTOCOL_ENV, PROTOCOL_LINE_ENV, PROTOCOL_VERSION, PROTOCOL_WORDS_ENV,
 };
 use crate::{
-    cli::argv::{
-        ArgvParser, Error as ArgvError, Event, accepts_detached_flag_value,
-        routes_negative_number_to_arg,
-    },
-    cli::command::{
-        Action, Arg, Command, ConstraintKind, Flag, Key, Named, SCHEMA_ACTION,
-        long as resolve_long, short as resolve_short,
+    cli::{
+        argv::{
+            ArgvParser, Error as ArgvError, Event, accepts_detached_flag_value,
+            routes_negative_number_to_arg,
+        },
+        command::{
+            Action, Arg, Command, ConstraintKind, Flag, Key, Named, SCHEMA_ACTION,
+            long as resolve_long, short as resolve_short,
+        },
+        protocol::CommandArgs,
     },
     error::display_bytes,
-    cli::protocol::CommandArgs,
 };
 
 /// Handles one private completion request for `T` from the current process.

@@ -253,8 +253,7 @@ mod tests {
     #[test]
     fn handlers_associate_invocation_result_and_error_schemas() {
         let mut generator = schemars::SchemaGenerator::default();
-        let schemas =
-            <HandlerArgs as argx::HandlerSchemaSource>::handler_schemas(&mut generator);
+        let schemas = <HandlerArgs as argx::HandlerSchemaSource>::handler_schemas(&mut generator);
         let result = serde_json::to_value(&schemas.result).expect("result schema should serialize");
         let error = serde_json::to_value(&schemas.error).expect("error schema should serialize");
 
@@ -262,8 +261,8 @@ mod tests {
         assert_eq!(error["$ref"], "#/$defs/HandlerError");
         assert!(generator.definitions().contains_key("HandlerOutput"));
         assert!(generator.definitions().contains_key("HandlerError"));
-        let result = handler(HandlerArgs { value: String::from("ok") })
-            .expect("handler should succeed");
+        let result =
+            handler(HandlerArgs { value: String::from("ok") }).expect("handler should succeed");
         assert_eq!(result.value, "ok");
     }
 }

@@ -2,8 +2,8 @@
 //!
 //! This layer starts from derive-generated declarations and owns the semantic transition from raw
 //! parser events to Rust values: cardinality, conversion, flattening, typed defaults, constraints,
-//! subcommand binding, globals, aliases, and error precedence. Exact executable stdout/stderr policy
-//! belongs to `process.rs`; compiler rejection of invalid declarations belongs to `ui.rs`.
+//! subcommand binding, globals, aliases, and error precedence. Exact executable stdout/stderr
+//! policy belongs to `process.rs`; compiler rejection of invalid declarations belongs to `ui.rs`.
 
 #[cfg(test)]
 #[cfg(feature = "derive")]

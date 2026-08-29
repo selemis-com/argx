@@ -9,9 +9,11 @@
 use crate::{
     __private::{ActionKind, CommandArgs},
     Error,
-    cli::argv::{Error as RawError, Event},
+    cli::{
+        argv::{Error as RawError, Event},
+        help,
+    },
     error::display_bytes,
-    cli::help,
 };
 
 /// Parses already-separated argument references into one derived command value.

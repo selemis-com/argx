@@ -1,10 +1,10 @@
 //! Derive-generated static-model projection tests.
 //!
-//! These tests inspect the hidden metadata ABI shared by `argx-derive` and the runtime. They protect
-//! composition order, semantic identities, normalized constraints, help metadata, and subcommand
-//! tables before parsing begins. Assertions about key layout are implementation invariants of this
-//! ABI rather than user-facing CLI semantics; end-to-end binding behavior is covered separately in
-//! `parser.rs`.
+//! These tests inspect the hidden metadata ABI shared by `argx-derive` and the runtime. They
+//! protect composition order, semantic identities, normalized constraints, help metadata, and
+//! subcommand tables before parsing begins. Assertions about key layout are implementation
+//! invariants of this ABI rather than user-facing CLI semantics; end-to-end binding behavior is
+//! covered separately in `parser.rs`.
 
 #[cfg(test)]
 #[cfg(feature = "derive")]
