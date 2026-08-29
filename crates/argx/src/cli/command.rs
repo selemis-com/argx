@@ -294,21 +294,6 @@ pub const fn key_base(module: &str, declaration: u32) -> Key {
     (state as Key) << 32
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn key_base_is_stable() {
-        assert_eq!(key_base("argx::tests", 0x1234_5678), 0x6570_cc45_0000_0000);
-    }
-
-    #[test]
-    fn module_path_contributes_to_key_base() {
-        assert_ne!(key_base("argx::add", 42), key_base("argx::remove", 42));
-    }
-}
-
 // Lexical name resolution is kept with the command metadata it resolves so parsing and help
 // share one lookup policy.
 
@@ -397,4 +382,19 @@ pub(crate) fn short<'a>(
                     .map(|flag| Named::Flag { flag, scope })
             })
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn key_base_is_stable() {
+        assert_eq!(key_base("argx::tests", 0x1234_5678), 0x6570_cc45_0000_0000);
+    }
+
+    #[test]
+    fn module_path_contributes_to_key_base() {
+        assert_ne!(key_base("argx::add", 42), key_base("argx::remove", 42));
+    }
 }
