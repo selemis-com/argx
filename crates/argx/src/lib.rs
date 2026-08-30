@@ -146,9 +146,24 @@
 //!
 //! A field with `#[argx(flatten)]` composes one direct `Args` declaration into the current command.
 //! Flattening does not create a new command scope: its arguments participate in the containing
-//! command's parsing, validation, and help. A flatten field's Rust documentation
-//! becomes a help-group heading when present.
+//! command's parsing, validation, and help. To place those arguments in an explicit help section,
+//! start the flatten field's Rust documentation with a level-one heading:
 //!
+//! ```
+//! # #[derive(argx::Args)]
+//! # struct Logging {
+//! #     #[argx(long)]
+//! #     verbose: bool,
+//! # }
+//! # #[derive(argx::Parser)]
+//! # struct Cli {
+//! /// # Logging
+//! #[argx(flatten)]
+//! logging: Logging,
+//! # }
+//! ```
+//!
+//! Ordinary prose documentation on a flattened field does not create a help section.
 //! Named options are local to their declaring command unless marked `#[argx(global)]`. Global
 //! options remain visible in descendant scopes. If an ancestor and descendant use the same
 //! spelling, the nearest active command scope wins.
@@ -269,8 +284,9 @@
 //! also receive `-V` and `--version`. If only one version is supplied, it is used for both forms.
 //!
 //! Rust documentation supplies command and argument descriptions. The first paragraph is used as
-//! the short summary, level-one headings create additional help sections, and documentation on a
-//! flattened field becomes that group's heading.
+//! the short summary, and level-one headings create additional help sections. On a flattened field,
+//! a leading level-one heading explicitly groups that field's composed arguments under the heading.
+//! Ordinary prose on a flattened field remains documentation and does not create a section.
 //!
 //! `about = "..."` explicitly replaces the command's derived descriptive text. `help = "..."`
 //! replaces a field's derived one-line summary. Hidden flag and subcommand aliases are accepted by

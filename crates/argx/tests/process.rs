@@ -159,15 +159,14 @@ Commands:
   status  Shows status without additional arguments.
 
 Options:
+  -v, --verbose
+          Enables verbose output.
+
   -h, --help
           Print help (see a summary with '-h')
 
   -V, --version
           Print version
-
-Common options:
-  -v, --verbose
-          Enables verbose output.
 
 Examples:
     commands add hello
@@ -192,12 +191,11 @@ Options:
       --force
           Forces the operation.
 
-  -h, --help
-          Print help (see a summary with '-h')
-
-Common options:
   -v, --verbose
           Enables verbose output.
+
+  -h, --help
+          Print help (see a summary with '-h')
 
 "#]])
             .stderr_eq("");
@@ -254,15 +252,14 @@ Shows status without additional arguments.
 Usage: cli status [OPTIONS]
 
 Options:
+  -v, --verbose
+          Enables verbose output.
+
   -h, --help
           Print help (see a summary with '-h')
 
   -V, --version
           Print version
-
-Common options:
-  -v, --verbose
-          Enables verbose output.
 
 "#]])
             .stderr_eq("");
@@ -283,12 +280,11 @@ Options:
       --force
           Forces the operation.
 
-  -h, --help
-          Print help (see a summary with '-h')
-
-Common options:
   -v, --verbose
           Enables verbose output.
+
+  -h, --help
+          Print help (see a summary with '-h')
 
 "#]])
             .stderr_eq("");
