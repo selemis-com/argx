@@ -26,6 +26,8 @@ workspace = true
 [features]
 default = ["derive"]
 derive = ["dep:argx-derive"]
+schema-url = ["schemars/url2"]
+schema-uuid = ["schemars/uuid1"]
 toml = ["derive", "dep:toml_edit"]
 
 [dependencies]
