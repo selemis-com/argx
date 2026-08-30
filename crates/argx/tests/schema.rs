@@ -5,7 +5,7 @@
 mod tests {
     #![expect(dead_code, reason = "schema fixtures are exercised through generated metadata")]
 
-    use argx::{Parser as _, argx};
+    use argx::{Parser as _, Schema as _, argx};
     use serde_json::{Map, Value};
 
     #[derive(argx::Args)]
@@ -138,6 +138,18 @@ mod tests {
             Value::Array(values) => values.iter().map(schema_keyword_count).sum(),
             _ => 0,
         }
+    }
+
+    #[test]
+    fn schema_attribute_exposes_standalone_schema() {
+        #[argx(schema)]
+        struct Output {
+            value: String,
+        }
+
+        let schema = Output::schema();
+        assert_eq!(schema["type"], "object");
+        assert_eq!(schema["properties"]["value"]["type"], "string");
     }
 
     #[test]

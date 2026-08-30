@@ -349,7 +349,8 @@
 //! on a free function or `#[argx(handler = method)]` on an inherent impl.
 //!
 //! `#[argx(schema)]` on result and error data types delegates their JSON Schema generation to
-//! Schemars. See the `schema` example for a complete structural and leaf discovery flow.
+//! Schemars and makes the type available through [`Schema`]. See the `schema` example for a
+//! complete structural and leaf discovery flow.
 //!
 //! # `#[argx(...)]` attribute reference
 //!
@@ -445,6 +446,25 @@ use std::ffi::{OsStr, OsString};
 
 pub use cli::value_enum::{ValueEnum, ValueEnumError};
 pub use error::Error;
+
+/// Generates the JSON Schema for a type supported by Argx schema discovery.
+///
+/// Types marked with `#[argx(schema)]` implement this trait automatically. Types that implement
+/// Schemars' schema contract directly are supported as well.
+pub trait Schema {
+    /// Generates a standalone JSON Schema document for this type.
+    fn schema() -> serde_json::Value;
+}
+
+impl<T> Schema for T
+where
+    T: schemars::JsonSchema,
+{
+    fn schema() -> serde_json::Value {
+        serde_json::to_value(schemars::schema_for!(T))
+            .expect("Schemars-generated schemas must serialize")
+    }
+}
 
 // Generated absolute paths must also work when a derive is used inside this crate. Integration
 // targets already receive this name through Cargo; the library target needs the self alias.
