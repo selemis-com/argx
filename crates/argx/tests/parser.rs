@@ -688,7 +688,7 @@ mod tests {
 
     #[test]
     fn parses_typed_switches_values_and_positionals() {
-        let parsed = Cli::try_parse_args([
+        let parsed = Cli::try_parse_from(["argx-test",
             "-v",
             "--port",
             "8080",
@@ -720,23 +720,23 @@ mod tests {
     #[test]
     fn counted_flags_bind_occurrences_and_use_defaults_only_when_absent() {
         assert_eq!(
-            CountCli::try_parse_args(std::iter::empty::<&str>()),
+            CountCli::try_parse_from(["argx-test"]),
             Ok(CountCli { verbosity: 3, quiet: false })
         );
-        assert_eq!(CountCli::try_parse_args(["-v"]), Ok(CountCli { verbosity: 1, quiet: false }));
-        assert_eq!(CountCli::try_parse_args(["-vvv"]), Ok(CountCli { verbosity: 3, quiet: false }));
+        assert_eq!(CountCli::try_parse_from(["argx-test", "-v"]), Ok(CountCli { verbosity: 1, quiet: false }));
+        assert_eq!(CountCli::try_parse_from(["argx-test", "-vvv"]), Ok(CountCli { verbosity: 3, quiet: false }));
         assert_eq!(
-            CountCli::try_parse_args(["--verbosity", "--verbosity"]),
+            CountCli::try_parse_from(["argx-test", "--verbosity", "--verbosity"]),
             Ok(CountCli { verbosity: 2, quiet: false })
         );
-        assert_eq!(CountCli::try_parse_args(["-vvq"]), Ok(CountCli { verbosity: 2, quiet: true }));
+        assert_eq!(CountCli::try_parse_from(["argx-test", "-vvq"]), Ok(CountCli { verbosity: 2, quiet: true }));
     }
 
     #[test]
     fn counted_flags_saturate_at_u8_max() {
         let flags = std::iter::repeat_n("-v", usize::from(u8::MAX) + 1);
         assert_eq!(
-            CountCli::try_parse_args(flags),
+            CountCli::try_parse_from(std::iter::once("argx-test").chain(flags)),
             Ok(CountCli { verbosity: u8::MAX, quiet: false })
         );
     }
@@ -744,7 +744,7 @@ mod tests {
     #[test]
     fn global_counted_flags_accumulate_across_command_boundaries() {
         assert_eq!(
-            GlobalCountCli::try_parse_args(["-v", "run", "-vv"]),
+            GlobalCountCli::try_parse_from(["argx-test", "-v", "run", "-vv"]),
             Ok(GlobalCountCli { verbosity: 3, command: GlobalCountCommand::Run })
         );
     }
@@ -754,15 +754,12 @@ mod tests {
         let parsed = Cli::try_parse_from(["argx-test", "input.txt"]).expect("valid argv");
         assert_eq!(parsed.input, "input.txt");
 
-        let parsed = Cli::try_parse_args(["argx-test"]).expect("argv without program name");
-        assert_eq!(parsed.input, "argx-test");
     }
 
     #[test]
     fn empty_complete_argv_is_an_empty_argument_list() {
         assert_eq!(Empty::try_parse_from(std::iter::empty::<&str>()), Ok(Empty));
         assert_eq!(Empty::parse_from(["argx-test"]), Empty);
-        assert_eq!(Empty::parse_args(std::iter::empty::<&str>()), Empty);
     }
 
     #[test]
@@ -800,11 +797,11 @@ mod tests {
     #[test]
     fn missing_required_values_are_reported_during_finalization() {
         assert_eq!(
-            Cli::try_parse_args(std::iter::empty::<&str>()),
+            Cli::try_parse_from(["argx-test"]),
             Err(Error::MissingRequired { name: "input" })
         );
         assert_eq!(
-            RequiredFlag::try_parse_args(std::iter::empty::<&str>()),
+            RequiredFlag::try_parse_from(["argx-test"]),
             Err(Error::MissingRequired { name: "--destination" })
         );
     }
@@ -812,19 +809,19 @@ mod tests {
     #[test]
     fn scalar_occurrences_are_strict_and_collections_repeat() {
         assert_eq!(
-            Cli::try_parse_args(["--port", "1", "--port", "2", "input"]),
+            Cli::try_parse_from(["argx-test", "--port", "1", "--port", "2", "input"]),
             Err(Error::DuplicateArgument { name: "--port" })
         );
         assert_eq!(
-            Cli::try_parse_args(["-v", "--verbose", "input"]),
+            Cli::try_parse_from(["argx-test", "-v", "--verbose", "input"]),
             Err(Error::DuplicateArgument { name: "--verbose" })
         );
         assert_eq!(
-            Cli::try_parse_args(["--port", "not-a-port", "--port", "2", "input"]),
+            Cli::try_parse_from(["argx-test", "--port", "not-a-port", "--port", "2", "input"]),
             Err(Error::DuplicateArgument { name: "--port" })
         );
 
-        let parsed = Cli::try_parse_args(["--define", "one", "--define", "two", "input"])
+        let parsed = Cli::try_parse_from(["argx-test", "--define", "one", "--define", "two", "input"])
             .expect("repeatable value flag");
         assert_eq!(parsed.define, vec![String::from("one"), String::from("two")]);
     }
@@ -851,7 +848,7 @@ mod tests {
     #[test]
     fn raw_syntax_errors_take_precedence_over_deferred_cardinality_errors() {
         assert_eq!(
-            Cli::try_parse_args(["--port", "1", "--port", "2", "--unknown"]),
+            Cli::try_parse_from(["argx-test", "--port", "1", "--port", "2", "--unknown"]),
             Err(Error::UnknownFlag { token: b"--unknown".to_vec() })
         );
     }
@@ -859,23 +856,23 @@ mod tests {
     #[test]
     fn raw_parser_failures_are_exposed_as_owned_public_errors() {
         assert_eq!(
-            Empty::try_parse_args(["--unknown"]),
+            Empty::try_parse_from(["argx-test", "--unknown"]),
             Err(Error::UnknownFlag { token: b"--unknown".to_vec() })
         );
-        assert_eq!(Cli::try_parse_args(["--port"]), Err(Error::MissingValue { name: "--port" }));
+        assert_eq!(Cli::try_parse_from(["argx-test", "--port"]), Err(Error::MissingValue { name: "--port" }));
         assert_eq!(
-            Cli::try_parse_args(["--verbose=true", "input"]),
+            Cli::try_parse_from(["argx-test", "--verbose=true", "input"]),
             Err(Error::UnexpectedValue { name: "--verbose" })
         );
         assert_eq!(
-            Empty::try_parse_args(["extra"]),
+            Empty::try_parse_from(["argx-test", "extra"]),
             Err(Error::UnexpectedArgument { token: b"extra".to_vec() })
         );
     }
 
     #[test]
     fn typed_conversion_reports_the_field_and_bad_value() {
-        let error = Cli::try_parse_args(["--port", "not-a-port", "input"])
+        let error = Cli::try_parse_from(["argx-test", "--port", "not-a-port", "input"])
             .expect_err("invalid integer must fail");
         match error {
             Error::InvalidValue(error) => {
@@ -889,9 +886,9 @@ mod tests {
 
     #[test]
     fn bool_positionals_are_values_not_switches() {
-        assert_eq!(BoolPositional::try_parse_args(["true"]), Ok(BoolPositional { enabled: true }));
+        assert_eq!(BoolPositional::try_parse_from(["argx-test", "true"]), Ok(BoolPositional { enabled: true }));
         assert_eq!(
-            BoolPositional::try_parse_args(["false"]),
+            BoolPositional::try_parse_from(["argx-test", "false"]),
             Ok(BoolPositional { enabled: false })
         );
     }
@@ -899,11 +896,11 @@ mod tests {
     #[test]
     fn explicit_value_policies_reach_the_raw_parser() {
         assert_eq!(
-            NegativeValues::try_parse_args(["--number", "-12", "-7"]),
+            NegativeValues::try_parse_from(["argx-test", "--number", "-12", "-7"]),
             Ok(NegativeValues { number: Some(-12), positional: Some(-7) })
         );
         assert_eq!(
-            HyphenValue::try_parse_args(["--raw", "--not-a-flag"]),
+            HyphenValue::try_parse_from(["argx-test", "--raw", "--not-a-flag"]),
             Ok(HyphenValue { raw: Some(String::from("--not-a-flag")) })
         );
     }
@@ -911,11 +908,11 @@ mod tests {
     #[test]
     fn optional_collection_preserves_absence_and_empty_values() {
         assert_eq!(
-            OptionalMany::try_parse_args(std::iter::empty::<&str>()),
+            OptionalMany::try_parse_from(["argx-test"]),
             Ok(OptionalMany { tags: None })
         );
         assert_eq!(
-            OptionalMany::try_parse_args(["--tags="]),
+            OptionalMany::try_parse_from(["argx-test", "--tags="]),
             Ok(OptionalMany { tags: Some(vec![String::new()]) })
         );
     }
@@ -925,7 +922,7 @@ mod tests {
         assert_eq!("human-readable".parse::<OutputMode>(), Ok(OutputMode::HumanReadable),);
         assert!("HumanReadable".parse::<OutputMode>().is_err());
 
-        let parsed = ValueEnumCli::try_parse_args([
+        let parsed = ValueEnumCli::try_parse_from(["argx-test",
             "--mode",
             "json",
             "--include",
@@ -956,7 +953,7 @@ mod tests {
         assert!(help.contains("Output mode. [possible values: human-readable, json, quiet]"));
         assert!(help.contains("[possible values: human-readable, json, quiet]"));
 
-        let error = ValueEnumCli::try_parse_args(["--mode", "yaml", "quiet"])
+        let error = ValueEnumCli::try_parse_from(["argx-test", "--mode", "yaml", "quiet"])
             .expect_err("unknown enum spelling must fail");
         let Error::InvalidValue(error) = error else { panic!("unexpected error: {error:?}") };
         assert_eq!(error.name, "--mode");
@@ -967,11 +964,11 @@ mod tests {
     #[test]
     fn repeated_parsed_values_convert_every_occurrence_and_report_the_first_failure() {
         assert_eq!(
-            ParsedMany::try_parse_args(["--numbers", "10", "--numbers=20"]),
+            ParsedMany::try_parse_from(["argx-test", "--numbers", "10", "--numbers=20"]),
             Ok(ParsedMany { numbers: vec![10, 20] }),
         );
 
-        let error = ParsedMany::try_parse_args([
+        let error = ParsedMany::try_parse_from(["argx-test",
             "--numbers",
             "10",
             "--numbers",
@@ -990,7 +987,7 @@ mod tests {
 
     #[test]
     fn flattened_args_compose_recursively_and_preserve_positional_order() {
-        let parsed = FlattenedCli::try_parse_args([
+        let parsed = FlattenedCli::try_parse_from(["argx-test",
             "--root",
             "--nested=42",
             "--shared",
@@ -1026,7 +1023,7 @@ mod tests {
     #[test]
     fn empty_args_groups_flatten_without_changing_binding() {
         assert_eq!(
-            EmptyFlatten::try_parse_args(["value"]),
+            EmptyFlatten::try_parse_from(["argx-test", "value"]),
             Ok(EmptyFlatten { empty: EmptyArgs, value: String::from("value") })
         );
     }
@@ -1034,7 +1031,7 @@ mod tests {
     #[test]
     fn identical_flattened_declarations_route_by_their_own_keys() {
         assert_eq!(
-            IdenticalFlattened::try_parse_args(["first", "second"]),
+            IdenticalFlattened::try_parse_from(["argx-test", "first", "second"]),
             Ok(IdenticalFlattened {
                 first: identical_a::Values { value: String::from("first") },
                 second: identical_b::Values { value: String::from("second") },
@@ -1045,11 +1042,11 @@ mod tests {
     #[test]
     fn flattened_checks_preserve_global_error_precedence() {
         assert_eq!(
-            FlattenPrecedence::try_parse_args(["--duplicate=not-a-number", "--duplicate=2",]),
+            FlattenPrecedence::try_parse_from(["argx-test", "--duplicate=not-a-number", "--duplicate=2",]),
             Err(Error::DuplicateArgument { name: "--duplicate" })
         );
         assert_eq!(
-            FlattenPrecedence::try_parse_args([
+            FlattenPrecedence::try_parse_from(["argx-test",
                 "--duplicate=not-a-number",
                 "--duplicate=2",
                 "--unknown",
@@ -1057,7 +1054,7 @@ mod tests {
             Err(Error::UnknownFlag { token: b"--unknown".to_vec() })
         );
         assert_eq!(
-            FlattenPrecedence::try_parse_args(std::iter::empty::<&str>()),
+            FlattenPrecedence::try_parse_from(["argx-test"]),
             Err(Error::MissingRequired { name: "--required" })
         );
     }
@@ -1068,10 +1065,10 @@ mod tests {
         use std::os::unix::ffi::{OsStrExt as _, OsStringExt as _};
 
         let raw = OsString::from_vec(vec![b'p', 0xff, b't']);
-        let parsed = PathCli::try_parse_args([raw.clone()]).expect("valid Unix path bytes");
+        let parsed = PathCli::try_parse_from([OsString::from("argx-test"), raw.clone()]).expect("valid Unix path bytes");
         assert_eq!(parsed.path.as_os_str().as_bytes(), raw.as_os_str().as_bytes());
 
-        let parsed = OsStringCli::try_parse_args([raw.clone()]).expect("valid Unix OS string");
+        let parsed = OsStringCli::try_parse_from([OsString::from("argx-test"), raw.clone()]).expect("valid Unix OS string");
         assert_eq!(parsed.value.as_os_str().as_bytes(), raw.as_os_str().as_bytes());
     }
 
@@ -1087,7 +1084,7 @@ mod tests {
         }
 
         let raw = OsString::from_vec(vec![b'-', b'-', b'p', b'a', b't', b'h', b'=', 0xff]);
-        let parsed = Attached::try_parse_args([raw]).expect("valid Unix path bytes");
+        let parsed = Attached::try_parse_from([OsString::from("argx-test"), raw]).expect("valid Unix path bytes");
         assert_eq!(parsed.path.as_os_str().as_bytes(), &[0xff]);
     }
 
@@ -1098,7 +1095,7 @@ mod tests {
 
         let raw = OsString::from_vec(vec![b'x', 0xff]);
         assert_eq!(
-            TextCli::try_parse_args([raw]),
+            TextCli::try_parse_from([OsString::from("argx-test"), raw]),
             Err(Error::InvalidUtf8 { name: "value", value: vec![b'x', 0xff] })
         );
     }
@@ -1123,16 +1120,14 @@ Commands:
 Options:
   -v, --verbose               Enable verbose output.
       --destination <OUTPUT>  Output path
-  -O, --output <FORMAT>       Select output format: text or json
-  -F, --fields <FIELDS>       Select output fields (comma-separated)
   -h, --help                  Print help
 
 "#]],
         );
 
-        assert_eq!(HelpCli::try_parse_args(["--help"]), Err(Error::DisplayHelp { help: root }),);
+        assert_eq!(HelpCli::try_parse_from(["argx-test", "--help"]), Err(Error::DisplayHelp { help: root }),);
 
-        let nested = HelpCli::try_parse_args(["--destination", "out", "acme", "config", "--help"]);
+        let nested = HelpCli::try_parse_from(["argx-test", "--destination", "out", "acme", "config", "--help"]);
         let Err(Error::DisplayHelp { help }) = nested else {
             panic!("nested help request did not return generated help")
         };
@@ -1148,14 +1143,12 @@ Arguments:
 
 Options:
       --local            Use local configuration.
-  -O, --output <FORMAT>  Select output format: text or json
-  -F, --fields <FIELDS>  Select output fields (comma-separated)
   -h, --help             Print help
 
 "#]],
         );
 
-        let status = HelpCli::try_parse_args(["--destination", "out", "acme", "status"])
+        let status = HelpCli::try_parse_from(["argx-test", "--destination", "out", "acme", "status"])
             .expect("status command should parse");
         assert!(!status.verbose);
         assert_eq!(status.output, "out");
@@ -1163,7 +1156,7 @@ Options:
         assert!(matches!(status.command, HelpCommand::Status));
 
         let config =
-            HelpCli::try_parse_args(["--destination", "out", "acme", "config", "--local", "theme"])
+            HelpCli::try_parse_from(["argx-test", "--destination", "out", "acme", "config", "--local", "theme"])
                 .expect("config command should parse");
         let HelpCommand::Config(config) = config.command else {
             panic!("config command did not construct its payload")
@@ -1185,8 +1178,6 @@ Usage: documented-help [OPTIONS]
 
 Options:
       --workspace <WORKSPACE>
-  -O, --output <FORMAT>        Select output format: text or json
-  -F, --fields <FIELDS>        Select output fields (comma-separated)
   -h, --help                   Print help
 
 Examples:
@@ -1202,7 +1193,7 @@ Use `documented-help schema` to inspect command contracts.
 
     #[test]
     fn subcommand_help_inherits_documented_sections_from_its_payload() {
-        let error = DocumentedSubcommandCli::try_parse_args(["run", "--help"])
+        let error = DocumentedSubcommandCli::try_parse_from(["argx-test", "run", "--help"])
             .expect_err("help should stop before constructing the payload");
         let Error::DisplayHelp { help } = error else {
             panic!("expected generated help");
@@ -1222,8 +1213,6 @@ Commands:
   status  Show current status.
 
 Options:
-  -O, --output <FORMAT>  Select output format: text or json
-  -F, --fields <FIELDS>  Select output fields (comma-separated)
   -h, --help             Print help
 
 Output:
@@ -1252,7 +1241,7 @@ Output:
 
     #[test]
     fn inherited_global_arguments_keep_their_documented_group_in_subcommand_help() {
-        let error = GroupedHelpCli::try_parse_args(["status", "--help"])
+        let error = GroupedHelpCli::try_parse_from(["argx-test", "status", "--help"])
             .expect_err("help should stop before constructing the command");
         let Error::DisplayHelp { help } = error else {
             panic!("expected generated help");
@@ -1274,7 +1263,7 @@ Output:
 
     #[test]
     fn reused_flattened_args_are_grouped_only_by_their_visible_scope() {
-        let error = ReusedGroupedCli::try_parse_args(["leaf", "--help"])
+        let error = ReusedGroupedCli::try_parse_from(["argx-test", "leaf", "--help"])
             .expect_err("help should stop before constructing the command");
         let Error::DisplayHelp { help } = error else {
             panic!("expected generated help");
@@ -1286,15 +1275,15 @@ Output:
     #[test]
     fn help_precedes_deferred_binding_errors_but_not_detached_value_rules() {
         assert!(matches!(
-            HelpCli::try_parse_args(["--verbose", "--verbose", "--help"]),
+            HelpCli::try_parse_from(["argx-test", "--verbose", "--verbose", "--help"]),
             Err(Error::DisplayHelp { .. })
         ));
         assert_eq!(
-            HelpCli::try_parse_args(["--destination", "--help"]),
+            HelpCli::try_parse_from(["argx-test", "--destination", "--help"]),
             Err(Error::MissingValue { name: "--destination" }),
         );
         assert_eq!(
-            Empty::try_parse_args(["--", "--help"]),
+            Empty::try_parse_from(["argx-test", "--", "--help"]),
             Err(Error::UnexpectedArgument { token: b"--help".to_vec() }),
         );
     }
@@ -1302,62 +1291,62 @@ Output:
     #[test]
     fn version_metadata_is_scoped_to_the_selected_command() {
         assert_eq!(
-            MetadataCli::try_parse_args(["-V"]),
+            MetadataCli::try_parse_from(["argx-test", "-V"]),
             Err(Error::DisplayVersion { version: String::from("meta 1.2.3\n") }),
         );
         assert_eq!(
-            MetadataCli::try_parse_args(["--version"]),
+            MetadataCli::try_parse_from(["argx-test", "--version"]),
             Err(Error::DisplayVersion { version: String::from("meta 1.2.3 (build abc123)\n") }),
         );
         assert_eq!(
-            MetadataCli::try_parse_args(["--version=value"]),
+            MetadataCli::try_parse_from(["argx-test", "--version=value"]),
             Err(Error::UnexpectedValue { name: "--version" }),
         );
         assert_eq!(
-            MetadataCli::try_parse_args(["run", "--version"]),
+            MetadataCli::try_parse_from(["argx-test", "run", "--version"]),
             Err(Error::DisplayVersion { version: String::from("run 1.2.3 (build abc123)\n") }),
         );
         assert_eq!(
-            MetadataCli::try_parse_args(["internal", "--version"]),
+            MetadataCli::try_parse_from(["argx-test", "internal", "--version"]),
             Err(Error::UnknownFlag { token: b"--version".to_vec() }),
         );
         assert_eq!(
-            MetadataCli::try_parse_args(["internal"]),
+            MetadataCli::try_parse_from(["argx-test", "internal"]),
             Ok(MetadataCli { command: MetadataCommand::Internal }),
         );
         assert_eq!(
-            ShortVersionOnly::try_parse_args(["--version"]),
+            ShortVersionOnly::try_parse_from(["argx-test", "--version"]),
             Err(Error::DisplayVersion { version: String::from("short-only 1.2.3\n") }),
         );
         assert_eq!(
-            LongVersionOnly::try_parse_args(["-V"]),
+            LongVersionOnly::try_parse_from(["argx-test", "-V"]),
             Err(Error::DisplayVersion {
                 version: String::from("long-only 1.2.3 (build abc123)\n"),
             }),
         );
         assert_eq!(
-            UserVersionFlag::try_parse_args(["--version"]),
+            UserVersionFlag::try_parse_from(["argx-test", "--version"]),
             Ok(UserVersionFlag { version: true }),
         );
-        assert_eq!(UserVersionFlag::try_parse_args(["-V"]), Ok(UserVersionFlag { version: true }),);
+        assert_eq!(UserVersionFlag::try_parse_from(["argx-test", "-V"]), Ok(UserVersionFlag { version: true }),);
     }
 
     #[test]
     fn typed_defaults_fill_absent_scalar_flags_and_argv_wins() {
         assert_eq!(
-            DefaultCli::try_parse_args(std::iter::empty::<&str>()),
+            DefaultCli::try_parse_from(["argx-test"]),
             Ok(DefaultCli { port: 3000, profile: Some(String::from("development")) }),
         );
         assert_eq!(
-            DefaultCli::try_parse_args(["--port", "8080", "--profile", "production"]),
+            DefaultCli::try_parse_from(["argx-test", "--port", "8080", "--profile", "production"]),
             Ok(DefaultCli { port: 8080, profile: Some(String::from("production")) }),
         );
         assert_eq!(
-            DefaultCli::try_parse_args(["--port", "1", "--port", "2"]),
+            DefaultCli::try_parse_from(["argx-test", "--port", "1", "--port", "2"]),
             Err(Error::DuplicateArgument { name: "--port" }),
         );
         assert_eq!(
-            FlattenedDefaults::try_parse_args(std::iter::empty::<&str>()),
+            FlattenedDefaults::try_parse_from(["argx-test"]),
             Ok(FlattenedDefaults { shared: DefaultShared { jobs: 4 } }),
         );
     }
@@ -1365,11 +1354,11 @@ Output:
     #[test]
     fn typed_defaults_do_not_repair_invalid_or_incomplete_argv() {
         assert_eq!(
-            DefaultCli::try_parse_args(["--port"]),
+            DefaultCli::try_parse_from(["argx-test", "--port"]),
             Err(Error::MissingValue { name: "--port" }),
         );
 
-        let error = DefaultCli::try_parse_args(["--port", "not-a-port"])
+        let error = DefaultCli::try_parse_from(["argx-test", "--port", "not-a-port"])
             .expect_err("an explicit invalid value must not fall back to the default");
         let Error::InvalidValue(error) = error else { panic!("unexpected error: {error:?}") };
         assert_eq!(error.name, "--port");
@@ -1387,7 +1376,7 @@ Output:
     #[test]
     fn subcommands_bind_unit_payload_and_nested_command_trees() {
         assert_eq!(
-            SubcommandCli::try_parse_args([
+            SubcommandCli::try_parse_from(["argx-test",
                 "--verbose",
                 "acme",
                 "add",
@@ -1407,7 +1396,7 @@ Output:
         );
 
         assert_eq!(
-            SubcommandCli::try_parse_args(["acme", "config", "get", "theme"]),
+            SubcommandCli::try_parse_from(["argx-test", "acme", "config", "get", "theme"]),
             Ok(SubcommandCli {
                 verbose: false,
                 workspace: String::from("acme"),
@@ -1419,7 +1408,7 @@ Output:
         );
 
         assert_eq!(
-            SubcommandCli::try_parse_args([
+            SubcommandCli::try_parse_from(["argx-test",
                 "acme", "config", "--local", "set", "--raw", "theme", "dark",
             ]),
             Ok(SubcommandCli {
@@ -1437,7 +1426,7 @@ Output:
         );
 
         assert_eq!(
-            SubcommandCli::try_parse_args(["acme", "show-status"]),
+            SubcommandCli::try_parse_from(["argx-test", "acme", "show-status"]),
             Ok(SubcommandCli {
                 verbose: false,
                 workspace: String::from("acme"),
@@ -1450,25 +1439,25 @@ Output:
     fn hidden_aliases_parse_without_changing_canonical_help() {
         for flag in ["--color", "--colour", "--hue", "--tone"] {
             assert_eq!(
-                AliasCli::try_parse_args([flag, "blue", "rm"]),
+                AliasCli::try_parse_from(["argx-test", flag, "blue", "rm"]),
                 Ok(AliasCli { color: Some(String::from("blue")), command: AliasCommand::Remove }),
             );
         }
 
         for command in ["remove", "rm", "delete", "del"] {
             assert_eq!(
-                AliasCli::try_parse_args([command]),
+                AliasCli::try_parse_from(["argx-test", command]),
                 Ok(AliasCli { color: None, command: AliasCommand::Remove }),
             );
         }
 
         assert_eq!(
-            AliasCli::try_parse_args(["--help"]),
+            AliasCli::try_parse_from(["argx-test", "--help"]),
             Err(Error::DisplayHelp {
                 help: String::from(
                     "Usage: aliases [OPTIONS] <COMMAND>\n\n\
 Commands:\n  remove\n  status\n\n\
-Options:\n      --color <COLOR>\n  -O, --output <FORMAT>  Select output format: text or json\n  -F, --fields <FIELDS>  Select output fields (comma-separated)\n  -h, --help             Print help\n",
+Options:\n      --color <COLOR>\n  -h, --help             Print help\n",
                 ),
             }),
         );
@@ -1477,11 +1466,11 @@ Options:\n      --color <COLOR>\n  -O, --output <FORMAT>  Select output format: 
     #[test]
     fn requires_and_conflicts_use_semantic_argument_identity() {
         assert_eq!(
-            ConstraintCli::try_parse_args(["--endpoint", "https://example.test"]),
+            ConstraintCli::try_parse_from(["argx-test", "--endpoint", "https://example.test"]),
             Err(Error::MissingRequirement { name: "--auth-token", required_by: "--endpoint" }),
         );
         assert_eq!(
-            ConstraintCli::try_parse_args([
+            ConstraintCli::try_parse_from(["argx-test",
                 "--endpoint",
                 "https://example.test",
                 "--token",
@@ -1502,13 +1491,13 @@ Options:\n      --color <COLOR>\n  -O, --output <FORMAT>  Select output format: 
             [["--destination", "out.txt", "--stdout"], ["--stdout", "--destination", "out.txt"]]
         {
             assert_eq!(
-                ConstraintCli::try_parse_args(args),
+                ConstraintCli::try_parse_from(std::iter::once("argx-test").chain(args)),
                 Err(Error::ConflictingArguments { name: "--destination", other: "--stdout" }),
             );
         }
 
         assert_eq!(
-            ConstraintCli::try_parse_args(["--destination", "out.txt", "--mode", "manual"]),
+            ConstraintCli::try_parse_from(["argx-test", "--destination", "out.txt", "--mode", "manual"]),
             Err(Error::ConflictingArguments { name: "--destination", other: "--mode" }),
         );
     }
@@ -1516,7 +1505,7 @@ Options:\n      --color <COLOR>\n  -O, --output <FORMAT>  Select output format: 
     #[test]
     fn defaults_satisfy_requirements_but_do_not_activate_or_conflict() {
         assert_eq!(
-            ConstraintCli::try_parse_args(["--schema", "schema.json"]),
+            ConstraintCli::try_parse_from(["argx-test", "--schema", "schema.json"]),
             Ok(ConstraintCli {
                 endpoint: None,
                 token: None,
@@ -1528,7 +1517,7 @@ Options:\n      --color <COLOR>\n  -O, --output <FORMAT>  Select output format: 
             }),
         );
         assert_eq!(
-            ConstraintCli::try_parse_args(std::iter::empty::<&str>()),
+            ConstraintCli::try_parse_from(["argx-test"]),
             Ok(ConstraintCli {
                 endpoint: None,
                 token: None,
@@ -1540,7 +1529,7 @@ Options:\n      --color <COLOR>\n  -O, --output <FORMAT>  Select output format: 
             }),
         );
         assert_eq!(
-            ConstraintCli::try_parse_args(["--stdout"]),
+            ConstraintCli::try_parse_from(["argx-test", "--stdout"]),
             Ok(ConstraintCli {
                 endpoint: None,
                 token: None,
@@ -1556,11 +1545,11 @@ Options:\n      --color <COLOR>\n  -O, --output <FORMAT>  Select output format: 
     #[test]
     fn constraints_resolve_across_flattening_and_selected_subcommands() {
         assert_eq!(
-            FlattenedConstraintCli::try_parse_args(["--endpoint", "https://example.test"]),
+            FlattenedConstraintCli::try_parse_from(["argx-test", "--endpoint", "https://example.test"]),
             Err(Error::MissingRequirement { name: "--token", required_by: "--endpoint" }),
         );
         assert_eq!(
-            FlattenedConstraintCli::try_parse_args([
+            FlattenedConstraintCli::try_parse_from(["argx-test",
                 "--endpoint",
                 "https://example.test",
                 "--token",
@@ -1572,31 +1561,31 @@ Options:\n      --color <COLOR>\n  -O, --output <FORMAT>  Select output format: 
             }),
         );
         assert_eq!(
-            ConstraintSubcommandCli::try_parse_args(["run", "--verbose", "--quiet"]),
+            ConstraintSubcommandCli::try_parse_from(["argx-test", "run", "--verbose", "--quiet"]),
             Err(Error::ConflictingArguments { name: "--verbose", other: "--quiet" }),
         );
     }
 
     #[test]
     fn command_selection_is_exact_and_reports_missing_or_unknown_commands() {
-        let root = SubcommandCli::try_parse_args(["acme"]);
+        let root = SubcommandCli::try_parse_from(["argx-test", "acme"]);
         let Err(Error::DisplayHelp { .. }) = root else {
             panic!("missing root subcommand should display help: {root:?}");
         };
         assert_eq!(
-            SubcommandCli::try_parse_args(["acme", "bogus"]),
+            SubcommandCli::try_parse_from(["argx-test", "acme", "bogus"]),
             Err(Error::UnknownCommand { token: b"bogus".to_vec() }),
         );
         assert_eq!(
-            SubcommandCli::try_parse_args(["acme", "conf"]),
+            SubcommandCli::try_parse_from(["argx-test", "acme", "conf"]),
             Err(Error::UnknownCommand { token: b"conf".to_vec() }),
         );
-        let nested = SubcommandCli::try_parse_args(["acme", "config"]);
+        let nested = SubcommandCli::try_parse_from(["argx-test", "acme", "config"]);
         let Err(Error::DisplayHelp { .. }) = nested else {
             panic!("missing nested subcommand should display help: {nested:?}");
         };
         assert_eq!(
-            SubcommandCli::try_parse_args(["acme", "config", "bogus"]),
+            SubcommandCli::try_parse_from(["argx-test", "acme", "config", "bogus"]),
             Err(Error::UnknownCommand { token: b"bogus".to_vec() }),
         );
     }
@@ -1604,11 +1593,11 @@ Options:\n      --color <COLOR>\n  -O, --output <FORMAT>  Select output format: 
     #[test]
     fn sibling_commands_may_reuse_flag_spellings_in_separate_scopes() {
         assert_eq!(
-            SiblingCli::try_parse_args(["start", "--force"]),
+            SiblingCli::try_parse_from(["argx-test", "start", "--force"]),
             Ok(SiblingCli { command: SiblingCommand::Start(StartArgs { force: true }) }),
         );
         assert_eq!(
-            SiblingCli::try_parse_args(["stop", "--force"]),
+            SiblingCli::try_parse_from(["argx-test", "stop", "--force"]),
             Ok(SiblingCli { command: SiblingCommand::Stop(StopArgs { force: true }) }),
         );
     }
@@ -1616,11 +1605,11 @@ Options:\n      --color <COLOR>\n  -O, --output <FORMAT>  Select output format: 
     #[test]
     fn descendant_help_uses_the_same_global_shadowing_as_parsing() {
         assert_eq!(
-            GlobalCli::try_parse_args(["outer", "leaf", "--help"]),
+            GlobalCli::try_parse_from(["argx-test", "outer", "leaf", "--help"]),
             Err(Error::DisplayHelp {
                 help: String::from(
                     "Usage: global-cli outer leaf [OPTIONS]\n\n\
-Options:\n      --verbose\n      --region <REGION>\n      --profile <PROFILE>\n  -O, --output <FORMAT>    Select output format: text or json\n  -F, --fields <FIELDS>    Select output fields (comma-separated)\n  -h, --help               Print help\n",
+Options:\n      --verbose\n      --region <REGION>\n      --profile <PROFILE>\n  -h, --help               Print help\n",
                 ),
             }),
         );
@@ -1634,7 +1623,7 @@ Options:\n      --verbose\n      --region <REGION>\n      --profile <PROFILE>\n 
             ["outer", "leaf", "--profile", "dev", "--region", "eu"],
         ] {
             assert_eq!(
-                GlobalCli::try_parse_args(argv),
+                GlobalCli::try_parse_from(std::iter::once("argx-test").chain(argv)),
                 Ok(GlobalCli {
                     common: GlobalCommon { verbose: false, profile: Some(String::from("dev")) },
                     command: GlobalCommand::Outer(GlobalOuterArgs {
@@ -1649,7 +1638,7 @@ Options:\n      --verbose\n      --region <REGION>\n      --profile <PROFILE>\n 
     #[test]
     fn local_arguments_shadow_inherited_globals_without_mirroring_binding() {
         assert_eq!(
-            GlobalCli::try_parse_args(["outer", "leaf", "--verbose"]),
+            GlobalCli::try_parse_from(["argx-test", "outer", "leaf", "--verbose"]),
             Ok(GlobalCli {
                 common: GlobalCommon { verbose: false, profile: None },
                 command: GlobalCommand::Outer(GlobalOuterArgs {
@@ -1659,7 +1648,7 @@ Options:\n      --verbose\n      --region <REGION>\n      --profile <PROFILE>\n 
             }),
         );
         assert_eq!(
-            GlobalCli::try_parse_args(["--verbose", "outer", "leaf"]),
+            GlobalCli::try_parse_from(["argx-test", "--verbose", "outer", "leaf"]),
             Ok(GlobalCli {
                 common: GlobalCommon { verbose: true, profile: None },
                 command: GlobalCommand::Outer(GlobalOuterArgs {
@@ -1669,7 +1658,7 @@ Options:\n      --verbose\n      --region <REGION>\n      --profile <PROFILE>\n 
             }),
         );
         assert_eq!(
-            GlobalCli::try_parse_args(["--verbose", "outer", "leaf", "--verbose"]),
+            GlobalCli::try_parse_from(["argx-test", "--verbose", "outer", "leaf", "--verbose"]),
             Ok(GlobalCli {
                 common: GlobalCommon { verbose: true, profile: None },
                 command: GlobalCommand::Outer(GlobalOuterArgs {
@@ -1683,11 +1672,11 @@ Options:\n      --verbose\n      --region <REGION>\n      --profile <PROFILE>\n 
     #[test]
     fn globals_are_downward_only_and_do_not_leak_to_siblings() {
         assert_eq!(
-            GlobalCli::try_parse_args(["--region", "eu", "outer", "leaf"]),
+            GlobalCli::try_parse_from(["argx-test", "--region", "eu", "outer", "leaf"]),
             Err(Error::UnknownFlag { token: b"--region".to_vec() }),
         );
         assert_eq!(
-            GlobalCli::try_parse_args(["other", "--region", "eu"]),
+            GlobalCli::try_parse_from(["argx-test", "other", "--region", "eu"]),
             Err(Error::UnknownFlag { token: b"--region".to_vec() }),
         );
     }
@@ -1695,7 +1684,7 @@ Options:\n      --verbose\n      --region <REGION>\n      --profile <PROFILE>\n 
     #[test]
     fn scalar_global_occurrences_share_one_cardinality_across_command_boundaries() {
         assert_eq!(
-            GlobalCli::try_parse_args([
+            GlobalCli::try_parse_from(["argx-test",
                 "--profile",
                 "first",
                 "outer",
@@ -1710,18 +1699,18 @@ Options:\n      --verbose\n      --region <REGION>\n      --profile <PROFILE>\n 
     #[test]
     fn selected_commands_own_all_following_parser_events() {
         assert_eq!(
-            ReusedAcrossScopes::try_parse_args(["--value=root", "child", "--value=child"]),
+            ReusedAcrossScopes::try_parse_from(["argx-test", "--value=root", "child", "--value=child"]),
             Ok(ReusedAcrossScopes {
                 root: ReusedArgs { value: Some(String::from("root")) },
                 command: ReusedCommand::Child(ReusedArgs { value: Some(String::from("child")) }),
             }),
         );
         assert_eq!(
-            SubcommandCli::try_parse_args(["acme", "add", "widget", "--verbose"]),
+            SubcommandCli::try_parse_from(["argx-test", "acme", "add", "widget", "--verbose"]),
             Err(Error::UnknownFlag { token: b"--verbose".to_vec() }),
         );
         assert_eq!(
-            SubcommandCli::try_parse_args(["acme", "--force", "add", "widget"]),
+            SubcommandCli::try_parse_from(["argx-test", "acme", "--force", "add", "widget"]),
             Err(Error::UnknownFlag { token: b"--force".to_vec() }),
         );
     }
@@ -1729,7 +1718,7 @@ Options:\n      --verbose\n      --region <REGION>\n      --profile <PROFILE>\n 
     #[test]
     fn child_syntax_errors_precede_deferred_parent_cardinality_errors() {
         assert_eq!(
-            SubcommandCli::try_parse_args(["--verbose", "--verbose", "acme", "add", "--unknown",]),
+            SubcommandCli::try_parse_from(["argx-test", "--verbose", "--verbose", "acme", "add", "--unknown",]),
             Err(Error::UnknownFlag { token: b"--unknown".to_vec() }),
         );
     }
@@ -1737,11 +1726,11 @@ Options:\n      --verbose\n      --region <REGION>\n      --profile <PROFILE>\n 
     #[test]
     fn separator_stops_command_selection_in_the_current_scope() {
         assert_eq!(
-            SubcommandCli::try_parse_args(["acme", "--", "add"]),
+            SubcommandCli::try_parse_from(["argx-test", "acme", "--", "add"]),
             Err(Error::UnexpectedArgument { token: b"add".to_vec() }),
         );
         assert_eq!(
-            SubcommandCli::try_parse_args(["acme", "add", "--", "--force"]),
+            SubcommandCli::try_parse_from(["argx-test", "acme", "add", "--", "--force"]),
             Ok(SubcommandCli {
                 verbose: false,
                 workspace: String::from("acme"),

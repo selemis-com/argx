@@ -22,7 +22,7 @@ completions, schemas, and ordered configuration resolution.
 The model is deliberately small:
 
 - [`Parser`](https://docs.rs/argx/latest/argx/trait.Parser.html) defines a root command.
-- [`Args`](https://docs.rs/argx/latest/argx/trait.Args.html) defines reusable argument groups.
+- `Args` defines reusable argument groups.
 - [`Subcommand`](https://docs.rs/argx/latest/argx/derive.Subcommand.html) defines typed child commands.
 - [`Config`](https://docs.rs/argx/latest/argx/trait.Config.html) resolves typed values across explicitly ordered layers.
 - one static command model drives parsing, help, completions, and schema discovery.
@@ -122,6 +122,7 @@ struct Config {
 
     #[argx(long)]
     endpoint: String,
+
 }
 
 let config = Config::loader()
@@ -222,7 +223,7 @@ Detailed behavior is documented on [docs.rs/argx](https://docs.rs/argx/latest/ar
 | Example | Focus | Try it |
 | --- | --- | --- |
 | [`basic`](crates/argx/examples/basic.rs) | Smallest complete parser and built-in help | `cargo run --example basic -- --help` |
-| [`complete`](crates/argx/examples/complete.rs) | Integrated reference application showing the complete Argx API | `cargo run --example complete -- get object-7 -O json -F id` |
+| [`complete`](crates/argx/examples/complete.rs) | Integrated reference application showing the complete Argx API | `cargo run --example complete -- get object-7` |
 | [`arguments`](crates/argx/examples/arguments.rs) | Arguments, defaults, aliases, constraints, and value enums | `cargo run --example arguments -- input.txt --format json` |
 | [`commands`](crates/argx/examples/commands.rs) | Subcommands, flattening, structured help, aliases, and versions | `cargo run --example commands -- --verbose add hello --force` |
 | [`configuration`](crates/argx/examples/configuration.rs) | Ordered defaults, environment, and argv configuration | `cargo run --example configuration -- --workers 8` |

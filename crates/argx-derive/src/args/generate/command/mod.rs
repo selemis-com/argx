@@ -524,13 +524,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
             impl #impl_generics #facade::Parser for #ident #ty_generics #where_clause {}
         }
     });
-    let args_impl = (!command.binding.root).then(|| {
-        quote! {
-            impl #impl_generics #facade::Args
-                for #ident #ty_generics #where_clause
-            {}
-        }
-    });
+
 
     // A private const namespace keeps all generated statics and assertions local to the derived
     // declaration while still allowing trait associated constants to point at `'static` tables.
@@ -568,10 +562,6 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                     ARGX_COMMAND.flags,
                 ),
                 "command contains a flag spelling reserved by a built-in action",
-            );
-            const _: () = ::core::assert!(
-                #facade::__private::output_flag_spellings_disjoint(ARGX_COMMAND.flags),
-                "command contains a flag spelling reserved by Argx output",
             );
             #flattened_checks
 
@@ -612,10 +602,8 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                                 _ => false,
                             }
                         },
-                        #facade::__private::Event::Command { .. } => false,
-                        #facade::__private::Event::Action { .. }
-                        | #facade::__private::Event::Output { .. }
-                        | #facade::__private::Event::Fields { .. } => false,
+                        #facade::__private::Event::Command { .. }
+                        | #facade::__private::Event::Action { .. } => false,
                     };
                     if matched {
                         return true;
@@ -693,7 +681,6 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
             }
 
             #parser_impl
-            #args_impl
-        };
+            };
     }
 }

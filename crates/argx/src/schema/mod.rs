@@ -132,14 +132,6 @@ pub(crate) fn pseudo_command(
     Some(display_schema(&path, registry, full))
 }
 
-/// Builds a successful terminal JSON Schema action for one selected command path.
-pub(crate) fn output_schema(path: &[&Command<'_>], registry: &Registry) -> Option<Value> {
-    let command = path.last()?;
-    let mut generator = schema_generator(&[]);
-    registry.handler(command, &mut generator)?;
-    Some(full_command_schema(path, registry, &[]))
-}
-
 /// Renders the schema for a selected command path as a display error.
 pub(crate) fn display_schema(path: &[&Command<'_>], registry: &Registry, full: bool) -> Error {
     let command = path.last().copied().expect("schema discovery always has a root command");

@@ -141,15 +141,6 @@ pub enum Error {
         /// Encoded value supplied by the caller.
         value: Vec<u8>,
     },
-    /// A requested output field does not exist in the selected handler result schema.
-    #[error("unknown output field `{field}`")]
-    InvalidOutputField {
-        /// Dotted field selector supplied through `--fields`.
-        field: String,
-    },
-    /// Field selection was requested for a command without a typed result schema.
-    #[error("field selection is unavailable for this command")]
-    OutputFieldsUnavailable,
 }
 
 impl Error {
@@ -179,22 +170,7 @@ impl Error {
     /// Help, version, and schema requests are written to standard output and exit successfully.
     /// Parse and binding failures are written to standard error and exit with status 2.
     pub fn exit(&self) -> ! {
-        let json = if self.exit_code() == 0 {
-            false
-        } else {
-            let mut args = std::env::args_os().skip(1);
-            let mut json = false;
-            while let Some(arg) = args.next() {
-                if matches!(arg.to_str(), Some("-O" | "--output"))
-                    && args.next().as_deref().and_then(std::ffi::OsStr::to_str) == Some("json")
-                {
-                    json = true;
-                    break;
-                }
-            }
-            json
-        };
-        let output = if json { self.json_exit_output() } else { self.exit_output() };
+        let output = self.exit_output();
         match output.stream {
             ExitStream::Stdout => {
                 let mut stdout = io::stdout().lock();
@@ -208,26 +184,6 @@ impl Error {
             }
         }
         process::exit(output.code)
-    }
-
-    /// Builds JSON terminal output for a parser failure.
-    fn json_exit_output(&self) -> ExitOutput<'static> {
-        let value = serde_json::json!({
-            "error": {
-                "code": "invalid.argument",
-                "message": self.to_string(),
-            }
-        });
-        let text = serde_json::to_string_pretty(&value).unwrap_or_else(|_| {
-            String::from(
-                "{\"error\":{\"code\":\"internal\",\"message\":\"failed to serialize parser error\"}}",
-            )
-        });
-        ExitOutput {
-            stream: ExitStream::Stderr,
-            text: Cow::Owned(format!("{text}\n")),
-            code: self.exit_code(),
-        }
     }
 
     /// Builds the exact terminal output used by [`Self::exit`].

@@ -12,8 +12,7 @@
 use std::ffi::OsStr;
 
 use crate::__private::{
-    Action, Arg, Command, FIELDS_FLAG, Flag, Named, OUTPUT_FLAG, SCHEMA_ACTION, resolve_long,
-    resolve_short,
+    Action, Arg, Command, Flag, Named, SCHEMA_ACTION, resolve_long, resolve_short,
 };
 
 /// One token binding produced by the raw argument parser.
@@ -44,16 +43,6 @@ pub enum Event<'t, 'v> {
     Command {
         /// Static metadata for the selected child command.
         command: &'t Command<'t>,
-    },
-    /// Built-in output format was requested.
-    Output {
-        /// Format name consumed by the built-in option.
-        value: &'v [u8],
-    },
-    /// Built-in output fields were requested.
-    Fields {
-        /// Comma-separated selector text consumed by the built-in option.
-        value: &'v [u8],
     },
 }
 
@@ -220,20 +209,6 @@ impl<'t, 'a, 'v> ArgvParser<'t, 'a, 'v> {
             .iter()
             .position(|byte| *byte == b'=')
             .map_or((body, None), |index| (&body[..index], Some(&body[index + 1..])));
-        if name == b"output" {
-            let value = match attached {
-                Some(value) => value,
-                None => self.take_detached_value(&OUTPUT_FLAG)?,
-            };
-            return Ok(Event::Output { value });
-        }
-        if name == b"fields" {
-            let value = match attached {
-                Some(value) => value,
-                None => self.take_detached_value(&FIELDS_FLAG)?,
-            };
-            return Ok(Event::Fields { value });
-        }
         if self.schema_enabled && name == b"schema" {
             return if attached.is_some() {
                 Err(Error::UnexpectedActionValue { action: &SCHEMA_ACTION })
@@ -273,12 +248,6 @@ impl<'t, 'a, 'v> ArgvParser<'t, 'a, 'v> {
     fn check_short_bundle(&self, token: &'v [u8]) -> Result<(), Error<'t, 'v>> {
         let mut remaining = &token[1..];
         while let Some((&short, tail)) = remaining.split_first() {
-            if short == b'O' {
-                return Ok(());
-            }
-            if short == b'F' {
-                return Ok(());
-            }
             if self.schema_enabled && short == b'S' {
                 remaining = tail;
                 continue;
@@ -297,24 +266,6 @@ impl<'t, 'a, 'v> ArgvParser<'t, 'a, 'v> {
         let Some((&short, rest)) = self.bundle.split_first() else {
             return Err(Error::UnknownFlag { token: self.bundle_token });
         };
-        if short == b'O' {
-            self.bundle = &[];
-            let value = if rest.is_empty() {
-                self.take_detached_value(&OUTPUT_FLAG)?
-            } else {
-                rest.strip_prefix(b"=").unwrap_or(rest)
-            };
-            return Ok(Event::Output { value });
-        }
-        if short == b'F' {
-            self.bundle = &[];
-            let value = if rest.is_empty() {
-                self.take_detached_value(&FIELDS_FLAG)?
-            } else {
-                rest.strip_prefix(b"=").unwrap_or(rest)
-            };
-            return Ok(Event::Fields { value });
-        }
         if self.schema_enabled && short == b'S' {
             self.bundle = &[];
             return Ok(Event::Action { action: &SCHEMA_ACTION, long: false });

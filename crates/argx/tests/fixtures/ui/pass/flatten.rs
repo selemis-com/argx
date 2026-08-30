@@ -30,7 +30,7 @@ struct Cli {
 }
 
 fn main() {
-    let parsed = Cli::try_parse_args([
+    let parsed = Cli::try_parse_from(["argx-test",
         "--value=42",
         "--own=7",
         "before",

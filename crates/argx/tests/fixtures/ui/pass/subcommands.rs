@@ -42,7 +42,7 @@ struct Cli {
 
 fn main() {
     assert_eq!(
-        Cli::try_parse_args(["add", "--dry-run", "value"]),
+        Cli::try_parse_from(["argx-test", "add", "--dry-run", "value"]),
         Ok(Cli {
             verbose: false,
             command: Command::Add(Add {
@@ -52,14 +52,14 @@ fn main() {
         }),
     );
     assert_eq!(
-        Cli::try_parse_args(["config", "get"]),
+        Cli::try_parse_from(["argx-test", "config", "get"]),
         Ok(Cli {
             verbose: false,
             command: Command::Config(Config { command: ConfigCommand::Get }),
         }),
     );
     assert_eq!(
-        Cli::try_parse_args(["show-status"]),
+        Cli::try_parse_from(["argx-test", "show-status"]),
         Ok(Cli { verbose: false, command: Command::Status }),
     );
 }

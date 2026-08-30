@@ -27,9 +27,7 @@ mod tests {
             .assert()
             .success()
             .stdout_eq(
-                "--fields\tSelect output fields (comma-separated)\n\
-                 --help\tPrint help\n\
-                 --output\tSelect output format: text or json\n",
+                "--help\tPrint help\n",
             )
             .stderr_eq("");
     }
@@ -44,9 +42,7 @@ mod tests {
             .assert()
             .success()
             .stdout_eq(
-                "--fields\tSelect output fields (comma-separated)\n\
-                 --help\tPrint help\n\
-                 --output\tSelect output format: text or json\n",
+                "--help\tPrint help\n",
             )
             .stderr_eq("");
     }
@@ -141,8 +137,6 @@ Minimal command with no application-defined arguments.
 Usage: cli [OPTIONS]
 
 Options:
-  -O, --output <FORMAT>  Select output format: text or json
-  -F, --fields <FIELDS>  Select output fields (comma-separated)
   -h, --help             Print help
 
 "#]])
@@ -168,8 +162,6 @@ Commands:
   status  Shows status without additional arguments.
 
 Options:
-  -O, --output <FORMAT>  Select output format: text or json
-  -F, --fields <FIELDS>  Select output fields (comma-separated)
   -h, --help             Print help
   -V, --version          Print version
 
@@ -196,8 +188,6 @@ Arguments:
 
 Options:
       --force            Forces the operation.
-  -O, --output <FORMAT>  Select output format: text or json
-  -F, --fields <FIELDS>  Select output fields (comma-separated)
   -h, --help             Print help
 
 Common options:
@@ -258,8 +248,6 @@ Shows status without additional arguments.
 Usage: cli status [OPTIONS]
 
 Options:
-  -O, --output <FORMAT>  Select output format: text or json
-  -F, --fields <FIELDS>  Select output fields (comma-separated)
   -h, --help             Print help
   -V, --version          Print version
 
@@ -282,8 +270,6 @@ Arguments:
 
 Options:
       --force            Forces the operation.
-  -O, --output <FORMAT>  Select output format: text or json
-  -F, --fields <FIELDS>  Select output fields (comma-separated)
   -h, --help             Print help
 
 Common options:

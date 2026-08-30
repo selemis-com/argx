@@ -111,8 +111,8 @@ mod tests {
                 ("", "verbose mode enabled\nforce add: hello\n")
             }
             "complete" => {
-                command.args(["get", "object-7", "-O", "json"]);
-                ("{\"id\":\"object-7\",\"limit\":20}\n", "")
+                command.args(["get", "object-7"]);
+                ("get: object-7 (limit 20)\n", "")
             }
             "configuration" => {
                 command.args(["--workers", "8", "--endpoint", "https://example.invalid"]);

@@ -117,7 +117,9 @@ mod tests {
         I: IntoIterator<Item = T>,
         T: Into<std::ffi::OsString>,
     {
-        let error = match Cli::try_parse_args(argv) {
+        let argv = std::iter::once(std::ffi::OsString::from("argx-test"))
+            .chain(argv.into_iter().map(Into::into));
+        let error = match Cli::try_parse_from(argv) {
             Err(error) => error,
             Ok(_) => panic!("schema request should be terminal"),
         };
@@ -219,7 +221,7 @@ mod tests {
     #[test]
     fn schema_enabled_help_advertises_the_virtual_action() {
         assert!(Cli::render_help().contains("-S, --schema"));
-        let error = match Cli::try_parse_args(["get", "--help"]) {
+        let error = match Cli::try_parse_from(["argx-test", "get", "--help"]) {
             Err(error) => error,
             Ok(_) => panic!("help should be terminal"),
         };
@@ -231,10 +233,10 @@ mod tests {
 
     #[test]
     fn direct_root_schema_keeps_schema_available_as_a_positional_value() {
-        let direct = Direct::try_parse_args(["schema"]).expect("schema is positional data here");
+        let direct = Direct::try_parse_from(["argx-test", "schema"]).expect("schema is positional data here");
         assert_eq!(direct.value, "schema");
 
-        let error = match Direct::try_parse_args(["-S"]) {
+        let error = match Direct::try_parse_from(["argx-test", "-S"]) {
             Err(error) => error,
             Ok(_) => panic!("schema action should be terminal"),
         };
@@ -248,7 +250,7 @@ mod tests {
         assert_eq!(document["$defs"]["error"]["title"], "DirectError");
         assert!(document["$defs"].get("types").is_some());
 
-        let error = match Direct::try_parse_args(["-S", "--full"]) {
+        let error = match Direct::try_parse_from(["argx-test", "-S", "--full"]) {
             Err(error) => error,
             Ok(_) => panic!("full schema action should be terminal"),
         };

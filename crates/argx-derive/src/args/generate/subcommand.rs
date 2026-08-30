@@ -131,10 +131,6 @@ pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
                 #facade::__private::action_flag_spellings_disjoint(#table.actions, #table.flags),
                 "subcommand contains a flag spelling reserved by a built-in action",
             );
-            const _: () = ::core::assert!(
-                #facade::__private::output_flag_spellings_disjoint(#table.flags),
-                "subcommand contains a flag spelling reserved by Argx output",
-            );
         }
     });
     let command_refs = (0..subcommand.variants.len()).map(|index| {
@@ -423,7 +419,7 @@ fn subcommand_generics(subcommand: &model::Subcommand, facade: &TokenStream) -> 
             continue;
         }
         bounded.push(rendered);
-        generics.make_where_clause().predicates.push(parse_quote!(#ty: #facade::Args));
+        generics.make_where_clause().predicates.push(parse_quote!(#ty: #facade::__private::CommandArgs));
     }
     generics
 }

@@ -10,7 +10,7 @@ use std::{fmt::Write as _, io::IsTerminal as _};
 
 use crate::{
     __private::{
-        Action, Arg, Command, FIELDS_FLAG, Flag, HelpGroup, Key, Named, OUTPUT_FLAG, SCHEMA_ACTION,
+        Action, Arg, Command, Flag, HelpGroup, Key, Named, SCHEMA_ACTION,
         resolve_long, resolve_short,
     },
     error::display_bytes,
@@ -121,8 +121,6 @@ pub(crate) fn render_with_schema(path: &[&Command<'_>], schema_enabled: bool) ->
         .filter(|flag| !grouped_keys.contains(&flag.flag.key))
         .map(|flag| (flag_label(flag), flag_help(flag.flag)))
         .collect::<Vec<_>>();
-    rows.push(("-O, --output <FORMAT>".to_owned(), flag_help(&OUTPUT_FLAG)));
-    rows.push(("-F, --fields <FIELDS>".to_owned(), flag_help(&FIELDS_FLAG)));
     rows.extend(
         command.actions.iter().map(|action| (action_label(action), action.help.to_owned())),
     );
@@ -527,8 +525,6 @@ Options:
   -v, --verbose                    Enable verbose output
       --destination <DESTINATION>  Write to this path
       --profile <PROFILE>          Select a profile
-  -O, --output <FORMAT>            Select output format: text or json
-  -F, --fields <FIELDS>            Select output fields (comma-separated)
   -h, --help                       Print help
 
 "#]],
@@ -624,8 +620,6 @@ Options:
   -s, --root-scope         Root scope
   -p, --profile <PROFILE>  Required profile
       --root-version       Root version selector
-  -O, --output <FORMAT>    Select output format: text or json
-  -F, --fields <FIELDS>    Select output fields (comma-separated)
   -h, --help               Print help
   -V, --version            Print version
 
@@ -675,8 +669,6 @@ Usage: tool --token <ROOT_TOKEN> --config <CONFIG> leaf [OPTIONS]
 
 Options:
       --token <TOKEN>    Leaf token
-  -O, --output <FORMAT>  Select output format: text or json
-  -F, --fields <FIELDS>  Select output fields (comma-separated)
   -h, --help             Print help
 
 "#]],
@@ -705,8 +697,6 @@ Usage: tool leaf [OPTIONS]
 
 Options:
       --shared <SHARED>  Shared setting
-  -O, --output <FORMAT>  Select output format: text or json
-  -F, --fields <FIELDS>  Select output fields (comma-separated)
   -h, --help             Print help
 
 "#]],

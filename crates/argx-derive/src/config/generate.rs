@@ -267,8 +267,8 @@ pub(crate) fn generate_config(
     quote! {
         impl #ident {
             /// Creates an empty ordered configuration loader.
-            pub fn loader() -> #argx::ConfigLoader<Self> {
-                #argx::ConfigLoader::default()
+            pub fn loader() -> #argx::config::Loader<Self> {
+                #argx::config::Loader::default()
             }
         }
 

@@ -6,7 +6,7 @@
 //! one command tree.
 //!
 //! ```text
-//! cargo run --example complete -- get object-7 -O json -F id
+//! cargo run --example complete -- get object-7
 //! cargo run --example complete -- put object-7 value --endpoint https://example.invalid --token secret
 //! cargo run --example complete -- completions zsh
 //! cargo run --example complete -- schema get
@@ -23,8 +23,7 @@ use std::{
 };
 
 use argx::{
-    Args, Defaults, Dotenv, Environment, OutputFormat, Parser as _, Subcommand, argx,
-    completion::Shell,
+    Args, Defaults, Dotenv, Environment, Parser as _, Subcommand, argx, completion::Shell,
 };
 use serde::Serialize;
 
@@ -44,6 +43,7 @@ struct Settings {
     /// Default service endpoint.
     #[argx(default = String::from("http://localhost:8080"))]
     endpoint: String,
+
 }
 
 /// Options inherited by every selected command.
@@ -198,7 +198,7 @@ enum Command {
 /// # Examples
 ///
 ///     complete get object-7
-///     complete show object-7 -O json -F id
+///     complete show object-7
 ///     complete completions bash
 #[derive(Debug, argx::Parser)]
 #[argx(name = "complete", version = VERSION, long_version = LONG_VERSION, schema)]
@@ -236,8 +236,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let settings = settings()?;
-    let invocation = Cli::try_parse_invocation().unwrap_or_else(|error| error.exit());
-    let (cli, output) = invocation.into_parts();
+    let cli = Cli::parse();
 
     if cli.common.verbose {
         eprintln!("workers: {}", settings.workers);
@@ -246,22 +245,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match cli.command {
         Command::Get(command) => match get(command) {
-            Ok(value) => match output.format() {
-                OutputFormat::Text => println!("get: {} (limit {})", value.id, value.limit),
-                OutputFormat::Json => println!("{}", output.render_json(&value)?),
-                _ => return Err("unsupported output format".into()),
-            },
+            Ok(value) => println!("get: {} (limit {})", value.id, value.limit),
             Err(GetError::NotFound) => {
                 eprintln!("object not found");
                 std::process::exit(1);
             }
         },
         Command::Put(command) => match put(command) {
-            Ok(value) => match output.format() {
-                OutputFormat::Text => println!("put: {}", value.id),
-                OutputFormat::Json => println!("{}", output.render_json(&value)?),
-                _ => return Err("unsupported output format".into()),
-            },
+            Ok(value) => println!("put: {}", value.id),
             Err(PutError::Rejected) => {
                 eprintln!("request rejected");
                 std::process::exit(1);
@@ -275,11 +266,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     std::process::exit(1);
                 }
             };
-            match output.format() {
-                OutputFormat::Json => println!("{}", output.render_json(&value)?),
-                OutputFormat::Text => io::stdout().lock().write_all(value.script.as_bytes())?,
-                _ => return Err("unsupported output format".into()),
-            }
+            io::stdout().lock().write_all(value.script.as_bytes())?;
         }
     }
 

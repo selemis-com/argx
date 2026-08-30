@@ -15,7 +15,7 @@ struct Cli {
 }
 
 fn main() {
-    let cli = Cli::try_parse_args(["--mode", "json", "human-readable"]).expect("value enum");
+    let cli = Cli::try_parse_from(["argx-test", "--mode", "json", "human-readable"]).expect("value enum");
     assert_eq!(cli.mode, Some(Mode::Json));
     assert_eq!(cli.fallback, Mode::HumanReadable);
     assert_eq!(<Mode as argx::ValueEnum>::VALUES, &["human-readable", "json"]);

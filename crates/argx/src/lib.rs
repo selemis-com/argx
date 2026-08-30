@@ -282,24 +282,10 @@
 //!
 //! # Entry points and embedding
 //!
-//! All parser entry points use the same generated command model. They differ only in where argv
-//! comes from and who owns terminal/process policy:
-//!
-//! | Entry point | Input | Process policy |
-//! | --- | --- | --- |
-//! | [`Parser::parse`] | current process, excluding program name | Argx prints and exits |
-//! | [`Parser::try_parse`] | current process, excluding program name | caller receives [`Error`] |
-//! | [`Parser::parse_from`] | complete argv including program name | Argx prints and exits |
-//! | [`Parser::try_parse_from`] | complete argv including program name | caller receives [`Error`] |
-//! | [`Parser::parse_args`] | arguments only | Argx prints and exits |
-//! | [`Parser::try_parse_args`] | arguments only | caller receives [`Error`] |
-//! | [`Parser::try_parse_invocation`] | current process, excluding program name | caller receives [`Invocation`] or [`Error`] |
-//! | [`Parser::try_parse_invocation_from`] | complete argv including program name | caller receives [`Invocation`] or [`Error`] |
-//! | [`Parser::try_parse_invocation_args`] | arguments only | caller receives [`Invocation`] or [`Error`] |
-//!
-//! The `try_parse*` methods represent built-in help and version requests as terminal actions in the
-//! error type. Embedding code can therefore preserve Argx's parser semantics while choosing its
-//! own transport, logging, or exit policy:
+//! [`Parser::parse`] and [`Parser::try_parse`] read the current process arguments. The `*_from`
+//! variants accept a complete argv sequence including the program name. `parse` methods apply
+//! Argx's conventional terminal and process policy, while `try_parse` methods return [`Error`] to
+//! the caller.
 //!
 //! ```
 //! use argx::{Error, Parser as _};
@@ -309,67 +295,10 @@
 //!     input: String,
 //! }
 //!
-//! match Cli::try_parse_args(["--help"]) {
+//! match Cli::try_parse_from(["acme", "--help"]) {
 //!     Err(Error::DisplayHelp { help }) => assert!(help.contains("Usage:")),
 //!     _ => panic!("expected the built-in help action"),
 //! }
-//! ```
-//!
-//! # Output
-//!
-//! Argx reserves `-O` / `--output <FORMAT>` and `-F` / `--fields <FIELDS>` as global output
-//! controls. Output defaults to [`OutputFormat::Text`]; `-O json` selects [`OutputFormat::Json`].
-//! Field selectors are repeatable, comma-separated, and may use dotted paths. They require JSON
-//! output and a typed result schema for the selected handler.
-//!
-//! The invocation entry points return [`Invocation<T>`], keeping the parsed application command
-//! separate from its [`Output`] context. Applications continue to own dispatch and text rendering.
-//! For successful structured output, [`Output::render_json`] serializes the handler value and
-//! applies any schema-validated field projection. Field selection does not apply to errors.
-//!
-//! ```
-//! use argx::{OutputFormat, Parser as _, argx};
-//! use serde::Serialize;
-//!
-//! #[derive(argx::Parser)]
-//! #[argx(schema)]
-//! struct Cli {
-//!     #[argx(subcommand)]
-//!     command: Command,
-//! }
-//!
-//! #[derive(argx::Subcommand)]
-//! #[argx(schema)]
-//! enum Command {
-//!     Get(Get),
-//! }
-//!
-//! #[derive(argx::Args)]
-//! struct Get;
-//!
-//! #[derive(Serialize)]
-//! #[argx(schema)]
-//! struct GetOutput {
-//!     id: u64,
-//! }
-//!
-//! #[derive(Debug, Serialize)]
-//! #[argx(schema)]
-//! struct GetError;
-//!
-//! #[argx::argx(handler = run)]
-//! impl Get {
-//!     fn run(self) -> Result<GetOutput, GetError> {
-//!         Ok(GetOutput { id: 7 })
-//!     }
-//! }
-//!
-//! let invocation = Cli::try_parse_invocation_from(["acme", "get", "-O", "json", "-F", "id"])?;
-//! assert_eq!(invocation.output.format(), OutputFormat::Json);
-//! let Command::Get(command) = invocation.command.command;
-//! let value = command.run().unwrap();
-//! assert_eq!(invocation.output.render_json(&value)?, r#"{"id":7}"#);
-//! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
 //! # Help and version
@@ -564,9 +493,8 @@
 //! separately from structural argv errors such as unknown options, missing values, duplicate
 //! scalar arguments, unknown commands, missing subcommands, and unsatisfied relationships.
 //!
-//! [`Parser::parse`], [`Parser::parse_from`], and [`Parser::parse_args`] provide conventional CLI
-//! process behavior. [`Parser::try_parse`], [`Parser::try_parse_from`], and
-//! [`Parser::try_parse_args`] return the error/action to the caller instead.
+//! [`Parser::parse`] and [`Parser::parse_from`] provide conventional CLI process behavior.
+//! [`Parser::try_parse`] and [`Parser::try_parse_from`] return the error/action to the caller.
 //!
 //! # Derive restrictions
 //!
@@ -602,14 +530,12 @@ mod cli;
 pub mod completion;
 pub mod config;
 mod error;
-mod output;
 mod schema;
 
 use std::ffi::{OsStr, OsString};
 
 pub use cli::value_enum::{ValueEnum, ValueEnumError};
 pub use error::{Error, InvalidValue};
-pub use output::{Invocation, Output, OutputError, OutputFormat};
 
 /// Compiler-facing marker for command declarations that are directly invocable.
 #[doc(hidden)]
@@ -637,37 +563,7 @@ pub use argx_derive::{Args, Parser, Subcommand, ValueEnum, argx};
 #[cfg(feature = "toml")]
 #[cfg_attr(docsrs, doc(cfg(feature = "toml")))]
 pub use config::Toml;
-pub use config::{
-    Argv, Defaults, Dotenv, Environment, Error as ConfigError, Layer, Loader as ConfigLoader,
-};
-
-/// Marks a reusable argument group derived with `#[derive(Args)]`.
-///
-/// This trait distinguishes reusable argument groups from root [`Parser`] declarations. It is
-/// implemented by the `Args` derive and is not intended for manual implementation.
-///
-/// # Examples
-///
-/// ```
-/// use argx::Parser as _;
-///
-/// #[derive(argx::Args)]
-/// struct Display {
-///     #[argx(long)]
-///     color: bool,
-/// }
-///
-/// #[derive(argx::Parser)]
-/// struct Cli {
-///     #[argx(flatten)]
-///     display: Display,
-/// }
-///
-/// let cli = Cli::try_parse_from(["tool", "--color"])?;
-/// assert!(cli.display.color);
-/// # Ok::<(), argx::Error>(())
-/// ```
-pub trait Args: Sized + __private::CommandArgs {}
+pub use config::{Argv, Defaults, Dotenv, Environment, Error as ConfigError};
 
 /// Parses command-line arguments into a typed value.
 ///
@@ -695,7 +591,7 @@ pub trait Parser: Sized + __private::CommandArgs {
     /// the corresponding built-in action is requested, or an error when argv cannot be bound to
     /// this command or a bound value cannot be converted to its Rust field type.
     fn try_parse() -> Result<Self, Error> {
-        Self::try_parse_args(std::env::args_os().skip(1))
+        parse_args::<Self, _, _>(std::env::args_os().skip(1))
     }
 
     /// Parses a complete argv sequence whose first item is the program name.
@@ -744,108 +640,7 @@ pub trait Parser: Sized + __private::CommandArgs {
     {
         let mut argv = argv.into_iter();
         let _ = argv.next();
-        Self::try_parse_args(argv)
-    }
-
-    /// Parses arguments that do not include a program name.
-    ///
-    /// Help, version, and schema requests are printed to standard output and terminate
-    /// successfully. Parse failures are printed to standard error and terminate the process with
-    /// status 2.
-    fn parse_args<I, T>(argv: I) -> Self
-    where
-        I: IntoIterator<Item = T>,
-        T: Into<OsString>,
-    {
-        Self::try_parse_args(argv).unwrap_or_else(|error| error.exit())
-    }
-
-    /// Parses arguments that do not include a program name.
-    ///
-    /// This entry point is useful when `argv` is already separated from the executable name, such
-    /// as in tests, embedded command dispatch, or an agent invoking a command directly. Unlike
-    /// [`Self::try_parse_from`], the first item is a real argument and is not discarded.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use argx::Parser as _;
-    ///
-    /// #[derive(argx::Parser)]
-    /// struct Cli {
-    ///     value: String,
-    /// }
-    ///
-    /// let cli = Cli::try_parse_args(["payload"])?;
-    /// assert_eq!(cli.value, "payload");
-    /// # Ok::<(), argx::Error>(())
-    /// ```
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::DisplayHelp`], [`Error::DisplayVersion`], or [`Error::DisplaySchema`] when
-    /// the corresponding built-in action is requested, or an error when argv cannot be bound to
-    /// this command or a bound value cannot be converted to its Rust field type.
-    fn try_parse_args<I, T>(argv: I) -> Result<Self, Error>
-    where
-        I: IntoIterator<Item = T>,
-        T: Into<OsString>,
-    {
-        Self::try_parse_invocation_args(argv).map(|invocation| invocation.command)
-    }
-
-    /// Parses the current process arguments and preserves Argx's built-in output options.
-    ///
-    /// # Errors
-    ///
-    /// Returns the same parse and terminal-action errors as [`Self::try_parse`]. Field selection
-    /// additionally requires a typed result schema for the selected command.
-    fn try_parse_invocation() -> Result<Invocation<Self>, Error> {
-        Self::try_parse_invocation_args(std::env::args_os().skip(1))
-    }
-
-    /// Parses a complete argv sequence and preserves Argx's built-in output options.
-    ///
-    /// # Errors
-    ///
-    /// Returns the same parse and terminal-action errors as [`Self::try_parse_from`].
-    fn try_parse_invocation_from<I, T>(argv: I) -> Result<Invocation<Self>, Error>
-    where
-        I: IntoIterator<Item = T>,
-        T: Into<OsString>,
-    {
-        let mut argv = argv.into_iter();
-        let _ = argv.next();
-        Self::try_parse_invocation_args(argv)
-    }
-
-    /// Parses arguments without a program name and preserves Argx's built-in output options.
-    ///
-    /// `-O`/`--output <FORMAT>` and repeatable `-F`/`--fields` are global Argx options. Output
-    /// defaults to `text`; currently supported formats are `text` and `json`. Every `--fields`
-    /// occurrence is comma-separated and normalized into individual dotted selectors.
-    ///
-    /// # Errors
-    ///
-    /// Returns the same parse and terminal-action errors as [`Self::try_parse_args`]. Field
-    /// selection additionally fails when the selected command has no typed result schema or a
-    /// selector does not exist in that schema.
-    fn try_parse_invocation_args<I, T>(argv: I) -> Result<Invocation<Self>, Error>
-    where
-        I: IntoIterator<Item = T>,
-        T: Into<OsString>,
-    {
-        let owned: Vec<OsString> = argv.into_iter().map(Into::into).collect();
-        let refs: Vec<&OsStr> = owned.iter().map(OsString::as_os_str).collect();
-        if !<Self as __private::CommandArgs>::SCHEMA_ENABLED {
-            return cli::binding::parse_refs_with_output::<Self>(&refs);
-        }
-        let registry = <Self as __private::CommandArgs>::schema_registry()
-            .expect("schema-enabled parser must generate a schema registry");
-        if let Some(error) = schema::pseudo_command(Self::COMMAND, &refs, &registry) {
-            return Err(error);
-        }
-        cli::binding::parse_refs_with_schema_and_output::<Self>(&refs, &registry)
+        parse_args::<Self, _, _>(argv)
     }
 
     /// Handles a dynamic shell-completion request for the current process.
@@ -904,6 +699,26 @@ pub trait Parser: Sized + __private::CommandArgs {
             <Self as __private::CommandArgs>::SCHEMA_ENABLED,
         )
     }
+}
+
+/// Parses already-separated arguments for the public parser entry points.
+fn parse_args<P, I, T>(argv: I) -> Result<P, Error>
+where
+    P: Parser,
+    I: IntoIterator<Item = T>,
+    T: Into<OsString>,
+{
+    let owned: Vec<OsString> = argv.into_iter().map(Into::into).collect();
+    let refs: Vec<&OsStr> = owned.iter().map(OsString::as_os_str).collect();
+    if !<P as __private::CommandArgs>::SCHEMA_ENABLED {
+        return cli::binding::parse_refs::<P>(&refs);
+    }
+    let registry = <P as __private::CommandArgs>::schema_registry()
+        .expect("schema-enabled parser must generate a schema registry");
+    if let Some(error) = schema::pseudo_command(P::COMMAND, &refs, &registry) {
+        return Err(error);
+    }
+    cli::binding::parse_refs_with_schema::<P>(&refs, &registry)
 }
 
 /// Implementation details shared with generated code.

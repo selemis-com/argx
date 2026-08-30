@@ -17,8 +17,8 @@ use crate::{
             routes_negative_number_to_arg,
         },
         command::{
-            Action, Arg, Command, ConstraintKind, FIELDS_FLAG, Flag, Key, Named, OUTPUT_FLAG,
-            SCHEMA_ACTION, long as resolve_long, short as resolve_short,
+            Action, Arg, Command, ConstraintKind, Flag, Key, Named, SCHEMA_ACTION,
+            long as resolve_long, short as resolve_short,
         },
         protocol::CommandArgs,
     },
@@ -236,7 +236,7 @@ fn walk<'t>(root: &'t Command<'t>, argv: &[String], schema_enabled: bool) -> Opt
             Ok(Event::Arg { arg, .. }) => {
                 given.insert(arg.key);
             }
-            Ok(Event::Command { .. } | Event::Output { .. } | Event::Fields { .. }) => {}
+            Ok(Event::Command { .. }) => {}
             Err(ArgvError::MissingFlagValue { flag }) if parser.at_end() => {
                 awaiting_value = Some(flag);
                 break;
@@ -334,15 +334,6 @@ fn candidates<'t>(position: &Position<'t>, prefix: &str) -> Vec<Candidate<'t>> {
     }
 
     if flags_possible(position, prefix) {
-        for flag in [&OUTPUT_FLAG, &FIELDS_FLAG] {
-            for &long in flag.longs {
-                push_option(&mut candidates, &mut seen, prefix, "--", long, flag.help);
-            }
-            for &short in flag.shorts {
-                let spelling = format!("-{}", char::from(short));
-                push_owned_candidate(&mut candidates, &mut seen, prefix, spelling, flag.help);
-            }
-        }
         if position.schema_enabled {
             for &long in SCHEMA_ACTION.longs {
                 push_option(

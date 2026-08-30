@@ -11,7 +11,7 @@ struct Cli {
 }
 
 fn main() {
-    let cli = Cli::try_parse_args(std::iter::empty::<&str>()).expect("defaults should compile");
+    let cli = Cli::try_parse_from(["argx-test"]).expect("defaults should compile");
     assert_eq!(cli.port, DEFAULT_PORT);
     assert_eq!(cli.profile.as_deref(), Some("development"));
 }
