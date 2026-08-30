@@ -3,6 +3,7 @@
 use proc_macro_crate::{FoundCrate, crate_name};
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
+use syn::{Expr, Lit};
 
 /// Returns an identifier without Rust's raw-identifier prefix.
 pub(crate) fn ident_name(ident: &Ident) -> String {
@@ -28,6 +29,34 @@ pub(crate) fn to_kebab(value: &str) -> String {
         }
     }
     output
+}
+
+/// Derives a stable user-facing spelling for simple defaults without evaluating application code.
+pub(crate) fn default_help(expression: &Expr, value_enum: bool) -> Option<String> {
+    match expression {
+        Expr::Lit(expr) => match &expr.lit {
+            Lit::Str(value) => Some(value.value()),
+            Lit::Int(value) => Some(value.base10_digits().to_owned()),
+            Lit::Float(value) => Some(value.base10_digits().to_owned()),
+            _ => None,
+        },
+        Expr::Unary(expr) if matches!(expr.op, syn::UnOp::Neg(_)) => {
+            default_help(&expr.expr, value_enum).map(|value| format!("-{value}"))
+        }
+        Expr::Path(expr) if value_enum => {
+            expr.path.segments.last().map(|segment| to_kebab(&segment.ident.to_string()))
+        }
+        Expr::Call(expr) if expr.args.len() == 1 => {
+            let Expr::Path(function) = &*expr.func else { return None };
+            if function.path.segments.last()?.ident != "from" {
+                return None;
+            }
+            let Expr::Lit(argument) = expr.args.first()? else { return None };
+            let Lit::Str(value) = &argument.lit else { return None };
+            Some(value.value())
+        }
+        _ => None,
+    }
 }
 
 /// Returns the resolved Rust crate name for the Argx facade.

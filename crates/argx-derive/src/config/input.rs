@@ -67,6 +67,8 @@ pub(crate) struct Field {
     pub(crate) nested: bool,
     /// Whether collection values accept comma-delimited scalar input.
     pub(crate) delimited: bool,
+    /// Whether the CLI value uses a finite `ValueEnum` vocabulary.
+    pub(crate) value_enum: bool,
     /// CLI-only metadata copied to the generated sparse argv adapter.
     pub(crate) cli: Vec<TokenStream>,
     /// Documentation attributes copied to generated CLI fields.
@@ -87,6 +89,7 @@ impl Field {
         let mut env = None;
         let mut nested = false;
         let mut delimited = false;
+        let mut value_enum = false;
         let mut cli = Vec::new();
 
         for attribute in &field.attrs {
@@ -161,6 +164,9 @@ impl Field {
                     || meta.path.is_ident("allow_hyphen_values")
                     || meta.path.is_ident("allow_negative_numbers")
                 {
+                    if meta.path.is_ident("value_enum") {
+                        value_enum = true;
+                    }
                     let key = &meta.path;
                     cli.push(quote!(#key));
                     return Ok(());
@@ -201,6 +207,7 @@ impl Field {
             env,
             nested,
             delimited,
+            value_enum,
             cli,
             docs,
         })

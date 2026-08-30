@@ -173,8 +173,10 @@ pub struct Flag<'a> {
     pub name: &'a str,
     /// Canonical user-facing spelling used by diagnostics.
     pub diagnostic: &'a str,
-    /// One-line description shown in generated help.
+    /// One-line description shown in compact generated help.
     pub help: Option<&'a str>,
+    /// Full description shown in long generated help.
+    pub long_help: Option<&'a str>,
     /// Canonical long spellings without the leading `--`.
     pub longs: &'a [&'a str],
     /// Hidden long aliases without the leading `--`.
@@ -193,6 +195,8 @@ pub struct Flag<'a> {
     pub required: bool,
     /// Whether absence is satisfied by a typed Rust default expression.
     pub has_default: bool,
+    /// Static user-facing spelling of the declared default, when it can be derived safely.
+    pub default_value: Option<&'a str>,
     /// Whether a detached value may itself be flag-like.
     pub allow_hyphen_values: bool,
     /// Whether a detached negative number may be consumed while other flag-like values are
@@ -207,6 +211,7 @@ impl Flag<'static> {
         name: "",
         diagnostic: "",
         help: None,
+        long_help: None,
         longs: &[],
         aliases: &[],
         shorts: &[],
@@ -216,6 +221,7 @@ impl Flag<'static> {
         repeatable: false,
         required: false,
         has_default: false,
+        default_value: None,
         allow_hyphen_values: false,
         allow_negative_numbers: false,
     };
@@ -231,8 +237,10 @@ pub struct Arg<'a> {
     pub key: Key,
     /// Canonical field name used by generated binding and help.
     pub name: &'a str,
-    /// One-line description shown in generated help.
+    /// One-line description shown in compact generated help.
     pub help: Option<&'a str>,
+    /// Full description shown in long generated help.
+    pub long_help: Option<&'a str>,
     /// Whether this positional must receive at least one value.
     pub required: bool,
     /// Whether this positional may receive multiple values.
@@ -249,6 +257,7 @@ impl Arg<'static> {
         key: 0,
         name: "",
         help: None,
+        long_help: None,
         required: true,
         variadic: false,
         accepted_values: &[],

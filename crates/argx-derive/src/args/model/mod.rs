@@ -156,6 +156,10 @@ pub(crate) enum ValueConversion {
 }
 
 /// CLI role represented by one Rust field.
+#[expect(
+    clippy::large_enum_variant,
+    reason = "derive-time model; boxing would add indirection without reducing meaningful runtime cost"
+)]
 pub(crate) enum FieldSemantics {
     /// One named or positional CLI argument.
     Argument(Argument),
@@ -169,6 +173,8 @@ pub(crate) enum FieldSemantics {
 pub(crate) struct Argument {
     /// One-line help summary for this argument.
     pub help: Option<String>,
+    /// Full help prose for this argument.
+    pub long_help: Option<String>,
     /// Whether the argument is named or positional on the command line.
     pub kind: ArgumentKind,
     /// Canonical user-facing label used by diagnostics.
@@ -179,6 +185,8 @@ pub(crate) struct Argument {
     pub shape: Shape,
     /// Whether absence is satisfied by a typed Rust default.
     pub has_default: bool,
+    /// Static user-facing spelling of the declared default, when derivable from syntax.
+    pub default_value: Option<String>,
     /// Field names that must be satisfied when this argument is supplied.
     pub requires: Vec<String>,
     /// Field names that cannot be supplied together with this argument.

@@ -13,7 +13,7 @@ mod tests {
     use argx::{Error, Parser as _};
 
     fn root_help<P: argx::Parser>() -> String {
-        match P::try_parse_from(["argx-test", "--help"]) {
+        match P::try_parse_from(["argx-test", "-h"]) {
             Err(Error::DisplayHelp { help }) => help,
             Ok(_) => panic!("help request unexpectedly parsed"),
             Err(error) => panic!("unexpected help error: {error:?}"),
@@ -310,6 +310,22 @@ mod tests {
         Status,
     }
 
+    #[derive(Debug, PartialEq, Eq, argx::ValueEnum)]
+    enum HelpFormat {
+        Human,
+        Json,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    #[argx(name = "help-detail")]
+    struct HelpDetailCli {
+        /// Output format.
+        ///
+        /// Controls how records are rendered to stdout.
+        #[argx(long, value_enum, default = HelpFormat::Human)]
+        format: HelpFormat,
+    }
+
     #[derive(Debug, PartialEq, Eq, argx::Args)]
     struct HelpConfig {
         /// Use local configuration.
@@ -381,7 +397,7 @@ mod tests {
     #[derive(Debug, PartialEq, Eq, argx::Parser)]
     #[argx(name = "grouped-help")]
     struct GroupedHelpCli {
-        /// Output
+        /// Output.
         #[argx(flatten)]
         output: GroupedOutputArgs,
         #[argx(subcommand)]
@@ -1154,19 +1170,13 @@ Commands:
 Options:
   -v, --verbose               Enable verbose output.
       --destination <OUTPUT>  Output path
-  -h, --help                  Print help
+  -h, --help                  Print help (see more with '--help')
 
 "#]],
         );
 
-        let nested = HelpCli::try_parse_from([
-            "argx-test",
-            "--destination",
-            "out",
-            "acme",
-            "config",
-            "--help",
-        ]);
+        let nested =
+            HelpCli::try_parse_from(["argx-test", "--destination", "out", "acme", "config", "-h"]);
         let Err(Error::DisplayHelp { help }) = nested else {
             panic!("nested help request did not return generated help")
         };
@@ -1182,7 +1192,7 @@ Arguments:
 
 Options:
       --local  Use local configuration.
-  -h, --help   Print help
+  -h, --help   Print help (see more with '--help')
 
 "#]],
         );
@@ -1213,19 +1223,49 @@ Options:
     }
 
     #[test]
+    fn short_and_long_help_use_distinct_detail_levels() {
+        let short = match HelpDetailCli::try_parse_from(["argx-test", "-h"]) {
+            Err(Error::DisplayHelp { help }) => help,
+            result => panic!("unexpected short help result: {result:?}"),
+        };
+        assert!(short.contains(
+            "--format <FORMAT>  Output format. [possible values: human, json] [default: human]"
+        ));
+        assert!(short.contains("Print help (see more with '--help')"));
+        assert!(!short.contains("Controls how records are rendered to stdout."));
+
+        let long = match HelpDetailCli::try_parse_from(["argx-test", "--help"]) {
+            Err(Error::DisplayHelp { help }) => help,
+            result => panic!("unexpected long help result: {result:?}"),
+        };
+        assert!(long.contains("Controls how records are rendered to stdout."));
+        assert!(long.contains("Possible values:\n          - human\n          - json"));
+        assert!(long.contains("[default: human]"));
+        assert!(long.contains("Print help (see a summary with '-h')"));
+
+        let commands = match HelpCli::try_parse_from(["argx-test", "--help"]) {
+            Err(Error::DisplayHelp { help }) => help,
+            result => panic!("unexpected long command help result: {result:?}"),
+        };
+        assert!(
+            commands.contains(
+                "Commands:\n  config  Configure values.\n  status  Show current status.\n"
+            )
+        );
+    }
+
+    #[test]
     fn generated_help_renders_structured_sections_from_rust_docs() {
         snapbox::Assert::new().action_env("SNAPSHOTS").eq(
             root_help::<DocumentedHelpCli>(),
             snapbox::str![[r#"
 Inspect and modify widgets.
 
-Commands operate on the selected workspace.
-
 Usage: documented-help [OPTIONS]
 
 Options:
       --workspace <WORKSPACE>
-  -h, --help                   Print help
+  -h, --help                   Print help (see more with '--help')
 
 Examples:
 documented-help list
@@ -1260,7 +1300,7 @@ Commands:
   status  Show current status.
 
 Options:
-  -h, --help  Print help
+  -h, --help  Print help (see more with '--help')
 
 Output:
       --json           Emit structured output.
@@ -1512,12 +1552,12 @@ Output:
         }
 
         assert_eq!(
-            AliasCli::try_parse_from(["argx-test", "--help"]),
+            AliasCli::try_parse_from(["argx-test", "-h"]),
             Err(Error::DisplayHelp {
                 help: String::from(
                     "Usage: aliases [OPTIONS] <COMMAND>\n\n\
 Commands:\n  remove\n  status\n\n\
-Options:\n      --color <COLOR>\n  -h, --help           Print help\n",
+Options:\n      --color <COLOR>\n  -h, --help           Print help (see more with '--help')\n",
                 ),
             }),
         );
@@ -1677,11 +1717,11 @@ Options:\n      --color <COLOR>\n  -h, --help           Print help\n",
     #[test]
     fn descendant_help_uses_the_same_global_shadowing_as_parsing() {
         assert_eq!(
-            GlobalCli::try_parse_from(["argx-test", "outer", "leaf", "--help"]),
+            GlobalCli::try_parse_from(["argx-test", "outer", "leaf", "-h"]),
             Err(Error::DisplayHelp {
                 help: String::from(
                     "Usage: global-cli outer leaf [OPTIONS]\n\n\
-Options:\n      --verbose\n      --region <REGION>\n      --profile <PROFILE>\n  -h, --help               Print help\n",
+Options:\n      --verbose\n      --region <REGION>\n      --profile <PROFILE>\n  -h, --help               Print help (see more with '--help')\n",
                 ),
             }),
         );

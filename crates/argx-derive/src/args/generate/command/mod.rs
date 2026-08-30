@@ -82,6 +82,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
         let name = &field.binding.name;
         let diagnostic = &argument.diagnostic;
         let help = option_str(argument.help.as_deref());
+        let long_help = option_str(argument.long_help.as_deref());
         let global = argument.global;
         let takes_value = field.takes_value();
         let accepted_values = if argument.value_enum {
@@ -95,6 +96,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
             && !argument.has_default
             && field.takes_value();
         let has_default = argument.has_default;
+        let default_value = option_str(argument.default_value.as_deref());
         let allow_hyphen_values = argument.allow_hyphen_values;
         let allow_negative_numbers = argument.allow_negative_numbers;
         quote! {
@@ -103,6 +105,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                 name: #name,
                 diagnostic: #diagnostic,
                 help: #help,
+                long_help: #long_help,
                 longs: &[#(#longs),*],
                 aliases: &[#(#aliases),*],
                 shorts: &[#(#shorts),*],
@@ -112,6 +115,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                 repeatable: #repeatable,
                 required: #required,
                 has_default: #has_default,
+                default_value: #default_value,
                 allow_hyphen_values: #allow_hyphen_values,
                 allow_negative_numbers: #allow_negative_numbers,
             };
@@ -126,6 +130,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
         };
         let name = &field.binding.name;
         let help = option_str(argument.help.as_deref());
+        let long_help = option_str(argument.long_help.as_deref());
         let required = matches!(argument.shape, model::Shape::Bool | model::Shape::Required);
         let variadic = argument.shape == model::Shape::Many;
         let accepted_values = if argument.value_enum {
@@ -141,6 +146,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                     key: #key,
                     name: #name,
                     help: #help,
+                    long_help: #long_help,
                     required: #required,
                     variadic: #variadic,
                     accepted_values: #accepted_values,

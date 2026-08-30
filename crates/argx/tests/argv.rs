@@ -26,6 +26,7 @@ mod tests {
         key: 6,
         name: "rest",
         help: None,
+        long_help: None,
         required: false,
         variadic: true,
         accepted_values: &[],

@@ -34,28 +34,43 @@ struct VisibleFlag<'a> {
     shorts: Vec<u8>,
 }
 
+/// Amount of detail requested by the help spelling.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HelpStyle {
+    /// Compact `-h` output.
+    Short,
+    /// Expanded `--help` output.
+    Long,
+}
+
 /// Renders help for one selected command path.
 ///
 /// Required ancestor arguments remain attached to the scope where they must appear, while only the
 /// selected command contributes positional rows and child-command listings.
 #[cfg(test)]
 pub(crate) fn render(path: &[&Command<'_>]) -> String {
-    render_with_schema(path, false)
+    render_with_schema(path, false, HelpStyle::Short)
 }
 
 /// Renders help with the virtual schema action when discovery is enabled for the root parser.
-pub(crate) fn render_with_schema(path: &[&Command<'_>], schema_enabled: bool) -> String {
+pub(crate) fn render_with_schema(
+    path: &[&Command<'_>],
+    schema_enabled: bool,
+    style: HelpStyle,
+) -> String {
     let Some(&command) = path.last() else {
         return String::new();
     };
 
     let visible_flags = visible_flags(path);
-    let (grouped_keys, grouped_rows) = grouped_rows(path, &visible_flags);
+    let (grouped_keys, grouped_rows) = grouped_rows(path, &visible_flags, style);
 
     let mut output = String::new();
-    if let Some(description) =
-        command.description.or(command.about).filter(|description| !description.is_empty())
-    {
+    let description = match style {
+        HelpStyle::Short => command.about,
+        HelpStyle::Long => command.description.or(command.about),
+    };
+    if let Some(description) = description.filter(|description| !description.is_empty()) {
         output.push_str(description);
         output.push_str("\n\n");
     }
@@ -95,9 +110,11 @@ pub(crate) fn render_with_schema(path: &[&Command<'_>], schema_enabled: bool) ->
         .collect::<Vec<_>>();
     if !ungrouped_args.is_empty() {
         output.push_str("\nArguments:\n");
-        let rows =
-            ungrouped_args.iter().map(|arg| (arg_usage(arg), arg_help(arg))).collect::<Vec<_>>();
-        write_rows(&mut output, &rows);
+        let rows = ungrouped_args
+            .iter()
+            .map(|arg| (arg_usage(arg), arg_help(arg, style)))
+            .collect::<Vec<_>>();
+        write_rows(&mut output, &rows, style);
     }
 
     if !command.subcommands.is_empty() {
@@ -112,28 +129,30 @@ pub(crate) fn render_with_schema(path: &[&Command<'_>], schema_enabled: bool) ->
         if schema_enabled && path.len() == 1 {
             rows.push(("schema".to_owned(), "Print machine-readable schema".to_owned()));
         }
-        write_rows(&mut output, &rows);
+        // clap keeps command summaries compact even in expanded `--help`; only argument and
+        // option rows switch to the long, vertically expanded layout.
+        write_rows(&mut output, &rows, HelpStyle::Short);
     }
 
     output.push_str("\nOptions:\n");
     let mut rows = visible_flags
         .iter()
         .filter(|flag| !grouped_keys.contains(&flag.flag.key))
-        .map(|flag| (flag_label(flag), flag_help(flag.flag)))
+        .map(|flag| (flag_label(flag), flag_help(flag.flag, style)))
         .collect::<Vec<_>>();
     rows.extend(
-        command.actions.iter().map(|action| (action_label(action), action.help.to_owned())),
+        command.actions.iter().map(|action| (action_label(action), action_help(action, style))),
     );
     if schema_enabled {
-        rows.push((action_label(&SCHEMA_ACTION), SCHEMA_ACTION.help.to_owned()));
+        rows.push((action_label(&SCHEMA_ACTION), action_help(&SCHEMA_ACTION, style)));
     }
-    write_rows(&mut output, &rows);
+    write_rows(&mut output, &rows, style);
 
     for (heading, rows) in grouped_rows {
         output.push('\n');
-        output.push_str(heading);
+        output.push_str(help_heading(heading));
         output.push_str(":\n");
-        write_rows(&mut output, &rows);
+        write_rows(&mut output, &rows, style);
     }
 
     for section in command.help_sections {
@@ -154,26 +173,93 @@ fn styling_enabled() -> bool {
     std::io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none()
 }
 
-/// Applies emphasis to help headings without changing layout or wrapping.
+/// Applies emphasis to help headings and selectable command-line spellings without changing
+/// layout or wrapping.
 fn style_headings(help: &str) -> String {
-    let mut styled = String::with_capacity(help.len() + 64);
+    let mut styled = String::with_capacity(help.len() + 128);
+    let mut commands = false;
     for line in help.split_inclusive('\n') {
         let bare = line.strip_suffix('\n').unwrap_or(line);
         if let Some(rest) = bare.strip_prefix("Usage:") {
+            commands = false;
             styled.push_str("\x1b[1;4mUsage:\x1b[0m");
             styled.push_str(rest);
         } else if is_section_heading(bare) {
+            commands = bare == "Commands:";
             styled.push_str("\x1b[1;4m");
             styled.push_str(bare);
             styled.push_str("\x1b[0m");
+        } else if commands {
+            style_command_row(&mut styled, bare);
         } else {
-            styled.push_str(bare);
+            style_flag_row(&mut styled, bare);
         }
         if line.ends_with('\n') {
             styled.push('\n');
         }
     }
     styled
+}
+
+/// Bolds the command name at the start of a command help row.
+fn style_command_row(output: &mut String, line: &str) {
+    let indent = line.len() - line.trim_start().len();
+    let (prefix, rest) = line.split_at(indent);
+    let end = rest.find(char::is_whitespace).unwrap_or(rest.len());
+    if end == 0 {
+        output.push_str(line);
+        return;
+    }
+
+    output.push_str(prefix);
+    output.push_str("\x1b[1m");
+    output.push_str(&rest[..end]);
+    output.push_str("\x1b[0m");
+    output.push_str(&rest[end..]);
+}
+
+/// Bolds leading short and long option spellings while leaving metavariables unstyled.
+fn style_flag_row(output: &mut String, line: &str) {
+    let Some(start) = line.find('-') else {
+        output.push_str(line);
+        return;
+    };
+    if start > 6 || !line[..start].chars().all(char::is_whitespace) {
+        output.push_str(line);
+        return;
+    }
+
+    output.push_str(&line[..start]);
+    let mut rest = &line[start..];
+    let mut styled_any = false;
+    loop {
+        let end = rest.find(char::is_whitespace).unwrap_or(rest.len());
+        let token = &rest[..end];
+        if token.len() == 1 || !token.starts_with('-') {
+            break;
+        }
+
+        output.push_str("\x1b[1m");
+        output.push_str(token);
+        output.push_str("\x1b[0m");
+        styled_any = true;
+        rest = &rest[end..];
+
+        let spaces = rest.len() - rest.trim_start().len();
+        output.push_str(&rest[..spaces]);
+        rest = &rest[spaces..];
+    }
+
+    if styled_any {
+        output.push_str(rest);
+    } else {
+        output.push_str(&line[start..]);
+    }
+}
+
+/// Removes prose punctuation from a doc-derived group heading for terminal help.
+fn help_heading(heading: &str) -> &str {
+    heading.strip_suffix('.').unwrap_or(heading)
 }
 
 /// Recognizes generated and documentation-style section headings.
@@ -190,6 +276,7 @@ fn is_section_heading(line: &str) -> bool {
 fn grouped_rows<'a>(
     path: &[&'a Command<'a>],
     visible_flags: &[VisibleFlag<'a>],
+    style: HelpStyle,
 ) -> (Vec<Key>, GroupedHelp<'a>) {
     let Some(&selected) = path.last() else {
         return (Vec::new(), Vec::new());
@@ -209,7 +296,7 @@ fn grouped_rows<'a>(
                 for arg in selected.args {
                     if group_contains_arg(group, arg) && !grouped_keys.contains(&arg.key) {
                         grouped_keys.push(arg.key);
-                        rows.push((arg_usage(arg), arg_help(arg)));
+                        rows.push((arg_usage(arg), arg_help(arg, style)));
                     }
                 }
             }
@@ -219,7 +306,7 @@ fn grouped_rows<'a>(
                     && !grouped_keys.contains(&flag.flag.key)
                 {
                     grouped_keys.push(flag.flag.key);
-                    rows.push((flag_label(flag), flag_help(flag.flag)));
+                    rows.push((flag_label(flag), flag_help(flag.flag, style)));
                 }
             }
             if rows.is_empty() {
@@ -305,7 +392,21 @@ fn visible_flags<'a>(path: &[&'a Command<'a>]) -> Vec<VisibleFlag<'a>> {
 ///
 /// Long-only options reserve the same short-option column as rows such as `-h, --help`, matching
 /// the conventional layout while commands and positional arguments retain two-space indent.
-fn write_rows(output: &mut String, rows: &[(String, String)]) {
+fn write_rows(output: &mut String, rows: &[(String, String)], style: HelpStyle) {
+    if style == HelpStyle::Long {
+        for (index, (label, help)) in rows.iter().enumerate() {
+            let label = aligned_label(label);
+            let _ = writeln!(output, "  {label}");
+            if !help.is_empty() {
+                write_indented(output, help, 10);
+            }
+            if index + 1 != rows.len() {
+                output.push('\n');
+            }
+        }
+        return;
+    }
+
     let labels = rows.iter().map(|(label, _)| aligned_label(label)).collect::<Vec<_>>();
     let width = labels.iter().map(|label| label.chars().count()).max().unwrap_or(0);
 
@@ -314,6 +415,18 @@ fn write_rows(output: &mut String, rows: &[(String, String)]) {
             let _ = writeln!(output, "  {label}");
         } else {
             let _ = writeln!(output, "  {label:<width$}  {help}");
+        }
+    }
+}
+
+/// Writes multiline help with a fixed continuation indent.
+fn write_indented(output: &mut String, text: &str, indent: usize) {
+    let padding = " ".repeat(indent);
+    for line in text.lines() {
+        if line.is_empty() {
+            output.push('\n');
+        } else {
+            let _ = writeln!(output, "{padding}{line}");
         }
     }
 }
@@ -328,22 +441,65 @@ fn flag_label(flag: &VisibleFlag<'_>) -> String {
     spellings_label(&flag.shorts, &flag.longs, flag.flag.takes_value.then_some(flag.flag.name))
 }
 
-/// Renders help text plus finite-value metadata.
-fn flag_help(flag: &Flag<'_>) -> String {
-    let mut help = flag.help.unwrap_or("").to_owned();
-    append_accepted_values(&mut help, flag.accepted_values);
-    help
+/// Renders help text plus finite-value and default metadata.
+fn flag_help(flag: &Flag<'_>, style: HelpStyle) -> String {
+    let help = match style {
+        HelpStyle::Short => flag.help,
+        HelpStyle::Long => flag.long_help.or(flag.help),
+    };
+    metadata_help(help, flag.accepted_values, flag.default_value, style)
 }
 
 /// Renders positional help plus finite accepted values.
-fn arg_help(arg: &Arg<'_>) -> String {
-    let mut help = arg.help.unwrap_or("").to_owned();
-    append_accepted_values(&mut help, arg.accepted_values);
-    help
+fn arg_help(arg: &Arg<'_>, style: HelpStyle) -> String {
+    let help = match style {
+        HelpStyle::Short => arg.help,
+        HelpStyle::Long => arg.long_help.or(arg.help),
+    };
+    metadata_help(help, arg.accepted_values, None, style)
+}
+
+/// Combines prose with metadata according to compact or expanded help style.
+fn metadata_help(
+    help: Option<&str>,
+    values: &[&str],
+    default: Option<&str>,
+    style: HelpStyle,
+) -> String {
+    let mut output = help.unwrap_or("").to_owned();
+    match style {
+        HelpStyle::Short => {
+            append_inline_values(&mut output, values);
+            append_inline_default(&mut output, default);
+        }
+        HelpStyle::Long => {
+            if !values.is_empty() {
+                if !output.is_empty() {
+                    output.push_str("\n\n");
+                }
+                output.push_str("Possible values:\n");
+                for value in values {
+                    output.push_str("- ");
+                    output.push_str(&display_bytes(value.as_bytes()));
+                    output.push('\n');
+                }
+                output.pop();
+            }
+            if let Some(default) = default {
+                if !output.is_empty() {
+                    output.push_str("\n\n");
+                }
+                output.push_str("[default: ");
+                output.push_str(&display_bytes(default.as_bytes()));
+                output.push(']');
+            }
+        }
+    }
+    output
 }
 
 /// Appends one canonical finite vocabulary without trusting values as terminal-safe text.
-fn append_accepted_values(help: &mut String, values: &[&str]) {
+fn append_inline_values(help: &mut String, values: &[&str]) {
     if values.is_empty() {
         return;
     }
@@ -360,9 +516,33 @@ fn append_accepted_values(help: &mut String, values: &[&str]) {
     help.push(']');
 }
 
+/// Appends a statically derivable default to compact help.
+fn append_inline_default(help: &mut String, default: Option<&str>) {
+    let Some(default) = default else {
+        return;
+    };
+    if !help.is_empty() {
+        help.push(' ');
+    }
+    help.push_str("[default: ");
+    help.push_str(&display_bytes(default.as_bytes()));
+    help.push(']');
+}
+
 /// Renders one built-in action in an options table.
 fn action_label(action: &Action<'_>) -> String {
     spellings_label(action.shorts, action.longs, None)
+}
+
+/// Renders built-in action help with a hint for the alternate help spelling.
+fn action_help(action: &Action<'_>, style: HelpStyle) -> String {
+    if !matches!(action.kind, crate::__private::ActionKind::Help) {
+        return action.help.to_owned();
+    }
+    match style {
+        HelpStyle::Short => "Print help (see more with '--help')".to_owned(),
+        HelpStyle::Long => "Print help (see a summary with '-h')".to_owned(),
+    }
 }
 
 /// Renders short and long spellings with an optional value placeholder.
@@ -461,6 +641,7 @@ mod tests {
         key: 4,
         name: "rest",
         help: None,
+        long_help: None,
         required: false,
         variadic: true,
         accepted_values: &[],
@@ -525,19 +706,25 @@ Options:
   -v, --verbose                    Enable verbose output
       --destination <DESTINATION>  Write to this path
       --profile <PROFILE>          Select a profile
-  -h, --help                       Print help
+  -h, --help                       Print help (see more with '--help')
 
 "#]],
         );
     }
 
     #[test]
-    fn styling_underlines_generated_and_custom_headings() {
-        let styled = style_headings("Usage: tool\n\nLogging:\n  --level <LEVEL>  Log level\n");
+    fn styling_emphasizes_headings_commands_and_flags() {
+        let styled = style_headings(
+            "Usage: tool\n\nCommands:\n  serve  Start server\n\nLogging:\n  -v, --verbose  Verbose\n      --level <LEVEL>  Log level\n          -v      Errors\n",
+        );
 
         assert!(styled.contains("\x1b[1;4mUsage:\x1b[0m tool"));
+        assert!(styled.contains("\x1b[1;4mCommands:\x1b[0m"));
+        assert!(styled.contains("  \x1b[1mserve\x1b[0m  Start server"));
         assert!(styled.contains("\x1b[1;4mLogging:\x1b[0m"));
-        assert!(styled.contains("  --level <LEVEL>  Log level"));
+        assert!(styled.contains("  \x1b[1m-v,\x1b[0m \x1b[1m--verbose\x1b[0m  Verbose"));
+        assert!(styled.contains("      \x1b[1m--level\x1b[0m <LEVEL>  Log level"));
+        assert!(styled.contains("          -v      Errors"));
     }
 
     #[test]
@@ -620,7 +807,7 @@ Options:
   -s, --root-scope         Root scope
   -p, --profile <PROFILE>  Required profile
       --root-version       Root version selector
-  -h, --help               Print help
+  -h, --help               Print help (see more with '--help')
   -V, --version            Print version
 
 "#]],
@@ -669,7 +856,7 @@ Usage: tool --token <ROOT_TOKEN> --config <CONFIG> leaf [OPTIONS]
 
 Options:
       --token <TOKEN>  Leaf token
-  -h, --help           Print help
+  -h, --help           Print help (see more with '--help')
 
 "#]],
         );
@@ -697,7 +884,7 @@ Usage: tool leaf [OPTIONS]
 
 Options:
       --shared <SHARED>  Shared setting
-  -h, --help             Print help
+  -h, --help             Print help (see more with '--help')
 
 "#]],
         );

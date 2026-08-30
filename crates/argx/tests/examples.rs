@@ -56,7 +56,9 @@ mod tests {
 
         if name == "arguments" {
             assert!(
-                stdout.contains("Output format. [possible values: human, json, json-lines]",),
+                stdout.contains(
+                    "Possible values:\n          - human\n          - json\n          - json-lines",
+                ),
                 "arguments --help omitted the derived vocabulary:\n{stdout}",
             );
         }

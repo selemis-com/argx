@@ -217,6 +217,12 @@ impl Field {
 
         let diagnostic = argument_diagnostic(&binding, &kind);
         let has_default = attributes.default.is_some();
+        let default_value = attributes.help_default.clone().or_else(|| {
+            attributes
+                .default
+                .as_ref()
+                .and_then(|expression| support::default_help(expression, attributes.value_enum))
+        });
         let switch = matches!(&kind, ArgumentKind::Flag { .. }) && shape == Shape::Bool;
         let count = attributes.count;
         if attributes.value_enum && switch {
@@ -230,16 +236,20 @@ impl Field {
         }
         binding.default = attributes.default;
 
-        let help = attributes.help.or_else(|| attrs::doc_summary(&field.attrs));
+        let docs = attrs::doc_help(&field.attrs);
+        let help = attributes.help.clone().or(docs.summary);
+        let long_help = attributes.help.or(docs.description).or_else(|| help.clone());
         Ok(Self {
             binding,
             semantics: FieldSemantics::Argument(Argument {
                 help,
+                long_help,
                 kind,
                 diagnostic,
                 global: attributes.global,
                 shape,
                 has_default,
+                default_value,
                 requires: attributes.requires.into_iter().map(|value| value.value()).collect(),
                 conflicts: attributes.conflicts.into_iter().map(|value| value.value()).collect(),
                 allow_hyphen_values: attributes.allow_hyphen_values,
@@ -330,6 +340,7 @@ fn validate_structural_metadata(
         attributes.allow_negative_numbers,
         attributes.value_enum,
         attributes.help.is_some(),
+        attributes.help_default.is_some(),
     ]
     .into_iter()
     .any(|present| present);

@@ -55,7 +55,15 @@ fn parse_refs_inner<T: CommandArgs>(
                     ActionKind::Help => {
                         let command_path = parser.command_path().collect::<Vec<_>>();
                         Err(Error::DisplayHelp {
-                            help: help::render_with_schema(&command_path, registry.is_some()),
+                            help: help::render_with_schema(
+                                &command_path,
+                                registry.is_some(),
+                                if used_long {
+                                    help::HelpStyle::Long
+                                } else {
+                                    help::HelpStyle::Short
+                                },
+                            ),
                         })
                     }
                     ActionKind::Schema => {
@@ -93,7 +101,11 @@ fn parse_refs_inner<T: CommandArgs>(
         if matches!(error, Error::MissingSubcommand { .. }) {
             let command_path = parser.command_path().collect::<Vec<_>>();
             return Err(Error::DisplayHelp {
-                help: help::render_with_schema(&command_path, registry.is_some()),
+                help: help::render_with_schema(
+                    &command_path,
+                    registry.is_some(),
+                    help::HelpStyle::Short,
+                ),
             });
         }
         return Err(error);

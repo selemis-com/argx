@@ -87,6 +87,8 @@ pub(crate) struct FieldAttrs {
     pub value_enum: bool,
     /// Explicit one-line argument description.
     pub help: Option<String>,
+    /// Internal static default spelling forwarded by the Config derive.
+    pub help_default: Option<String>,
 }
 
 /// Parses every `#[argx(...)]` attribute on a command declaration.
@@ -252,6 +254,12 @@ pub(crate) fn field(attributes: &[Attribute]) -> syn::Result<FieldAttrs> {
                 }
                 parsed.allow_negative_numbers = true;
                 Ok(())
+            } else if meta.path.is_ident("__help_default") {
+                if parsed.help_default.is_some() {
+                    return Err(meta.error("duplicate internal help default"));
+                }
+                parsed.help_default = Some(meta.value()?.parse::<LitStr>()?.value());
+                Ok(())
             } else if meta.path.is_ident("value_enum") {
                 if parsed.value_enum {
                     return Err(meta.error("duplicate `value_enum` attribute"));
@@ -343,18 +351,19 @@ pub(crate) fn reject(attributes: &[Attribute], context: &str) -> syn::Result<()>
 
 /// Returns the first paragraph of Rust doc comments as a one-line help summary.
 pub(crate) fn doc_summary(attributes: &[Attribute]) -> Option<String> {
-    let lines = doc_lines(attributes);
+    let lines = doc_source_lines(attributes);
     first_paragraph(trim_blank_lines(&lines))
 }
 
 /// Parses command-level Rust docs into prose plus user-authored level-one help sections.
 pub(crate) fn doc_help(attributes: &[Attribute]) -> DocHelp {
-    let lines = doc_lines(attributes);
+    let source_lines = doc_source_lines(attributes);
+    let summary = first_paragraph(trim_blank_lines(&source_lines));
+    let lines = source_lines.into_iter().filter(|line| !is_text_fence(line)).collect::<Vec<_>>();
     let first_heading =
         lines.iter().position(|line| level_one_heading(line).is_some()).unwrap_or(lines.len());
     let preamble = trim_blank_lines(&lines[..first_heading]);
     let description = (!preamble.is_empty()).then(|| preamble.join("\n"));
-    let summary = first_paragraph(preamble);
 
     let mut sections = Vec::new();
     let mut index = first_heading;
@@ -375,8 +384,8 @@ pub(crate) fn doc_help(attributes: &[Attribute]) -> DocHelp {
     DocHelp { summary, description, sections }
 }
 
-/// Extracts normalized source lines from `#[doc = ...]` attributes.
-fn doc_lines(attributes: &[Attribute]) -> Vec<String> {
+/// Extracts normalized source lines while retaining fences needed to delimit short prose help.
+fn doc_source_lines(attributes: &[Attribute]) -> Vec<String> {
     attributes
         .iter()
         .filter(|attribute| attribute.path().is_ident("doc"))
@@ -393,7 +402,6 @@ fn doc_lines(attributes: &[Attribute]) -> Vec<String> {
             let line = value.value();
             Some(line.strip_prefix(' ').unwrap_or(&line).trim_end().to_owned())
         })
-        .filter(|line| line != "~~~text" && line != "~~~")
         .collect()
 }
 
@@ -412,9 +420,17 @@ fn trim_blank_lines(lines: &[String]) -> &[String] {
 
 /// Collapses the first prose paragraph to one line for short command descriptions.
 fn first_paragraph(lines: &[String]) -> Option<String> {
-    let paragraph = lines.iter().take_while(|line| !line.trim().is_empty()).collect::<Vec<_>>();
+    let paragraph = lines
+        .iter()
+        .take_while(|line| !line.trim().is_empty() && !is_text_fence(line))
+        .collect::<Vec<_>>();
     (!paragraph.is_empty())
         .then(|| paragraph.into_iter().map(|line| line.trim()).collect::<Vec<_>>().join(" "))
+}
+
+/// Returns whether a source doc line starts or ends a text fence stripped from rendered help.
+fn is_text_fence(line: &str) -> bool {
+    matches!(line.trim(), "~~~text" | "~~~")
 }
 
 #[cfg(test)]
@@ -433,6 +449,26 @@ mod tests {
             struct Example;
         };
         assert_eq!(doc_summary(&input.attrs).as_deref(), Some("First line. Second line."));
+    }
+
+    #[test]
+    fn doc_summary_stops_before_a_stripped_text_fence() {
+        let input: DeriveInput = parse_quote! {
+            /// CLI server to host Kival.
+            /// ~~~text
+            ///     __ __ __
+            ///    / //_//_/
+            /// ~~~
+            struct Example;
+        };
+        assert_eq!(doc_summary(&input.attrs).as_deref(), Some("CLI server to host Kival."));
+
+        let help = doc_help(&input.attrs);
+        assert_eq!(help.summary.as_deref(), Some("CLI server to host Kival."));
+        assert_eq!(
+            help.description.as_deref(),
+            Some("CLI server to host Kival.\n    __ __ __\n   / //_//_/")
+        );
     }
 
     #[test]

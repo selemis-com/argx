@@ -133,7 +133,8 @@ Minimal command with no application-defined arguments.
 Usage: cli [OPTIONS]
 
 Options:
-  -h, --help  Print help
+  -h, --help
+          Print help (see a summary with '-h')
 
 "#]])
             .stderr_eq("");
@@ -158,11 +159,15 @@ Commands:
   status  Shows status without additional arguments.
 
 Options:
-  -h, --help     Print help
-  -V, --version  Print version
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
 
 Common options:
-  -v, --verbose  Enables verbose output.
+  -v, --verbose
+          Enables verbose output.
 
 Examples:
     commands add hello
@@ -180,14 +185,19 @@ Adds one value.
 Usage: cli add [OPTIONS] <VALUE>
 
 Arguments:
-  <VALUE>  Value to add or remove.
+  <VALUE>
+          Value to add or remove.
 
 Options:
-      --force  Forces the operation.
-  -h, --help   Print help
+      --force
+          Forces the operation.
+
+  -h, --help
+          Print help (see a summary with '-h')
 
 Common options:
-  -v, --verbose  Enables verbose output.
+  -v, --verbose
+          Enables verbose output.
 
 "#]])
             .stderr_eq("");
@@ -244,11 +254,15 @@ Shows status without additional arguments.
 Usage: cli status [OPTIONS]
 
 Options:
-  -h, --help     Print help
-  -V, --version  Print version
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
 
 Common options:
-  -v, --verbose  Enables verbose output.
+  -v, --verbose
+          Enables verbose output.
 
 "#]])
             .stderr_eq("");
@@ -262,14 +276,19 @@ Adds one value.
 Usage: cli add [OPTIONS] <VALUE>
 
 Arguments:
-  <VALUE>  Value to add or remove.
+  <VALUE>
+          Value to add or remove.
 
 Options:
-      --force  Forces the operation.
-  -h, --help   Print help
+      --force
+          Forces the operation.
+
+  -h, --help
+          Print help (see a summary with '-h')
 
 Common options:
-  -v, --verbose  Enables verbose output.
+  -v, --verbose
+          Enables verbose output.
 
 "#]])
             .stderr_eq("");

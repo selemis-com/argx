@@ -33,6 +33,14 @@ pub(crate) fn generate_config(
             };
         }
         let attrs = &field.cli;
+        let help_default = match &field.default {
+            Some(DefaultValue::Expression(expression)) => {
+                crate::support::default_help(expression, field.value_enum)
+            }
+            Some(DefaultValue::Trait) | None => None,
+        };
+        let help_default_attr =
+            help_default.as_ref().map(|value| quote!(, __help_default = #value));
         let ty = &field.ty;
         let cli_ty = if field.optional {
             let inner = option_inner(ty).expect("optional field has Option inner type");
@@ -44,7 +52,7 @@ pub(crate) fn generate_config(
         };
         quote! {
             #(#docs)*
-            #[argx(#(#attrs),*)]
+            #[argx(#(#attrs),* #help_default_attr)]
             #ident: #cli_ty
         }
     });
