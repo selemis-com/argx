@@ -84,6 +84,7 @@ pub trait Config: Sized {
 /// an additional file layer. Layers are applied in declaration order, and
 /// later layers replace only values they supply.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub enum Layer {
     /// Declared field defaults.
     Defaults,

@@ -23,6 +23,7 @@ pub use loader::{Argv, Defaults, Dotenv, Environment, Layer, Loader};
 
 /// Failure while resolving a configuration from its declared layers.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum Error {
     /// Command-line input could not be parsed.
     #[error(transparent)]
