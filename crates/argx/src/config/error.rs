@@ -1,4 +1,4 @@
-//! Public loading diagnostics and their internal context.
+//! Configuration loading and resolution errors.
 
 #[cfg(feature = "toml")]
 use std::io;
@@ -46,11 +46,7 @@ impl Location {
     }
 }
 
-/// A configuration source that can originate a loading error.
-///
-/// This describes externally loaded sources only. Defaults and argv are not
-/// represented because their failures are resolution or parser diagnostics rather
-/// than external source-loading diagnostics.
+/// A configuration source associated with a loading error.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum Source {
@@ -76,9 +72,8 @@ impl fmt::Display for Source {
 
 /// An error produced while loading or resolving configuration.
 ///
-/// Errors retain structured context about the configuration [`Source`],
-/// field, environment variable, path, and source location when those concepts
-/// apply. Raw environment values are never retained for diagnostics.
+/// Accessors expose the source, field, environment variable, path, and source location when
+/// available.
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]
 pub struct Error {
@@ -225,9 +220,6 @@ impl Error {
     }
 
     /// Returns a one-based `(line, column)` source location when available.
-    ///
-    /// Locations are intentionally omitted when preprocessing changed the TOML
-    /// text because parser byte spans would no longer identify the original file.
     #[must_use]
     pub fn location(&self) -> Option<(usize, usize)> {
         let location = match self.kind.as_ref() {

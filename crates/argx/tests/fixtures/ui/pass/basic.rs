@@ -1,5 +1,3 @@
-use argx::Parser as _;
-
 #[derive(argx::Parser)]
 #[argx(about = "Basic parser")]
 struct Cli {
@@ -42,7 +40,6 @@ fn main() {
     assert_eq!(command.about, Some("Basic parser"));
     assert_eq!(command.flags[0].help, Some("Verbose output"));
     assert_eq!(command.flags[0].aliases, ["chatty", "debug", "trace"]);
-    assert!(Cli::render_help().contains("Usage: cli [OPTIONS] <INPUT>"));
 
     let cli = Cli { verbose: false, input: String::new() };
     assert!(!cli.verbose);

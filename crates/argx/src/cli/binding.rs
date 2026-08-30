@@ -27,18 +27,15 @@ use crate::{
 ///
 /// Panics only when an implementation of the hidden generated-code contract exposes parse metadata
 /// that it then refuses to bind. Derived implementations cannot violate this invariant.
-/// Parses already-separated argument references and preserves built-in output options.
-pub(crate) fn parse_refs_with_output<T: CommandArgs>(
-    argv: &[&std::ffi::OsStr],
-) -> Result<crate::Invocation<T>, Error> {
+pub(crate) fn parse_refs<T: CommandArgs>(argv: &[&std::ffi::OsStr]) -> Result<T, Error> {
     parse_refs_inner::<T>(argv, None)
 }
 
-/// Parses arguments with schema discovery and preserves built-in output options.
-pub(crate) fn parse_refs_with_schema_and_output<T: CommandArgs>(
+/// Parses arguments with schema discovery enabled.
+pub(crate) fn parse_refs_with_schema<T: CommandArgs>(
     argv: &[&std::ffi::OsStr],
     registry: &crate::__private::SchemaRegistry,
-) -> Result<crate::Invocation<T>, Error> {
+) -> Result<T, Error> {
     parse_refs_inner::<T>(argv, Some(registry))
 }
 
@@ -46,9 +43,8 @@ pub(crate) fn parse_refs_with_schema_and_output<T: CommandArgs>(
 fn parse_refs_inner<T: CommandArgs>(
     argv: &[&std::ffi::OsStr],
     registry: Option<&crate::__private::SchemaRegistry>,
-) -> Result<crate::Invocation<T>, Error> {
+) -> Result<T, Error> {
     let mut partial = T::start();
-    let mut output = crate::Output::default();
     let mut parser: crate::cli::argv::ArgvParser<'static, '_, '_> =
         crate::cli::argv::ArgvParser::new_with_schema(T::COMMAND, argv, registry.is_some());
 
@@ -86,14 +82,6 @@ fn parse_refs_inner<T: CommandArgs>(
                     }
                 };
             }
-            Ok(Event::Output { value }) => {
-                output.set_format(value)?;
-                continue;
-            }
-            Ok(Event::Fields { value }) => {
-                output.push_fields(value)?;
-                continue;
-            }
             Ok(event) => event,
             Err(error) => return Err(raw_error(error)),
         };
@@ -110,12 +98,7 @@ fn parse_refs_inner<T: CommandArgs>(
         }
         return Err(error);
     }
-    let command_path = parser.command_path().collect::<Vec<_>>();
-    let schema =
-        registry.and_then(|registry| crate::schema::output_schema(&command_path, registry));
-    output.finish(schema)?;
-    let command = T::finish(partial)?;
-    Ok(crate::Invocation { command, output })
+    T::finish(partial)
 }
 
 /// Converts one raw-parser error into the owned public error type.

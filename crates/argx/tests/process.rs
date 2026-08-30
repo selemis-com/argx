@@ -26,11 +26,7 @@ mod tests {
             .arg("__argx_complete__")
             .assert()
             .success()
-            .stdout_eq(
-                "--fields\tSelect output fields (comma-separated)\n\
-                 --help\tPrint help\n\
-                 --output\tSelect output format: text or json\n",
-            )
+            .stdout_eq("--help\tPrint help\n")
             .stderr_eq("");
     }
 
@@ -43,11 +39,7 @@ mod tests {
             .arg("__argx_complete__")
             .assert()
             .success()
-            .stdout_eq(
-                "--fields\tSelect output fields (comma-separated)\n\
-                 --help\tPrint help\n\
-                 --output\tSelect output format: text or json\n",
-            )
+            .stdout_eq("--help\tPrint help\n")
             .stderr_eq("");
     }
 
@@ -141,9 +133,7 @@ Minimal command with no application-defined arguments.
 Usage: cli [OPTIONS]
 
 Options:
-  -O, --output <FORMAT>  Select output format: text or json
-  -F, --fields <FIELDS>  Select output fields (comma-separated)
-  -h, --help             Print help
+  -h, --help  Print help
 
 "#]])
             .stderr_eq("");
@@ -168,10 +158,8 @@ Commands:
   status  Shows status without additional arguments.
 
 Options:
-  -O, --output <FORMAT>  Select output format: text or json
-  -F, --fields <FIELDS>  Select output fields (comma-separated)
-  -h, --help             Print help
-  -V, --version          Print version
+  -h, --help     Print help
+  -V, --version  Print version
 
 Common options:
   -v, --verbose  Enables verbose output.
@@ -195,10 +183,8 @@ Arguments:
   <VALUE>  Value to add or remove.
 
 Options:
-      --force            Forces the operation.
-  -O, --output <FORMAT>  Select output format: text or json
-  -F, --fields <FIELDS>  Select output fields (comma-separated)
-  -h, --help             Print help
+      --force  Forces the operation.
+  -h, --help   Print help
 
 Common options:
   -v, --verbose  Enables verbose output.
@@ -258,10 +244,8 @@ Shows status without additional arguments.
 Usage: cli status [OPTIONS]
 
 Options:
-  -O, --output <FORMAT>  Select output format: text or json
-  -F, --fields <FIELDS>  Select output fields (comma-separated)
-  -h, --help             Print help
-  -V, --version          Print version
+  -h, --help     Print help
+  -V, --version  Print version
 
 Common options:
   -v, --verbose  Enables verbose output.
@@ -281,10 +265,8 @@ Arguments:
   <VALUE>  Value to add or remove.
 
 Options:
-      --force            Forces the operation.
-  -O, --output <FORMAT>  Select output format: text or json
-  -F, --fields <FIELDS>  Select output fields (comma-separated)
-  -h, --help             Print help
+      --force  Forces the operation.
+  -h, --help   Print help
 
 Common options:
   -v, --verbose  Enables verbose output.

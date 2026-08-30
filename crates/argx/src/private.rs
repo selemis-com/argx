@@ -12,15 +12,18 @@ pub(crate) use crate::cli::command::{Named, long as resolve_long, short as resol
 pub use crate::cli::{
     argv::{ArgvParser, Error, Event},
     command::{
-        Action, ActionKind, Arg, ArgumentState, Command, Constraint, ConstraintKind, FIELDS_FLAG,
-        Flag, HELP_ACTION, HelpGroup, HelpSection, Key, OUTPUT_FLAG, SCHEMA_ACTION, key_base,
+        Action, ActionKind, Arg, ArgumentState, Command, Constraint, ConstraintKind, Flag,
+        HELP_ACTION, HelpGroup, HelpSection, Key, SCHEMA_ACTION, key_base,
     },
     compose::{
         action_flag_spellings_disjoint, argument_key_by_name, command_keys_unique, concat_args,
         concat_constraints, concat_flags, concat_help_groups, flag_spellings_unique,
-        output_flag_spellings_disjoint, positional_layout_valid, table_len,
+        positional_layout_valid, table_len,
     },
-    protocol::{CommandArgs, HandlerResult, HandlerSchemas, InvocableCommandHandler, Subcommands},
+    protocol::{
+        Args, CommandArgs, HandlerResult, HandlerSchemaSource, HandlerSchemas,
+        InvocableCommandHandler, Subcommands,
+    },
     value::{
         comma_values, os_value, os_values, parsed_value, parsed_values, text_value, text_values,
         value_enum_value, value_enum_values,

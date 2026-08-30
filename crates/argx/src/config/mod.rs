@@ -1,12 +1,10 @@
-//! Unified application configuration resolution.
+//! Layered typed configuration.
 //!
-//! Derive `argx::Config`, create the generated `Config::loader()`, and append only the layers the
-//! application wants. Layers are sparse and resolved in call order: later layers override only
-//! values they supply. Declared defaults participate only through [`Defaults`]; Argx does not
-//! discover configuration or dotenv files implicitly.
+//! Derive `argx::Config`, create its generated `loader()`, and add the sources the application
+//! wants in increasing precedence order. Later layers override only values they provide. Defaults
+//! are explicit through [`Defaults`], and Argx does not discover configuration files implicitly.
 //!
-//! See the crate-level configuration guide for field attributes, environment naming,
-//! interpolation, and argv behavior.
+//! See the crate-level configuration guide for field attributes and layer behavior.
 
 mod dotenv;
 mod environment;
@@ -23,6 +21,7 @@ pub use loader::{Argv, Defaults, Dotenv, Environment, Layer, Loader};
 
 /// Failure while resolving a configuration from its declared layers.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum Error {
     /// Command-line input could not be parsed.
     #[error(transparent)]

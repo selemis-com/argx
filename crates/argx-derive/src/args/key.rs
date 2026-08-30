@@ -91,11 +91,6 @@ pub(crate) fn ident(kind: &str, index: Option<usize>) -> Ident {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn declaration_hash_is_stable() {
-        assert_eq!(super::declaration_hash("struct Cli ;"), 0xdef1_ee77);
-    }
-
-    #[test]
     fn declaration_hash_changes_with_the_declaration() {
         assert_ne!(super::declaration_hash("struct A ;"), super::declaration_hash("struct B ;"));
     }

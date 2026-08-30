@@ -1,22 +1,11 @@
-//! Dynamic shell completion driven by Argx's static command model.
+//! Dynamic shell completion for Bash, Fish, Nushell, and Zsh.
 //!
-//! Generated shell adapters send the cursor state back to the executable. Bash, Fish, and Zsh
-//! send the command line through the cursor, while Nushell sends the tokenized spans it already
-//! provides to external completers. Argx normalizes either transport, walks completed argv words
-//! through the same raw parser used for normal invocation, and returns candidates for the cursor
-//! position. This keeps command, option, value, scope, alias, and lexical behavior in one
-//! implementation rather than reproducing the parser in shell code.
+//! Generate an adapter with [`crate::Parser::render_completion`]. The generated
+//! adapter asks the running application for candidates, so completions stay in sync with the
+//! derived command interface. Fields marked `#[argx(value_enum)]` complete from their declared
+//! finite values.
 //!
-//! Completion currently targets Bash, Fish, Nushell, and Zsh. Fields declared with
-//! `#[argx(value_enum)]` complete from the same canonical finite vocabulary used by parsing, help,
-//! and contracts. Argx intentionally does not infer possible values from arbitrary `FromStr`
-//! implementations, enumerate filesystem paths, or expose custom value completers.
-//!
-//! Conflict suppression is likewise intentionally lexical: arguments already supplied on argv are
-//! considered, while typed defaults remain the binding layer's concern.
-//! Because the shell invokes the application for each completion request, applications should let
-//! [`crate::Parser::parse`] or [`crate::Parser::handle_completion`] run before expensive startup or
-//! writing application output.
+//! [`crate::Parser::parse`] handles completion requests automatically.
 
 mod engine;
 mod script;
@@ -110,18 +99,8 @@ pub enum ScriptError {
     },
 }
 
-/// Generates a dynamic completion adapter for `command` and `shell`.
-///
-/// The returned script calls `command` during completion and lets Argx answer from the same static
-/// command metadata used by normal parsing. The command name is intentionally explicit so callers
-/// can generate completions for the installed executable name even when it differs from a parser
-/// type's configured root name.
-///
-/// # Errors
-///
-/// Returns [`ScriptError::InvalidCommandName`] when `command` cannot be safely registered and
-/// invoked as one command word by all supported shell adapters.
-pub fn script(command: &str, shell: Shell) -> Result<String, ScriptError> {
+/// Generates a dynamic completion adapter for the given command name and shell.
+pub(crate) fn script(command: &str, shell: Shell) -> Result<String, ScriptError> {
     script::render(command, shell)
 }
 

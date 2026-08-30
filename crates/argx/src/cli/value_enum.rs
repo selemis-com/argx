@@ -1,8 +1,8 @@
 //! Finite command-line value vocabularies.
 //!
-//! [`trait@ValueEnum`] is the explicit finite alternative to arbitrary `FromStr` parsing. A derived
-//! value enum supplies one canonical lexical vocabulary that generated binding, help, and machine
-//! schemas can all project without duplicating the accepted values in documentation.
+//! Derive [`trait@ValueEnum`] for enums whose accepted CLI values are known in advance, then mark
+//! fields with `#[argx(value_enum)]` to use the same values for parsing, help, completion, and
+//! schema discovery.
 
 use crate::error::display_bytes;
 

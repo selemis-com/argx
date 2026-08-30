@@ -1,12 +1,8 @@
-//! Integrated reference application covering Argx's major public surfaces.
-//!
-//! This is intentionally broader than the focused examples. It combines typed configuration,
-//! reusable/global arguments, defaults, aliases, constraints, value enums, subcommands, structured
-//! help, version actions, schema discovery, handler contracts, and dynamic completion generation in
-//! one command tree.
+//! Integrated reference application combining Argx's main CLI, configuration, schema, and
+//! completion features.
 //!
 //! ```text
-//! cargo run --example complete -- get object-7 -O json -F id
+//! cargo run --example complete -- get object-7
 //! cargo run --example complete -- put object-7 value --endpoint https://example.invalid --token secret
 //! cargo run --example complete -- completions zsh
 //! cargo run --example complete -- schema get
@@ -22,10 +18,7 @@ use std::{
     io::{self, Write},
 };
 
-use argx::{
-    Args, Defaults, Dotenv, Environment, OutputFormat, Parser as _, Subcommand, argx,
-    completion::Shell,
-};
+use argx::{Args, Defaults, Dotenv, Environment, Parser as _, Subcommand, argx, completion::Shell};
 use serde::Serialize;
 
 /// Short version displayed by `--version`.
@@ -198,7 +191,7 @@ enum Command {
 /// # Examples
 ///
 ///     complete get object-7
-///     complete show object-7 -O json -F id
+///     complete show object-7
 ///     complete completions bash
 #[derive(Debug, argx::Parser)]
 #[argx(name = "complete", version = VERSION, long_version = LONG_VERSION, schema)]
@@ -231,13 +224,8 @@ fn settings() -> Result<Settings, argx::ConfigError> {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    if Cli::handle_completion() {
-        return Ok(());
-    }
-
+    let cli = Cli::parse();
     let settings = settings()?;
-    let invocation = Cli::try_parse_invocation().unwrap_or_else(|error| error.exit());
-    let (cli, output) = invocation.into_parts();
 
     if cli.common.verbose {
         eprintln!("workers: {}", settings.workers);
@@ -246,22 +234,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match cli.command {
         Command::Get(command) => match get(command) {
-            Ok(value) => match output.format() {
-                OutputFormat::Text => println!("get: {} (limit {})", value.id, value.limit),
-                OutputFormat::Json => println!("{}", output.render_json(&value)?),
-                _ => return Err("unsupported output format".into()),
-            },
+            Ok(value) => println!("get: {} (limit {})", value.id, value.limit),
             Err(GetError::NotFound) => {
                 eprintln!("object not found");
                 std::process::exit(1);
             }
         },
         Command::Put(command) => match put(command) {
-            Ok(value) => match output.format() {
-                OutputFormat::Text => println!("put: {}", value.id),
-                OutputFormat::Json => println!("{}", output.render_json(&value)?),
-                _ => return Err("unsupported output format".into()),
-            },
+            Ok(value) => println!("put: {}", value.id),
             Err(PutError::Rejected) => {
                 eprintln!("request rejected");
                 std::process::exit(1);
@@ -275,11 +255,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     std::process::exit(1);
                 }
             };
-            match output.format() {
-                OutputFormat::Json => println!("{}", output.render_json(&value)?),
-                OutputFormat::Text => io::stdout().lock().write_all(value.script.as_bytes())?,
-                _ => return Err("unsupported output format".into()),
-            }
+            io::stdout().lock().write_all(value.script.as_bytes())?;
         }
     }
 

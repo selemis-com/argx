@@ -1,9 +1,5 @@
 //! Generates a dynamic shell-completion adapter.
 //!
-//! Argx completion scripts are intentionally small: the shell adapter sends the command line back
-//! to the executable, and Argx resolves candidates through the same command model and argv parser
-//! used for ordinary invocations.
-//!
 //! Run it with:
 //!
 //! ```text

@@ -169,11 +169,6 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
             impl #impl_generics #facade::__private::InvocableCommandHandler
                 for #ident #ty_generics #where_clause
             {}
-
-            #[doc(hidden)]
-            impl #impl_generics #facade::InvocableHandlerCommand
-                for #ident #ty_generics #where_clause
-            {}
         }
     });
     let schema_command_impl = (!command.binding.root && command.semantics.schema).then(|| {
@@ -526,7 +521,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
     });
     let args_impl = (!command.binding.root).then(|| {
         quote! {
-            impl #impl_generics #facade::Args
+            impl #impl_generics #facade::__private::Args
                 for #ident #ty_generics #where_clause
             {}
         }
@@ -569,10 +564,6 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                 ),
                 "command contains a flag spelling reserved by a built-in action",
             );
-            const _: () = ::core::assert!(
-                #facade::__private::output_flag_spellings_disjoint(ARGX_COMMAND.flags),
-                "command contains a flag spelling reserved by Argx output",
-            );
             #flattened_checks
 
             #invocable_handler_impl
@@ -612,10 +603,8 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                                 _ => false,
                             }
                         },
-                        #facade::__private::Event::Command { .. } => false,
-                        #facade::__private::Event::Action { .. }
-                        | #facade::__private::Event::Output { .. }
-                        | #facade::__private::Event::Fields { .. } => false,
+                        #facade::__private::Event::Command { .. }
+                        | #facade::__private::Event::Action { .. } => false,
                     };
                     if matched {
                         return true;

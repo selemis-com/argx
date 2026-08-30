@@ -1,9 +1,5 @@
-//! Named and positional arguments, defaults, constraints, aliases, and finite values.
-//!
-//! This example collects the most common field-level features in one command instead of splitting
-//! each attribute into its own executable. Hidden aliases remain accepted without appearing in
-//! generated help, defaults are typed Rust expressions, and `requires` / `conflicts` are validated
-//! after parsing.
+//! Common argument features: positional values, named options, defaults, aliases, constraints,
+//! repeatable values, and finite value enums.
 //!
 //! ```text
 //! cargo run --example arguments -- input.txt --format json --colour always

@@ -31,13 +31,13 @@ struct OsValues {
 }
 
 fn main() {
-    let parsed = Generic::<u16>::try_parse_args(["42"]).expect("typed value");
+    let parsed = Generic::<u16>::try_parse_from(["argx-test", "42"]).expect("typed value");
     assert_eq!(parsed.value, 42);
 
-    let parsed = ParseOnlyCli::try_parse_args(["7"]).expect("custom parsed value");
+    let parsed = ParseOnlyCli::try_parse_from(["argx-test", "7"]).expect("custom parsed value");
     assert_eq!(parsed.value, ParseOnly(7));
 
-    let parsed = OsValues::try_parse_args(["input"]).expect("path value");
+    let parsed = OsValues::try_parse_from(["argx-test", "input"]).expect("path value");
     assert_eq!(parsed.path, PathBuf::from("input"));
     assert!(parsed.output.is_none());
 }

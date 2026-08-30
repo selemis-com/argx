@@ -266,39 +266,6 @@ const fn str_eq(left: &str, right: &str) -> bool {
     true
 }
 
-/// Reports whether declared flags avoid Argx's reserved structured-output spellings.
-pub const fn output_flag_spellings_disjoint(flags: &[&Flag<'_>]) -> bool {
-    let reserved_longs = ["output", "fields"];
-    let reserved_shorts = *b"OF";
-    let mut flag = 0;
-    while flag < flags.len() {
-        let mut long = 0;
-        while long < flag_long_len(flags[flag]) {
-            let mut reserved = 0;
-            while reserved < reserved_longs.len() {
-                if str_eq(flag_long(flags[flag], long), reserved_longs[reserved]) {
-                    return false;
-                }
-                reserved += 1;
-            }
-            long += 1;
-        }
-        let mut short = 0;
-        while short < flags[flag].shorts.len() {
-            let mut reserved = 0;
-            while reserved < reserved_shorts.len() {
-                if flags[flag].shorts[short] == reserved_shorts[reserved] {
-                    return false;
-                }
-                reserved += 1;
-            }
-            short += 1;
-        }
-        flag += 1;
-    }
-    true
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

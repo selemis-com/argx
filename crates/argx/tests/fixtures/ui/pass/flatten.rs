@@ -30,14 +30,9 @@ struct Cli {
 }
 
 fn main() {
-    let parsed = Cli::try_parse_args([
-        "--value=42",
-        "--own=7",
-        "before",
-        "middle",
-        "after",
-    ])
-    .expect("flattened arguments");
+    let parsed =
+        Cli::try_parse_from(["argx-test", "--value=42", "--own=7", "before", "middle", "after"])
+            .expect("flattened arguments");
     assert_eq!(parsed.generic.nested.generic.value, Some(42));
     assert_eq!(parsed.generic.own, Some(7));
     assert_eq!(parsed.before, "before");

@@ -5,7 +5,7 @@
 
 use std::{ffi::OsString, fmt, str::FromStr};
 
-use crate::{Error, InvalidValue, ValueEnum, ValueEnumError};
+use crate::{Error, ValueEnum, ValueEnumError};
 
 /// Splits repeated raw values on commas while preserving occurrence order.
 ///
@@ -51,12 +51,10 @@ where
     T::Err: fmt::Display,
 {
     let text = text_bytes(value, name)?;
-    T::from_str(&text).map_err(|reason| {
-        Error::InvalidValue(Box::new(InvalidValue {
-            name,
-            value: text,
-            reason: reason.to_string(),
-        }))
+    T::from_str(&text).map_err(|reason| Error::InvalidValue {
+        name,
+        value: text,
+        reason: reason.to_string(),
     })
 }
 
@@ -73,12 +71,10 @@ where
     let mut parsed = Vec::with_capacity(values.len());
     for value in values {
         let text = text_bytes(value, name)?;
-        parsed.push(T::from_str(&text).map_err(|reason| {
-            Error::InvalidValue(Box::new(InvalidValue {
-                name,
-                value: text,
-                reason: reason.to_string(),
-            }))
+        parsed.push(T::from_str(&text).map_err(|reason| Error::InvalidValue {
+            name,
+            value: text,
+            reason: reason.to_string(),
         })?);
     }
     Ok(parsed)
@@ -94,12 +90,10 @@ where
     T: ValueEnum,
 {
     let text = text_bytes(value, name)?;
-    T::from_value(&text).ok_or_else(|| {
-        Error::InvalidValue(Box::new(InvalidValue {
-            name,
-            value: text,
-            reason: ValueEnumError::new(T::VALUES).to_string(),
-        }))
+    T::from_value(&text).ok_or_else(|| Error::InvalidValue {
+        name,
+        value: text,
+        reason: ValueEnumError::new(T::VALUES).to_string(),
     })
 }
 
@@ -116,11 +110,11 @@ where
     for value in values {
         let text = text_bytes(value, name)?;
         let Some(value) = T::from_value(&text) else {
-            return Err(Error::InvalidValue(Box::new(InvalidValue {
+            return Err(Error::InvalidValue {
                 name,
                 value: text,
                 reason: ValueEnumError::new(T::VALUES).to_string(),
-            })));
+            });
         };
         parsed.push(value);
     }
@@ -128,31 +122,19 @@ where
 }
 
 /// Converts one raw value to an operating-system-backed destination type.
-///
-/// # Errors
-///
-/// Returns an error when argv bytes cannot be reconstructed as an operating-system string.
-pub fn os_value<T>(value: Vec<u8>, name: &'static str) -> Result<T, Error>
+pub fn os_value<T>(value: Vec<u8>) -> T
 where
     T: From<OsString>,
 {
-    Ok(T::from(os_string(value, name)?))
+    T::from(os_string(value))
 }
 
 /// Converts repeated raw values to operating-system-backed destination types.
-///
-/// # Errors
-///
-/// Returns the first operating-system string reconstruction failure.
-pub fn os_values<T>(values: Vec<Vec<u8>>, name: &'static str) -> Result<Vec<T>, Error>
+pub fn os_values<T>(values: Vec<Vec<u8>>) -> Vec<T>
 where
     T: From<OsString>,
 {
-    let mut parsed = Vec::with_capacity(values.len());
-    for value in values {
-        parsed.push(T::from(os_string(value, name)?));
-    }
-    Ok(parsed)
+    values.into_iter().map(|value| T::from(os_string(value))).collect()
 }
 
 /// Converts encoded bytes into UTF-8 text.
@@ -160,20 +142,9 @@ fn text_bytes(value: Vec<u8>, name: &'static str) -> Result<String, Error> {
     String::from_utf8(value).map_err(|bad| Error::InvalidUtf8 { name, value: bad.into_bytes() })
 }
 
-/// Reconstructs an operating-system string from bytes emitted by the raw argv parser.
-fn os_string(value: Vec<u8>, name: &'static str) -> Result<OsString, Error> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::ffi::OsStringExt as _;
-        let _ = name;
-        Ok(OsString::from_vec(value))
-    }
+/// Reconstructs an operating-system string from raw argv bytes.
+fn os_string(value: Vec<u8>) -> OsString {
+    use std::os::unix::ffi::OsStringExt as _;
 
-    #[cfg(not(unix))]
-    {
-        match String::from_utf8(value) {
-            Ok(text) => Ok(OsString::from(text)),
-            Err(bad) => Err(Error::InvalidOsValue { name, value: bad.into_bytes() }),
-        }
-    }
+    OsString::from_vec(value)
 }

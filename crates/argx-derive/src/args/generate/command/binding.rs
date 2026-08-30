@@ -14,7 +14,10 @@ pub(super) fn binding_generics(command: &model::Command, facade: &TokenStream) -
         match &field.semantics {
             model::FieldSemantics::Flatten => {
                 let ty = &field.binding.ty;
-                generics.make_where_clause().predicates.push(parse_quote!(#ty: #facade::Args));
+                generics
+                    .make_where_clause()
+                    .predicates
+                    .push(parse_quote!(#ty: #facade::__private::Args));
                 continue;
             }
             model::FieldSemantics::Subcommand => {
@@ -235,9 +238,7 @@ pub(super) fn finish_field(
         }
         match binding.conversion {
             model::ValueConversion::Text => quote!(#facade::__private::text_value(#value, #name)?),
-            model::ValueConversion::Os => {
-                quote!(#facade::__private::os_value::<#ty>(#value, #name)?)
-            }
+            model::ValueConversion::Os => quote!(#facade::__private::os_value::<#ty>(#value)),
             model::ValueConversion::FromStr => {
                 quote!(#facade::__private::parsed_value::<#ty>(#value, #name)?)
             }
@@ -249,9 +250,7 @@ pub(super) fn finish_field(
         }
         match binding.conversion {
             model::ValueConversion::Text => quote!(#facade::__private::text_values(#value, #name)?),
-            model::ValueConversion::Os => {
-                quote!(#facade::__private::os_values::<#ty>(#value, #name)?)
-            }
+            model::ValueConversion::Os => quote!(#facade::__private::os_values::<#ty>(#value)),
             model::ValueConversion::FromStr => {
                 quote!(#facade::__private::parsed_values::<#ty>(#value, #name)?)
             }

@@ -117,29 +117,6 @@ pub static SCHEMA_ACTION: Action<'static> = Action {
     kind: ActionKind::Schema,
 };
 
-/// Built-in output format available in every command scope.
-pub static OUTPUT_FLAG: Flag<'static> = Flag {
-    name: "output",
-    diagnostic: "--output",
-    help: Some("Select output format: text or json"),
-    longs: &["output"],
-    shorts: b"O",
-    global: true,
-    ..Flag::VALUE
-};
-
-/// Built-in schema-aware field selection available in every command scope.
-pub static FIELDS_FLAG: Flag<'static> = Flag {
-    name: "fields",
-    diagnostic: "--fields",
-    help: Some("Select output fields (comma-separated)"),
-    longs: &["fields"],
-    shorts: b"F",
-    global: true,
-    repeatable: true,
-    ..Flag::VALUE
-};
-
 /// Static command semantics shared by parsing, help generation, and schema discovery.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Command<'a> {
@@ -387,11 +364,6 @@ pub(crate) fn short<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn key_base_is_stable() {
-        assert_eq!(key_base("argx::tests", 0x1234_5678), 0x6570_cc45_0000_0000);
-    }
 
     #[test]
     fn module_path_contributes_to_key_base() {

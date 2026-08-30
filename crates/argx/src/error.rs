@@ -1,10 +1,8 @@
-//! Public parse and typed-binding errors.
+//! Parser actions and errors.
 //!
-//! [`Error`] carries both genuine failures and successful terminal parser actions. The `try_parse*`
-//! APIs return help, version, and schema requests as values so embedding code can choose its own
-//! output and process policy; [`Error::exit`] applies Argx's conventional CLI policy. Diagnostic
-//! rendering escapes control characters from caller-controlled bytes before writing them to a
-//! terminal.
+//! The `try_parse*` APIs return built-in help, version, and schema actions through [`Error`] along
+//! with ordinary parsing failures. [`Error::exit`] applies Argx's normal terminal and exit-code
+//! behavior.
 
 use std::{
     borrow::Cow,
@@ -12,23 +10,10 @@ use std::{
     process,
 };
 
-/// Details for a value that the destination Rust type rejected.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
-pub struct InvalidValue {
-    /// Canonical user-facing argument label.
-    pub name: &'static str,
-    /// Text supplied on argv.
-    pub value: String,
-    /// Conversion failure reported by the target type.
-    pub reason: String,
-}
-
-/// A control-flow or failure result while parsing command-line arguments.
+/// A built-in parser action or command-line parsing failure.
 ///
-/// Help, version, and schema discovery are represented explicitly rather than printed by the
-/// parser core. All other variants describe the first syntax, cardinality, relationship, or
-/// conversion failure selected by the binding pipeline.
+/// Help, version, and schema requests are represented alongside ordinary parsing errors so callers
+/// of the `try_parse*` methods can choose how to handle them.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum Error {
@@ -124,32 +109,18 @@ pub enum Error {
     },
     /// A UTF-8 value could not be converted to the field's Rust type.
     #[error(
-        "invalid value `{}` for `{}`: {}",
-        display_bytes(.0.value.as_bytes()),
-        .0.name,
-        display_bytes(.0.reason.as_bytes())
+        "invalid value `{}` for `{name}`: {}",
+        display_bytes(.value.as_bytes()),
+        display_bytes(.reason.as_bytes())
     )]
-    InvalidValue(Box<InvalidValue>),
-    /// Encoded argument bytes could not be reconstructed as an operating-system string.
-    #[error(
-        "value `{}` for `{name}` cannot be reconstructed as an operating-system string",
-        display_bytes(.value)
-    )]
-    InvalidOsValue {
+    InvalidValue {
         /// Canonical user-facing argument label.
         name: &'static str,
-        /// Encoded value supplied by the caller.
-        value: Vec<u8>,
+        /// Text supplied on argv.
+        value: String,
+        /// Conversion failure reported by the target type.
+        reason: String,
     },
-    /// A requested output field does not exist in the selected handler result schema.
-    #[error("unknown output field `{field}`")]
-    InvalidOutputField {
-        /// Dotted field selector supplied through `--fields`.
-        field: String,
-    },
-    /// Field selection was requested for a command without a typed result schema.
-    #[error("field selection is unavailable for this command")]
-    OutputFieldsUnavailable,
 }
 
 impl Error {
@@ -179,22 +150,7 @@ impl Error {
     /// Help, version, and schema requests are written to standard output and exit successfully.
     /// Parse and binding failures are written to standard error and exit with status 2.
     pub fn exit(&self) -> ! {
-        let json = if self.exit_code() == 0 {
-            false
-        } else {
-            let mut args = std::env::args_os().skip(1);
-            let mut json = false;
-            while let Some(arg) = args.next() {
-                if matches!(arg.to_str(), Some("-O" | "--output"))
-                    && args.next().as_deref().and_then(std::ffi::OsStr::to_str) == Some("json")
-                {
-                    json = true;
-                    break;
-                }
-            }
-            json
-        };
-        let output = if json { self.json_exit_output() } else { self.exit_output() };
+        let output = self.exit_output();
         match output.stream {
             ExitStream::Stdout => {
                 let mut stdout = io::stdout().lock();
@@ -208,26 +164,6 @@ impl Error {
             }
         }
         process::exit(output.code)
-    }
-
-    /// Builds JSON terminal output for a parser failure.
-    fn json_exit_output(&self) -> ExitOutput<'static> {
-        let value = serde_json::json!({
-            "error": {
-                "code": "invalid.argument",
-                "message": self.to_string(),
-            }
-        });
-        let text = serde_json::to_string_pretty(&value).unwrap_or_else(|_| {
-            String::from(
-                "{\"error\":{\"code\":\"internal\",\"message\":\"failed to serialize parser error\"}}",
-            )
-        });
-        ExitOutput {
-            stream: ExitStream::Stderr,
-            text: Cow::Owned(format!("{text}\n")),
-            code: self.exit_code(),
-        }
     }
 
     /// Builds the exact terminal output used by [`Self::exit`].
@@ -397,17 +333,13 @@ Usage: tool [OPTIONS]
             r"value `bad\nvalue` for `input` is not valid UTF-8",
         );
         assert_eq!(
-            Error::InvalidValue(Box::new(InvalidValue {
+            Error::InvalidValue {
                 name: "--port",
                 value: String::from("bad\nvalue"),
                 reason: String::from("invalid\nnumber"),
-            }))
+            }
             .to_string(),
             r"invalid value `bad\nvalue` for `--port`: invalid\nnumber",
-        );
-        assert_eq!(
-            Error::InvalidOsValue { name: "path", value: b"bad\npath".to_vec() }.to_string(),
-            r"value `bad\npath` for `path` cannot be reconstructed as an operating-system string",
         );
     }
 }
