@@ -362,7 +362,7 @@ pub(crate) fn doc_heading(attributes: &[Attribute]) -> Option<String> {
 pub(crate) fn doc_help(attributes: &[Attribute]) -> DocHelp {
     let source_lines = doc_source_lines(attributes);
     let summary = first_paragraph(trim_blank_lines(&source_lines));
-    let lines = strip_ignore_fences(source_lines);
+    let lines = strip_text_fences(source_lines);
     let first_heading =
         lines.iter().position(|line| level_one_heading(line).is_some()).unwrap_or(lines.len());
     let preamble = trim_blank_lines(&lines[..first_heading]);
@@ -425,14 +425,14 @@ fn trim_blank_lines(lines: &[String]) -> &[String] {
 fn first_paragraph(lines: &[String]) -> Option<String> {
     let paragraph = lines
         .iter()
-        .take_while(|line| !line.trim().is_empty() && ignore_fence(line).is_none())
+        .take_while(|line| !line.trim().is_empty() && text_fence(line).is_none())
         .collect::<Vec<_>>();
     (!paragraph.is_empty())
         .then(|| paragraph.into_iter().map(|line| line.trim()).collect::<Vec<_>>().join(" "))
 }
 
-/// Removes explicit `ignore` fences while retaining their contents as rendered help text.
-fn strip_ignore_fences(lines: Vec<String>) -> Vec<String> {
+/// Removes explicit `text` fences while retaining their contents as rendered help text.
+fn strip_text_fences(lines: Vec<String>) -> Vec<String> {
     let mut fence = None;
     lines
         .into_iter()
@@ -442,7 +442,7 @@ fn strip_ignore_fences(lines: Vec<String>) -> Vec<String> {
                     fence = None;
                     return false;
                 }
-            } else if let Some(opening) = ignore_fence(line) {
+            } else if let Some(opening) = text_fence(line) {
                 fence = Some(opening);
                 return false;
             }
@@ -451,11 +451,11 @@ fn strip_ignore_fences(lines: Vec<String>) -> Vec<String> {
         .collect()
 }
 
-/// Returns the closing delimiter for an explicit ignored Markdown fence.
-fn ignore_fence(line: &str) -> Option<&'static str> {
+/// Returns the closing delimiter for an explicit text Markdown fence.
+fn text_fence(line: &str) -> Option<&'static str> {
     match line.trim() {
-        "```ignore" => Some("```"),
-        "~~~ignore" => Some("~~~"),
+        "```text" => Some("```"),
+        "~~~text" => Some("~~~"),
         _ => None,
     }
 }
@@ -502,10 +502,10 @@ mod tests {
     }
 
     #[test]
-    fn doc_summary_stops_before_a_stripped_ignore_fence() {
+    fn doc_summary_stops_before_a_stripped_text_fence() {
         let input: DeriveInput = parse_quote! {
             /// CLI server to host Kival.
-            /// ~~~ignore
+            /// ~~~text
             ///     __ __ __
             ///    / //_//_/
             /// ~~~
@@ -521,10 +521,10 @@ mod tests {
     }
 
     #[test]
-    fn doc_help_strips_backtick_ignore_fences() {
+    fn doc_help_strips_backtick_text_fences() {
         let input: DeriveInput = parse_quote! {
             /// CLI server to host Kival.
-            /// ```ignore
+            /// ```text
             ///     __ __ __
             ///    / //_//_/
             /// ```
@@ -540,11 +540,11 @@ mod tests {
     }
 
     #[test]
-    fn doc_help_preserves_non_ignore_fences() {
+    fn doc_help_preserves_non_text_fences() {
         let input: DeriveInput = parse_quote! {
             /// Short summary.
             ///
-            /// ```text
+            /// ```sh
             /// tool run
             /// ```
             ///
@@ -557,7 +557,7 @@ mod tests {
         let help = doc_help(&input.attrs);
         assert_eq!(
             help.description.as_deref(),
-            Some("Short summary.\n\n```text\ntool run\n```\n\n~~~rust\nlet value = 1;\n~~~")
+            Some("Short summary.\n\n```sh\ntool run\n```\n\n~~~rust\nlet value = 1;\n~~~")
         );
     }
 
@@ -586,7 +586,8 @@ mod tests {
         assert_eq!(help.description.as_deref(), Some("Short summary.\n\nLonger command context."));
         assert_eq!(help.sections.len(), 2);
         assert_eq!(help.sections[0].heading, "Examples");
-        assert!(help.sections[0].body.contains("```text\ntool run\n```"));
+        assert!(help.sections[0].body.contains("tool run"));
+        assert!(!help.sections[0].body.contains("```text"));
         assert!(help.sections[0].body.contains("## Detail"));
         assert_eq!(help.sections[1].heading, "Machine-readable usage");
         assert_eq!(help.sections[1].body, "Use `tool schema`.");
