@@ -7,7 +7,7 @@ members = [
 default-members = ["crates/argx"]
 
 [workspace.package]
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 rust-version = "1.95"
 license = "MIT OR Apache-2.0"
@@ -174,4 +174,4 @@ thiserror = "2.0.20"
 toml_edit = { version = "0.25.13", default-features = false, features = ["display", "parse", "serde"] }
 
 # Crates
-argx-derive = { version = "0.2.0", path = "crates/argx-derive" }
+argx-derive = { version = "0.2.1", path = "crates/argx-derive" }
