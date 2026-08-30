@@ -480,7 +480,9 @@ fn argument_diagnostic(binding: &FieldBinding, kind: &ArgumentKind) -> String {
             },
             |long| format!("--{long}"),
         ),
-        ArgumentKind::Positional => binding.name.clone(),
+        ArgumentKind::Positional => {
+            format!("<{}>", binding.name.replace('-', "_").to_ascii_uppercase())
+        }
     }
 }
 

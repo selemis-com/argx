@@ -590,6 +590,9 @@ fn render_usage_inner(path: &[&Command<'_>], include_options: bool) -> String {
 
 /// Resolves one generated missing-required label to the spelling shown in help and usage.
 pub(crate) fn missing_required_label(path: &[&Command<'_>], diagnostic: &str) -> Option<String> {
+    if diagnostic.starts_with('<') && diagnostic.ends_with('>') {
+        return Some(diagnostic.to_owned());
+    }
     for command in path.iter().rev() {
         if let Some(flag) = command.flags.iter().find(|flag| flag.diagnostic == diagnostic) {
             return Some(required_flag_usage(flag));

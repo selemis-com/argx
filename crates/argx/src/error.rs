@@ -187,32 +187,11 @@ impl Error {
                 text: Cow::Borrowed(text.as_str()),
                 code: self.exit_code(),
             },
-            Self::MissingRequiredArguments { argument, usage } => {
-                let styled = diagnostic_styling_enabled();
-                let error = if styled { "\x1b[1merror:\x1b[0m" } else { "error:" };
-                let usage_label = if styled { "\x1b[1;4mUsage:\x1b[0m" } else { "Usage:" };
-                let usage = if styled { style_usage_command(usage) } else { usage.clone() };
-                let help = if styled { "\x1b[1m--help\x1b[0m" } else { "--help" };
-                ExitOutput {
-                    stream: ExitStream::Stderr,
-                    text: Cow::Owned(format!(
-                        "{error} the following required arguments were not provided:\n  {argument}\n\n{usage_label} {usage}\n\nFor more information, try '{help}'.\n"
-                    )),
-                    code: self.exit_code(),
-                }
-            }
-            _ => {
-                let styled = diagnostic_styling_enabled();
-                let error = if styled { "\x1b[1merror:\x1b[0m" } else { "error:" };
-                let help = if styled { "\x1b[1m--help\x1b[0m" } else { "--help" };
-                ExitOutput {
-                    stream: ExitStream::Stderr,
-                    text: Cow::Owned(format!(
-                        "{error} {self}\n\nFor more information, try '{help}'.\n"
-                    )),
-                    code: self.exit_code(),
-                }
-            }
+            _ => ExitOutput {
+                stream: ExitStream::Stderr,
+                text: Cow::Owned(render_diagnostic(self, diagnostic_styling_enabled())),
+                code: self.exit_code(),
+            },
         }
     }
 }
@@ -220,6 +199,84 @@ impl Error {
 /// Whether interactive diagnostics should use minimal ANSI emphasis.
 fn diagnostic_styling_enabled() -> bool {
     io::stderr().is_terminal() && std::env::var_os("NO_COLOR").is_none()
+}
+
+/// Renders one parser diagnostic using the terminal styling policy selected by the caller.
+fn render_diagnostic(error: &Error, styled: bool) -> String {
+    let error_label = emphasize("error:", styled, false);
+    let help = emphasize("--help", styled, false);
+
+    if let Error::MissingRequiredArguments { argument, usage } = error {
+        let usage_label = emphasize("Usage:", styled, true);
+        let usage = if styled { style_usage_command(usage) } else { usage.clone() };
+        return format!(
+            "{error_label} the following required arguments were not provided:\n  {argument}\n\n{usage_label} {usage}\n\nFor more information, try '{help}'.\n"
+        );
+    }
+
+    let message = if styled { styled_diagnostic_message(error) } else { error.to_string() };
+    format!("{error_label} {message}\n\nFor more information, try '{help}'.\n")
+}
+
+/// Renders one diagnostic body, emphasizing only user-facing CLI tokens.
+fn styled_diagnostic_message(error: &Error) -> String {
+    match error {
+        Error::UnknownFlag { token } => {
+            format!("unknown flag `{}`", emphasize(&display_bytes(token), true, false))
+        }
+        Error::MissingValue { name } => {
+            format!("missing value for `{}`", emphasize(name, true, false))
+        }
+        Error::UnexpectedValue { name } => {
+            format!("`{}` does not accept a value", emphasize(name, true, false))
+        }
+        Error::UnexpectedArgument { token } => {
+            format!("unexpected argument `{}`", emphasize(&display_bytes(token), true, false))
+        }
+        Error::UnknownCommand { token } => {
+            format!("unknown command `{}`", emphasize(&display_bytes(token), true, false))
+        }
+        Error::MissingSubcommand { name } => {
+            format!("required subcommand `{}` was not provided", emphasize(name, true, false))
+        }
+        Error::MissingRequired { name } => {
+            format!("required argument `{}` was not provided", emphasize(name, true, false))
+        }
+        Error::DuplicateArgument { name } => {
+            format!("argument `{}` cannot be used more than once", emphasize(name, true, false))
+        }
+        Error::MissingRequirement { name, required_by } => format!(
+            "argument `{}` is required when `{}` is used",
+            emphasize(name, true, false),
+            emphasize(required_by, true, false)
+        ),
+        Error::ConflictingArguments { name, other } => format!(
+            "argument `{}` cannot be used with `{}`",
+            emphasize(name, true, false),
+            emphasize(other, true, false)
+        ),
+        Error::InvalidUtf8 { name, value } => format!(
+            "value `{}` for `{}` is not valid UTF-8",
+            emphasize(&display_bytes(value), true, false),
+            emphasize(name, true, false)
+        ),
+        Error::InvalidValue { name, value, reason } => format!(
+            "invalid value `{}` for `{}`: {}",
+            emphasize(&display_bytes(value.as_bytes()), true, false),
+            emphasize(name, true, false),
+            display_bytes(reason.as_bytes())
+        ),
+        _ => error.to_string(),
+    }
+}
+
+/// Applies optional bold or bold-and-underlined terminal emphasis.
+fn emphasize(value: &str, styled: bool, underline: bool) -> Cow<'_, str> {
+    if !styled {
+        return Cow::Borrowed(value);
+    }
+    let code = if underline { "1;4" } else { "1" };
+    Cow::Owned(format!("\x1b[{code}m{value}\x1b[0m"))
 }
 
 /// Emphasizes the command prefix while leaving usage arguments unstyled.
@@ -232,7 +289,7 @@ fn style_usage_command(usage: &str) -> String {
         .min()
         .unwrap_or(usage.len());
     let (command, arguments) = usage.split_at(boundary);
-    format!("\x1b[1m{command}\x1b[0m{arguments}")
+    format!("{}{arguments}", emphasize(command, true, false))
 }
 
 /// Terminal stream selected by the conventional CLI exit policy.
@@ -379,6 +436,55 @@ Usage: tool [OPTIONS]
             Error::ConflictingArguments { name: "--output", other: "--stdout" }.to_string(),
             "argument `--output` cannot be used with `--stdout`",
         );
+    }
+
+    #[test]
+    fn styled_diagnostics_emphasize_error_tokens_and_help_hint() {
+        let rendered = render_diagnostic(&Error::UnknownFlag { token: b"--wat".to_vec() }, true);
+        assert_eq!(
+            rendered,
+            "\x1b[1merror:\x1b[0m unknown flag `\x1b[1m--wat\x1b[0m`\n\nFor more information, try '\x1b[1m--help\x1b[0m'.\n",
+        );
+
+        let rendered = render_diagnostic(
+            &Error::InvalidValue {
+                name: "<WORKSPACE_ID>",
+                value: String::from("not-a-uuid"),
+                reason: String::from("invalid UUID"),
+            },
+            true,
+        );
+        assert_eq!(
+            rendered,
+            "\x1b[1merror:\x1b[0m invalid value `\x1b[1mnot-a-uuid\x1b[0m` for `\x1b[1m<WORKSPACE_ID>\x1b[0m`: invalid UUID\n\nFor more information, try '\x1b[1m--help\x1b[0m'.\n",
+        );
+    }
+
+    #[test]
+    fn styled_missing_required_diagnostic_emphasizes_usage_structure() {
+        let rendered = render_diagnostic(
+            &Error::MissingRequiredArguments {
+                argument: String::from("--username <USERNAME>"),
+                usage: String::from(
+                    "kivald admin users create --username <USERNAME> --display-name <DISPLAY_NAME>",
+                ),
+            },
+            true,
+        );
+        assert_eq!(
+            rendered,
+            "\x1b[1merror:\x1b[0m the following required arguments were not provided:\n  --username <USERNAME>\n\n\x1b[1;4mUsage:\x1b[0m \x1b[1mkivald admin users create\x1b[0m --username <USERNAME> --display-name <DISPLAY_NAME>\n\nFor more information, try '\x1b[1m--help\x1b[0m'.\n",
+        );
+    }
+
+    #[test]
+    fn diagnostic_renderer_keeps_plain_output_free_of_terminal_controls() {
+        let rendered = render_diagnostic(&Error::MissingValue { name: "--limit" }, false);
+        assert_eq!(
+            rendered,
+            "error: missing value for `--limit`\n\nFor more information, try '--help'.\n",
+        );
+        assert!(!rendered.contains('\x1b'));
     }
 
     #[test]

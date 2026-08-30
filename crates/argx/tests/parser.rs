@@ -1163,7 +1163,7 @@ mod tests {
         let raw = OsString::from_vec(vec![b'x', 0xff]);
         assert_eq!(
             TextCli::try_parse_from([OsString::from("argx-test"), raw]),
-            Err(Error::InvalidUtf8 { name: "value", value: vec![b'x', 0xff] })
+            Err(Error::InvalidUtf8 { name: "<VALUE>", value: vec![b'x', 0xff] })
         );
     }
 
