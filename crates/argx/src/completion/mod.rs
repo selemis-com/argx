@@ -99,6 +99,7 @@ pub enum ScriptError {
     },
 }
 
+/// Generates a dynamic completion adapter for the given command name and shell.
 pub(crate) fn script(command: &str, shell: Shell) -> Result<String, ScriptError> {
     script::render(command, shell)
 }

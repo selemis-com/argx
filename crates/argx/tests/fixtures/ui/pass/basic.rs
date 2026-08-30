@@ -1,5 +1,3 @@
-use argx::Parser as _;
-
 #[derive(argx::Parser)]
 #[argx(about = "Basic parser")]
 struct Cli {

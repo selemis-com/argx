@@ -122,31 +122,19 @@ where
 }
 
 /// Converts one raw value to an operating-system-backed destination type.
-///
-/// # Errors
-///
-/// Returns an error when argv bytes cannot be reconstructed as an operating-system string.
-pub fn os_value<T>(value: Vec<u8>, name: &'static str) -> Result<T, Error>
+pub fn os_value<T>(value: Vec<u8>) -> T
 where
     T: From<OsString>,
 {
-    Ok(T::from(os_string(value, name)?))
+    T::from(os_string(value))
 }
 
 /// Converts repeated raw values to operating-system-backed destination types.
-///
-/// # Errors
-///
-/// Returns the first operating-system string reconstruction failure.
-pub fn os_values<T>(values: Vec<Vec<u8>>, name: &'static str) -> Result<Vec<T>, Error>
+pub fn os_values<T>(values: Vec<Vec<u8>>) -> Vec<T>
 where
     T: From<OsString>,
 {
-    let mut parsed = Vec::with_capacity(values.len());
-    for value in values {
-        parsed.push(T::from(os_string(value, name)?));
-    }
-    Ok(parsed)
+    values.into_iter().map(|value| T::from(os_string(value))).collect()
 }
 
 /// Converts encoded bytes into UTF-8 text.
