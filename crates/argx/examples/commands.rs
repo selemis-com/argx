@@ -1,8 +1,4 @@
-//! Subcommands, reusable flattened arguments, structured help, aliases, and version actions.
-//!
-//! Command topology is expressed with `Parser`, `Args`, and `Subcommand`. A flattened `Args` value
-//! contributes fields directly to its containing command, while documentation remains the source
-//! for summaries, descriptions, help groups, and appended sections.
+//! Subcommands, reusable argument groups, aliases, global options, help, and version actions.
 //!
 //! ```text
 //! cargo run --example commands -- --verbose add hello --force

@@ -1,10 +1,6 @@
-//! Procedural macros for Argx.
+//! Procedural macros used by the `argx` crate.
 //!
-//! The derive crate is intentionally a compile-time frontend. It parses attributes and Rust
-//! documentation into one normalized semantic model, validates every invariant visible to the
-//! current expansion, and emits shared static command metadata plus typed binding and semantic
-//! projections. Runtime parsing policy lives in the `argx` facade crate rather than in generated
-//! token-matching logic.
+//! Applications normally use these macros through the `argx` facade crate.
 
 #![doc(
     html_logo_url = "https://raw.githubusercontent.com/selemis-com/argx/master/.github/assets/logo.jpg",
@@ -24,16 +20,7 @@ use syn::{
     parse_macro_input,
 };
 
-/// Derives the root Argx parser facade for a struct.
-///
-/// `Parser` accepts unit structs and structs with named fields. The resulting type owns the root
-/// command metadata and receives the public `argx::Parser` implementation. Tuple structs and enum
-/// declarations are rejected.
-///
-/// Type-shape inference is syntactic. Special handling for `bool`, `Option`, `Vec`, `String`,
-/// `OsString`, and `PathBuf` requires a recognized standard spelling to appear directly in the
-/// field type. Type aliases around those types are treated as ordinary value types because a
-/// procedural macro cannot resolve aliases.
+/// Derives the root command-line parser for a unit or named-field struct.
 #[proc_macro_derive(Parser, attributes(argx))]
 pub fn derive_parser(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -50,28 +37,19 @@ pub fn derive_config(input: TokenStream) -> TokenStream {
     config::config(&input).unwrap_or_else(syn::Error::into_compile_error).into()
 }
 
-/// Derives reusable command arguments for a struct.
+/// Derives reusable command arguments for a unit or named-field struct.
 ///
-/// `Args` accepts the same struct shapes as `Parser`, but the generated declaration has no process
-/// entry-point semantics of its own. It can be mounted through `#[argx(flatten)]` or used as the
-/// direct payload of a `Subcommand` variant.
-///
-/// Type-shape inference is syntactic. Special handling for `bool`, `Option`, `Vec`, `String`,
-/// `OsString`, and `PathBuf` requires a recognized standard spelling to appear directly in the
-/// field type. Type aliases around those types are treated as ordinary value types because a
-/// procedural macro cannot resolve aliases.
+/// Use the resulting type as a `Subcommand` payload or compose it with `#[argx(flatten)]`.
 #[proc_macro_derive(Args, attributes(argx))]
 pub fn derive_args(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     expand_command(&input, false).unwrap_or_else(syn::Error::into_compile_error).into()
 }
 
-/// Derives a finite canonical command-line value vocabulary for an enum.
+/// Derives a finite command-line value vocabulary for a unit enum.
 ///
-/// Every unit variant is accepted using Argx's normal kebab-case spelling. The derive implements
-/// both `argx::ValueEnum` and `FromStr`; parsing is exact and case-sensitive. Generic enums and
-/// variants carrying fields are rejected. Use `#[argx(value_enum)]` on a parser field to project
-/// the same vocabulary into parsing metadata, generated help, and completion.
+/// Variants use kebab-case CLI spellings. Mark a field with `#[argx(value_enum)]` to use the same
+/// vocabulary for parsing, help, completion, and schema discovery.
 #[proc_macro_derive(ValueEnum)]
 pub fn derive_value_enum(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -138,13 +116,10 @@ fn standalone_attribute(
     }
 }
 
-/// Derives a subcommand set for an enum.
+/// Derives child commands from an enum.
 ///
-/// Every variant becomes one exact child-command spelling. Variants may be unit variants or contain
-/// exactly one unnamed direct `Args` payload; named fields, multiple tuple fields, and collection
-/// or optional wrappers around a payload are rejected. Canonical names and aliases share one
-/// sibling namespace so command lookup is never order-dependent. Add `#[argx(schema)]` to a
-/// structural subcommand enum when it participates in schema discovery.
+/// Variants may be unit commands or carry one direct `Args` payload. Add `#[argx(schema)]` when the
+/// subcommand set participates in schema discovery.
 #[proc_macro_derive(Subcommand, attributes(argx))]
 pub fn derive_subcommand(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);

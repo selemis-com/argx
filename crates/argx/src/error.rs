@@ -1,10 +1,8 @@
-//! Public parse and typed-binding errors.
+//! Parser actions and errors.
 //!
-//! [`Error`] carries both genuine failures and successful terminal parser actions. The `try_parse*`
-//! APIs return help, version, and schema requests as values so embedding code can choose its own
-//! output and process policy; [`Error::exit`] applies Argx's conventional CLI policy. Diagnostic
-//! rendering escapes control characters from caller-controlled bytes before writing them to a
-//! terminal.
+//! The `try_parse*` APIs return built-in help, version, and schema actions through [`Error`] along
+//! with ordinary parsing failures. [`Error::exit`] applies Argx's normal terminal and exit-code
+//! behavior.
 
 use std::{
     borrow::Cow,
@@ -12,11 +10,10 @@ use std::{
     process,
 };
 
-/// A control-flow or failure result while parsing command-line arguments.
+/// A built-in parser action or command-line parsing failure.
 ///
-/// Help, version, and schema discovery are represented explicitly rather than printed by the
-/// parser core. All other variants describe the first syntax, cardinality, relationship, or
-/// conversion failure selected by the binding pipeline.
+/// Help, version, and schema requests are represented alongside ordinary parsing errors so callers
+/// of the `try_parse*` methods can choose how to handle them.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum Error {

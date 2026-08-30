@@ -1,9 +1,5 @@
-//! Integrated reference application covering Argx's major public surfaces.
-//!
-//! This is intentionally broader than the focused examples. It combines typed configuration,
-//! reusable/global arguments, defaults, aliases, constraints, value enums, subcommands, structured
-//! help, version actions, schema discovery, handler contracts, and dynamic completion generation in
-//! one command tree.
+//! Integrated reference application combining Argx's main CLI, configuration, schema, and
+//! completion features.
 //!
 //! ```text
 //! cargo run --example complete -- get object-7

@@ -1,8 +1,7 @@
-//! Machine-readable invocation, result, and error schemas.
+//! Machine-readable command schemas.
 //!
-//! Structural discovery is shallow by default, while reaching a leaf automatically exposes its
-//! complete invocation, result, error, and referenced type schemas. `--full` recursively expands a
-//! structural command.
+//! Structural commands expose their immediate children, while leaf commands expose invocation,
+//! result, and error schemas. Use `--full` to recursively expand a structural command.
 //!
 //! ```text
 //! cargo run --example schema -- schema

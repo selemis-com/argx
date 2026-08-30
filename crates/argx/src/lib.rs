@@ -104,10 +104,8 @@
 //! A `Config` declaration accepts `#[argx(prefix = "...")]`. The prefix maps ordinary fields to
 //! environment variables by uppercasing field components and joining them with `_`. For example,
 //! `#[argx(prefix = "ACME")]` maps `workers` to `ACME_WORKERS`. A flattened `server.workers`
-//! field maps to `ACME_SERVER_WORKERS`.
-//! Only generated or explicitly named mappings contribute configuration fields. Other variables,
-//! including variables that share the prefix, do not cause errors and remain available to later
-//! TOML interpolation.
+//! field maps to `ACME_SERVER_WORKERS`. Variables without a generated or explicit mapping are
+//! ignored.
 //!
 //! Configuration fields accept:
 //!
@@ -124,12 +122,9 @@
 //! Configuration-only fields need no CLI annotation. A flattened field always composes its nested
 //! argv surface, but does not itself accept `default` or `env`.
 //!
-//! With the `toml` feature enabled, `Toml` reads exactly the path supplied to the layer and
-//! rejects unknown fields. Argx performs no configuration-file discovery. [`Dotenv`] likewise reads
-//! exactly the supplied dotenv path. [`Environment`] contributes the current process environment.
-//! TOML interpolation can observe environment values accumulated by earlier `Dotenv` and
-//! `Environment` layers, so moving an environment layer after a TOML layer also removes it from
-//! that TOML layer's interpolation scope.
+//! [`Dotenv`] and `Toml` read only the paths supplied to their layers; Argx performs no
+//! configuration-file discovery. [`Environment`] reads the current process environment. TOML
+//! interpolation can use environment values supplied by earlier environment layers.
 //!
 //! [`Argv::new`] expects a complete argument vector including the program name. [`Argv::current`]
 //! captures the current process argv in that form.
@@ -144,12 +139,10 @@
 //!   contains exactly one direct `Args` payload.
 //!
 //! Command and variant names default to kebab-case. `#[argx(name = "...")]` replaces the canonical
-//! spelling. Subcommand variants may additionally declare hidden `alias` or `aliases` spellings.
-//! Root-command aliases are deliberately unsupported so the root has one canonical identity.
+//! spelling, and subcommand variants may declare hidden `alias` or `aliases` spellings.
 //!
-//! A field with `#[argx(subcommand)]` selects one child from a derived subcommand enum. Selection
-//! is exact. Argx does not perform prefix matching. Once a child is selected, parsing enters that
-//! child's lexical scope.
+//! A field with `#[argx(subcommand)]` selects one child from a derived subcommand enum. Command
+//! names are matched exactly.
 //!
 //! A field with `#[argx(flatten)]` composes one direct `Args` declaration into the current command.
 //! Flattening does not create a new command scope: its arguments participate in the containing
@@ -167,7 +160,7 @@
 //! are accepted with `long = "..."` and `short = 'x'`. Named fields may add hidden long spellings
 //! with `alias` or `aliases`.
 //!
-//! The derive recognizes these field shapes syntactically:
+//! The derive recognizes these field shapes:
 //!
 //! | Rust shape | Binding semantics |
 //! | --- | --- |
@@ -177,9 +170,8 @@
 //! | `Vec<T>` | zero or more values |
 //! | `Option<Vec<T>>` | optional zero-or-more collection |
 //!
-//! For a named collection, each occurrence consumes one value and the option may repeat. For a
-//! positional collection, values are consumed variadically according to the statically validated
-//! positional layout.
+//! Named collections may be repeated. Positional collections consume the remaining positional
+//! values.
 //!
 //! Value conversion depends on the direct value type:
 //!
@@ -190,10 +182,9 @@
 //!
 //! ## Finite values
 //!
-//! Arbitrary [`std::str::FromStr`] implementations are intentionally opaque to Argx. When a value
-//! has a finite command-line vocabulary, derive [`ValueEnum`] and mark the field with
-//! `#[argx(value_enum)]`. The enum declaration then becomes the source of truth for parsing, help,
-//! and completion, so accepted values do not need to be repeated elsewhere.
+//! When a value has a fixed command-line vocabulary, derive [`ValueEnum`] and mark the field with
+//! `#[argx(value_enum)]`. The enum then supplies the accepted values for parsing, help, and
+//! completion.
 //!
 //! ```
 //! #[derive(Debug, argx::ValueEnum)]
@@ -211,30 +202,21 @@
 //! ```
 //!
 //! Derived variants use Argx's normal kebab-case spelling, and parsing is exact and case-sensitive.
-//! The derive also implements [`std::str::FromStr`] for ordinary Rust use. The marker works through
-//! Argx's scalar, `Option`, `Vec`, and `Option<Vec<_>>` field shapes and applies the vocabulary to
-//! the logical element value.
-//!
-//! Type-shape inference is intentionally syntactic. Special treatment for `bool`, `Option`, `Vec`,
-//! `String`, `OsString`, and `PathBuf` requires a recognized standard spelling to appear directly
-//! in the field type. A type alias around one of those types is an ordinary `FromStr` value type
-//! because a procedural macro cannot resolve type aliases.
+//! The derive also implements [`std::str::FromStr`] for ordinary Rust use.
 //!
 //! ## Typed defaults
 //!
-//! Scalar value-taking named options may declare `#[argx(default = expression)]`. A typed default
-//! satisfies absence without round-tripping the expression through command-line text. Defaults are
-//! not accepted on switches, collections, positionals, flatten fields, or subcommand selectors.
+//! Scalar named options may declare `#[argx(default = expression)]`. The expression is evaluated as
+//! the field's Rust type and is used when the option is absent.
 //!
 //! ## Argument relationships
 //!
 //! `requires` and `conflicts` express relationships between argument fields in one composed command
 //! context. References use Rust field names and are validated during derivation/composition.
 //!
-//! `requires` is conditional: when the source is given through argv,
-//! the target must be satisfied. A typed default counts as a satisfied target. `conflicts` rejects
-//! the case where both source and target were given. A default alone does not make an argument
-//! conflict with another argument.
+//! `requires` makes another field mandatory when the source argument is supplied. `conflicts`
+//! rejects combinations that cannot be used together. Typed defaults satisfy requirements without
+//! activating conflicts.
 //!
 //! ```
 //! #[derive(argx::Parser)]
@@ -252,18 +234,13 @@
 //!
 //! # Argv grammar
 //!
-//! Argx accepts long options as either `--name value` or `--name=value`. Short options may be
-//! bundled. A value-taking short option consumes the remainder of its bundle as its value, or the
-//! next token when no remainder exists.
+//! Argx accepts long options as `--name value` or `--name=value`, supports short-option bundles,
+//! and treats `--` as the end of option parsing.
 //!
-//! `--` stops flag interpretation in the active command scope. Ordinary flag-like detached values
-//! are refused by default. `allow_hyphen_values` permits them for a named value-taking option.
-//! `allow_negative_numbers` permits recognized negative-number spellings while continuing to
-//! reject other flag-like values. The latter is also available for positional values.
-//!
-//! Raw argv is handled as operating-system strings. On Unix, `OsString` and `PathBuf` fields can
-//! therefore receive non-UTF-8 argv without forcing a lossy conversion. `String` and `FromStr`
-//! destinations require UTF-8 and report an [`Error`] when conversion is not possible.
+//! Detached values that look like options are rejected by default. Use `allow_hyphen_values` for
+//! arbitrary flag-like values or `allow_negative_numbers` when only negative numbers should be
+//! accepted. `OsString` and `PathBuf` preserve native argument strings; text and `FromStr` values
+//! require UTF-8.
 //!
 //! # Parser entry points
 //!
@@ -288,16 +265,12 @@
 //!
 //! # Help and version
 //!
-//! Every command scope has built-in `-h` and `--help`. A root command or subcommand variant that
-//! declares `version` or `long_version` also receives `-V` and `--version`. If only one version
-//! expression is supplied, it is used for both forms.
+//! Every command scope has built-in `-h` and `--help`. Commands with `version` or `long_version`
+//! also receive `-V` and `--version`. If only one version is supplied, it is used for both forms.
 //!
-//! Rust documentation participates directly in help generation:
-//!
-//! - the first prose paragraph is the one-line summary used in command listings and argument rows.
-//! - the command's prose before the first level-one heading is its full description.
-//! - level-one Markdown headings become user-authored help sections after generated sections.
-//! - documentation on a flatten field becomes the flattened group's heading.
+//! Rust documentation supplies command and argument descriptions. The first paragraph is used as
+//! the short summary, level-one headings create additional help sections, and documentation on a
+//! flattened field becomes that group's heading.
 //!
 //! `about = "..."` explicitly replaces the command's derived descriptive text. `help = "..."`
 //! replaces a field's derived one-line summary. Hidden flag and subcommand aliases are accepted by
@@ -348,10 +321,8 @@
 //! command.
 //!
 //! Structural [`Args`] and `Subcommand` declarations use the same `#[argx(schema)]` marker.
-//! Associate executable leaves with result and error types using
-//! `#[argx(handler = CommandType)]` on a free function or `#[argx(handler = method)]` on an
-//! inherent impl. For a zero-argument executable command, use an empty `Args` struct rather than a
-//! unit subcommand variant so the leaf has a concrete Rust type.
+//! Associate executable leaves with typed results and errors using `#[argx(handler = CommandType)]`
+//! on a free function or `#[argx(handler = method)]` on an inherent impl.
 //!
 //! `#[argx(schema)]` on result and error data types delegates their JSON Schema generation to
 //! Schemars. See the `schema` example for a complete structural and leaf discovery flow.
@@ -372,10 +343,9 @@
 //! contain a subcommand field may also use `schema` to participate in that command topology.
 //! Version metadata remains root-only.
 //!
-//! Command aliases are intentionally not accepted on structs: aliases belong to selectable
-//! `Subcommand` variants. An `Args` declaration has no standalone process entry point. Flattening
-//! it does not create a command scope, and using it as a subcommand payload keeps the enum variant
-//! as the visible command.
+//! Aliases belong to selectable `Subcommand` variants. An `Args` declaration has no standalone
+//! command name: flattening composes it into the current command, while a subcommand payload uses
+//! the variant as the visible command.
 //!
 //! ## `Subcommand` variants
 //!
@@ -413,55 +383,22 @@
 //! | `conflicts = ["a", "b"]` | reject use with multiple arguments |
 //! | `allow_hyphen_values` | allow arbitrary flag-like detached values for a named value option |
 //! | `allow_negative_numbers` | accept negative-number values without accepting other flags |
-//! | `value_enum` | use a finite [`trait@ValueEnum`] vocabulary for parsing, help, and completion |
+//! | `value_enum` | use a finite [`trait@ValueEnum`] vocabulary for parsing, help, completion, and schema discovery |
 //! | `help = "..."` | override the field's documentation-derived one-line help text |
 //! | `flatten` | compose one direct [`Args`] field into the current command |
 //! | `subcommand` | select one direct derived `Subcommand` enum |
 //!
-//! Long and alias spellings are written without leading dashes. A short spelling is one visible
-//! ASCII character other than `-` or `=`.
-//!
-//! `alias` / `aliases`, `global`, and `count` require a named option. `count` requires a direct
-//! `u8` field and makes the option value-less and repeatable. Its value is the number of explicit
-//! occurrences, saturating at `u8::MAX`. A typed `default` is used only
-//! when the flag is absent. Other defaults remain restricted to scalar value-taking named options.
-//! `delimited` is valid only on collection fields such as `Vec<T>` and `Option<Vec<T>>`. Each
-//! occurrence is split on commas before normal value conversion, so repetition and comma-delimited
-//! values compose naturally. The delimiter is fixed to `,`. `allow_hyphen_values` is named-option
-//! only. `allow_negative_numbers` may also be used on a positional value. Value policies do not
-//! apply to `bool` switches or counted flags.
-//!
-//! `requires` and `conflicts` refer to Rust field names in the composed command context, including
-//! fields contributed by `flatten`. Structural `flatten` and `subcommand` fields cannot also carry
-//! ordinary flag, relationship, or `help` metadata. Their types must be held directly
-//! rather than through `Option` or collection wrappers.
-//!
-//! # Failure model
-//!
-//! Parsing stops at the first terminal action or failure. [`Error`] is owned and non-exhaustive,
-//! and preserves the relevant command-line bytes for diagnostics. Invalid values are classified
-//! separately from structural argv errors such as unknown options, missing values, duplicate
-//! scalar arguments, unknown commands, missing subcommands, and unsatisfied relationships.
-//!
-//! [`Parser::parse`] and [`Parser::parse_from`] provide conventional CLI process behavior.
-//! [`Parser::try_parse`] and [`Parser::try_parse_from`] return the error/action to the caller.
+//! Long and alias spellings are written without leading dashes. `count` uses a `u8` field, and
+//! `delimited` splits collection values on commas. `requires` and `conflicts` refer to Rust field
+//! names, including fields contributed through `flatten`. Incompatible attribute combinations are
+//! rejected during derivation.
 //!
 //! # Derive restrictions
 //!
-//! The derive surface rejects ambiguous or unsupported shapes rather than approximating them:
-//!
-//! - `Parser` and `Args` do not support tuple structs.
-//! - a command may have at most one direct `subcommand` field.
-//! - `flatten` and `subcommand` fields must hold their derived type directly, not through `Option`
-//!   or collection wrappers.
-//! - subcommand variants support only unit variants or one unnamed direct `Args` payload.
-//! - nested `Option` / `Vec` wrappers outside the recognized shapes are unsupported.
-//! - `value_enum` fields cannot depend on the containing command's generic parameters because their
-//!   vocabulary must be known when the derive is expanded.
-//! - reserved built-in help/version/schema spellings and invalid layouts are rejected during
-//!   derivation.
-//!
-//! Unsupported shapes are rejected at compile time rather than approximated at runtime.
+//! Argx rejects unsupported command shapes at compile time. `Parser` and `Args` use unit or
+//! named-field structs, subcommand variants are unit variants or carry one direct `Args` payload,
+//! and structural fields hold their derived types directly. Invalid layouts and incompatible
+//! attributes produce compile-time diagnostics.
 //!
 //! # Platform support
 //!

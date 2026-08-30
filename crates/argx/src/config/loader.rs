@@ -77,12 +77,10 @@ pub trait Config: Sized {
     fn __finalize(resolved: Self::Overrides) -> Result<Self, SourceError>;
 }
 
-/// The common representation of a layer accepted by [`Loader::layer`].
+/// A configuration layer accepted by [`Loader::layer`].
 ///
-/// Applications normally pass [`Defaults`], [`Dotenv`], [`Environment`], or [`Argv`] directly
-/// rather than constructing this enum. With the `toml` feature enabled, `Toml` is available as
-/// an additional file layer. Layers are applied in declaration order, and
-/// later layers replace only values they supply.
+/// Applications normally pass [`Defaults`], [`Dotenv`], [`Environment`], [`Argv`], or optional
+/// [`Toml`] values directly.
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub enum Layer {
@@ -110,7 +108,7 @@ pub struct Defaults;
 #[cfg_attr(docsrs, doc(cfg(feature = "toml")))]
 /// One explicitly selected TOML file layer.
 ///
-/// Unknown fields are rejected. Interpolation can observe environment values accumulated by
+/// Unknown fields are rejected. `${NAME}` interpolation can use environment values supplied by
 /// earlier [`Dotenv`] and [`Environment`] layers.
 #[derive(Clone, Debug)]
 pub struct Toml {
@@ -129,8 +127,7 @@ impl Toml {
 
 /// One explicitly selected dotenv-format file layer.
 ///
-/// Argx does not search for dotenv files. Values loaded here also become available to later TOML
-/// interpolation.
+/// Argx reads only the path supplied to [`Dotenv::new`].
 #[derive(Clone, Debug)]
 pub struct Dotenv {
     /// Filesystem path read by this layer.
@@ -146,8 +143,6 @@ impl Dotenv {
 }
 
 /// A layer containing the current process environment.
-///
-/// Values contributed here also become available to later TOML interpolation.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Environment;
 
