@@ -1,8 +1,8 @@
 //! Parser actions and errors.
 //!
-//! The `try_parse*` APIs return built-in help, version, and schema actions through [`Error`] along
-//! with ordinary parsing failures. [`Error::exit`] applies Argx's normal terminal and exit-code
-//! behavior.
+//! The `try_parse*` APIs return built-in help, version, schema, and completion actions through
+//! [`Error`] along with ordinary parsing failures. [`Error::exit`] applies Argx's normal terminal
+//! and exit-code behavior.
 
 use std::{
     borrow::Cow,
@@ -12,8 +12,8 @@ use std::{
 
 /// A built-in parser action or command-line parsing failure.
 ///
-/// Help, version, and schema requests are represented alongside ordinary parsing errors so callers
-/// of the `try_parse*` methods can choose how to handle them.
+/// Help, version, schema, and completion requests are represented alongside ordinary parsing
+/// errors so callers of the `try_parse*` methods can choose how to handle them.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum Error {
@@ -34,6 +34,12 @@ pub enum Error {
     DisplaySchema {
         /// Pretty-printed JSON schema document for the selected command scope.
         schema: String,
+    },
+    /// Dynamic shell-completion output requested through Argx's private completion protocol.
+    #[error("{completion}")]
+    DisplayCompletion {
+        /// Completion candidates encoded for the generated shell adapter.
+        completion: String,
     },
     /// A flag-like token did not match any declared flag.
     #[error("unknown flag `{}`", display_bytes(.token))]
@@ -150,16 +156,18 @@ impl Error {
     #[must_use]
     pub const fn exit_code(&self) -> i32 {
         match self {
-            Self::DisplayHelp { .. } | Self::DisplayVersion { .. } | Self::DisplaySchema { .. } => {
-                0
-            }
+            Self::DisplayHelp { .. }
+            | Self::DisplayVersion { .. }
+            | Self::DisplaySchema { .. }
+            | Self::DisplayCompletion { .. } => 0,
             _ => 2,
         }
     }
 
     /// Prints this result to the appropriate stream and terminates the process.
     ///
-    /// Help, version, and schema requests are written to standard output and exit successfully.
+    /// Help, version, schema, and completion requests are written to standard output and exit
+    /// successfully.
     /// Parse and binding failures are written to standard error and exit with status 2.
     pub fn exit(&self) -> ! {
         let output = self.exit_output();
@@ -186,7 +194,8 @@ impl Error {
         match self {
             Self::DisplayHelp { help: text }
             | Self::DisplayVersion { version: text }
-            | Self::DisplaySchema { schema: text } => ExitOutput {
+            | Self::DisplaySchema { schema: text }
+            | Self::DisplayCompletion { completion: text } => ExitOutput {
                 stream: ExitStream::Stdout,
                 text: Cow::Borrowed(text.as_str()),
                 code: self.exit_code(),
@@ -369,6 +378,12 @@ mod tests {
         assert_eq!(output.code, 0);
         assert_eq!(output.text, "{\"command\":{}}\n");
 
+        let completion = Error::DisplayCompletion { completion: "--help\tPrint help\n".to_owned() };
+        let output = completion.exit_output();
+        assert_eq!(output.stream, ExitStream::Stdout);
+        assert_eq!(output.code, 0);
+        assert_eq!(output.text, "--help\tPrint help\n");
+
         let failure = Error::UnknownFlag { token: b"--bad\nflag".to_vec() };
         let output = failure.exit_output();
         assert_eq!(output.stream, ExitStream::Stderr);
@@ -398,6 +413,10 @@ Usage: tool [OPTIONS]
         let schema = Error::DisplaySchema { schema: "{}\n".to_owned() };
         assert_eq!(schema.exit_code(), 0);
         assert_eq!(schema.to_string(), "{}\n");
+
+        let completion = Error::DisplayCompletion { completion: "candidate\n".to_owned() };
+        assert_eq!(completion.exit_code(), 0);
+        assert_eq!(completion.to_string(), "candidate\n");
 
         let failure = Error::UnknownFlag { token: b"--bad".to_vec() };
         assert_eq!(failure.exit_code(), 2);

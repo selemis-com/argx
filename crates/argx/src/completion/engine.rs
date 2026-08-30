@@ -1,11 +1,6 @@
 //! Shell-independent completion engine over the raw argv parser.
 
-use std::{
-    collections::HashSet,
-    env,
-    ffi::OsStr,
-    io::{self, Write as _},
-};
+use std::{collections::HashSet, env, ffi::OsStr};
 
 use super::{
     PROTOCOL_COMMAND, PROTOCOL_ENV, PROTOCOL_LINE_ENV, PROTOCOL_VERSION, PROTOCOL_WORDS_ENV,
@@ -25,51 +20,47 @@ use crate::{
     error::display_bytes,
 };
 
-/// Handles one private completion request for `T` from the current process.
+/// Resolves one private completion request for `T` from the current process.
 ///
-/// `false` means the current invocation is an ordinary CLI request and should continue through the
-/// normal parser. A recognized completion invocation is consumed even when malformed so private
-/// protocol arguments never leak into the application's public grammar.
-pub(crate) fn handle_process<T>() -> bool
+/// `None` means the current invocation is an ordinary CLI request and should continue through the
+/// normal parser. A recognized completion invocation returns `Some`, including malformed private
+/// requests, so protocol arguments never leak into the application's public grammar.
+pub(crate) fn process_request<T>() -> Option<String>
 where
     T: CommandArgs,
 {
     if env::var_os(PROTOCOL_ENV).as_deref() != Some(OsStr::new(PROTOCOL_VERSION)) {
-        return false;
+        return None;
     }
 
     let mut argv = env::args_os().skip(1);
     if argv.next().as_deref() != Some(OsStr::new(PROTOCOL_COMMAND)) {
-        return false;
+        return None;
     }
     if argv.next().is_some() {
-        return true;
+        return Some(String::new());
     }
 
     let candidates = match env::var(PROTOCOL_WORDS_ENV) {
         Ok(encoded) => {
             let Ok(spans) = serde_json::from_str::<Vec<String>>(&encoded) else {
-                return true;
+                return Some(String::new());
             };
             complete_spans_with_schema(T::COMMAND, &spans, T::SCHEMA_ENABLED)
         }
-        Err(env::VarError::NotUnicode(_)) => return true,
+        Err(env::VarError::NotUnicode(_)) => return Some(String::new()),
         Err(env::VarError::NotPresent) => {
             let Some(line) = env::var_os(PROTOCOL_LINE_ENV) else {
-                return true;
+                return Some(String::new());
             };
             let Some(line) = line.to_str() else {
-                return true;
+                return Some(String::new());
             };
             complete_line_with_schema(T::COMMAND, line, T::SCHEMA_ENABLED)
         }
     };
 
-    let rendered = render_candidates(&candidates);
-    let mut stdout = io::stdout().lock();
-    let _ = stdout.write_all(rendered.as_bytes());
-    let _ = stdout.flush();
-    true
+    Some(render_candidates(&candidates))
 }
 
 /// One shell-independent completion candidate.

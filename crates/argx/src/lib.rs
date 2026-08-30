@@ -303,9 +303,9 @@
 //! parsing but omitted from generated help so help presents one canonical interface.
 //!
 //! During parsing, help and version are represented as [`Error::DisplayHelp`] and
-//! [`Error::DisplayVersion`] terminal actions. The process-oriented parsing methods print those
-//! actions to stdout and exit successfully. Other parse/binding errors go to stderr and exit with
-//! status 2.
+//! [`Error::DisplayVersion`] terminal actions. Dynamic completion requests are represented as
+//! [`Error::DisplayCompletion`]. The process-oriented parsing methods print those actions to stdout
+//! and exit successfully. Other parse/binding errors go to stderr and exit with status 2.
 //!
 //! # Shell completions
 //!
@@ -323,7 +323,7 @@
 //! # Ok::<(), argx::completion::ScriptError>(())
 //! ```
 //!
-//! [`Parser::parse`] handles completion requests automatically.
+//! [`Parser::parse`] and [`Parser::try_parse`] handle completion requests automatically.
 //!
 //! Fields marked `#[argx(value_enum)]` complete from the same finite vocabulary used for parsing
 //! and help. Hidden aliases are accepted while reconstructing command scope but are not suggested.
@@ -488,8 +488,13 @@ pub use config::{Argv, Defaults, Dotenv, Environment, Error as ConfigError};
 
 /// Parses command-line arguments into a typed value.
 ///
-/// Use the `parse*` methods for ordinary CLI process behavior and the `try_parse*` methods when
-/// the caller owns error and process handling.
+/// Use [`Parser::parse`] and [`Parser::try_parse`] for the current process. These entry points
+/// honor process-level Argx protocols such as dynamic completion. Use [`Parser::parse_from`] and
+/// [`Parser::try_parse_from`] when parsing an explicit argv sequence; the `*_from` methods are
+/// determined only by the supplied argv and do not inspect process-level completion state.
+///
+/// Within each pair, the `parse*` method applies Argx's normal rendering and exit policy while the
+/// corresponding `try_parse*` method returns [`Error`] to the caller.
 pub trait Parser: Sized + __private::CommandArgs {
     /// Parses the current process arguments, excluding the program name.
     ///
@@ -497,9 +502,6 @@ pub trait Parser: Sized + __private::CommandArgs {
     /// successfully. Parse failures are printed to standard error and terminate the process with
     /// status 2.
     fn parse() -> Self {
-        if completion::handle_process::<Self>() {
-            std::process::exit(0);
-        }
         Self::try_parse().unwrap_or_else(|error| error.exit())
     }
 
@@ -507,15 +509,20 @@ pub trait Parser: Sized + __private::CommandArgs {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::DisplayHelp`], [`Error::DisplayVersion`], or [`Error::DisplaySchema`] when
-    /// the corresponding built-in action is requested, or an error when argv cannot be bound to
-    /// this command or a bound value cannot be converted to its Rust field type.
+    /// Returns [`Error::DisplayHelp`], [`Error::DisplayVersion`], [`Error::DisplaySchema`], or
+    /// [`Error::DisplayCompletion`] when the corresponding built-in or process action is requested,
+    /// or an error when argv cannot be bound to this command or a bound value cannot be converted
+    /// to its Rust field type.
     fn try_parse() -> Result<Self, Error> {
+        if let Some(completion) = completion::process_request::<Self>() {
+            return Err(Error::DisplayCompletion { completion });
+        }
         parse_args::<Self, _, _>(std::env::args_os().skip(1))
     }
 
     /// Parses a complete argv sequence whose first item is the program name.
     ///
+    /// Parsing is determined only by `argv`; process-level completion state is not inspected.
     /// Help, version, and schema requests are printed to standard output and terminate
     /// successfully. Parse failures are printed to standard error and terminate the process with
     /// status 2.
@@ -529,7 +536,8 @@ pub trait Parser: Sized + __private::CommandArgs {
 
     /// Parses a complete argv sequence whose first item is the program name.
     ///
-    /// The program name is ignored. An empty sequence is therefore equivalent to a program name
+    /// Parsing is determined only by `argv`; process-level completion state is not inspected. The
+    /// program name is ignored. An empty sequence is therefore equivalent to a program name
     /// followed by no command-line arguments.
     ///
     /// # Examples
