@@ -350,7 +350,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                 Some(quote! {
                     if partial.#slot.1 {
                         return ::std::result::Result::Err(
-                            #facade::Error::DuplicateArgument { name: #name },
+                            #facade::Error::DuplicateArgument { name: #name, usage: None },
                         );
                     }
                 })

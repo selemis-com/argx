@@ -875,18 +875,18 @@ mod tests {
 
     #[test]
     fn scalar_occurrences_are_strict_and_collections_repeat() {
-        assert_eq!(
+        assert!(matches!(
             Cli::try_parse_from(["argx-test", "--port", "1", "--port", "2", "input"]),
-            Err(Error::DuplicateArgument { name: "--port" })
-        );
-        assert_eq!(
+            Err(Error::DuplicateArgument { name: "--port", .. })
+        ));
+        assert!(matches!(
             Cli::try_parse_from(["argx-test", "-v", "--verbose", "input"]),
-            Err(Error::DuplicateArgument { name: "--verbose" })
-        );
-        assert_eq!(
+            Err(Error::DuplicateArgument { name: "--verbose", .. })
+        ));
+        assert!(matches!(
             Cli::try_parse_from(["argx-test", "--port", "not-a-port", "--port", "2", "input"]),
-            Err(Error::DuplicateArgument { name: "--port" })
-        );
+            Err(Error::DuplicateArgument { name: "--port", .. })
+        ));
 
         let parsed =
             Cli::try_parse_from(["argx-test", "--define", "one", "--define", "two", "input"])
@@ -935,10 +935,10 @@ mod tests {
             Cli::try_parse_from(["argx-test", "--verbose=true", "input"]),
             Err(Error::UnexpectedValue { name: "--verbose" })
         );
-        assert_eq!(
+        assert!(matches!(
             Empty::try_parse_from(["argx-test", "extra"]),
-            Err(Error::UnexpectedArgument { token: b"extra".to_vec() })
-        );
+            Err(Error::UnexpectedArgument { token, .. }) if token == b"extra"
+        ));
     }
 
     #[test]
@@ -1117,14 +1117,14 @@ mod tests {
 
     #[test]
     fn flattened_checks_preserve_global_error_precedence() {
-        assert_eq!(
+        assert!(matches!(
             FlattenPrecedence::try_parse_from([
                 "argx-test",
                 "--duplicate=not-a-number",
                 "--duplicate=2",
             ]),
-            Err(Error::DuplicateArgument { name: "--duplicate" })
-        );
+            Err(Error::DuplicateArgument { name: "--duplicate", .. })
+        ));
         assert_eq!(
             FlattenPrecedence::try_parse_from([
                 "argx-test",
@@ -1414,10 +1414,10 @@ Output:
             HelpCli::try_parse_from(["argx-test", "--destination", "--help"]),
             Err(Error::MissingValue { name: "--destination" }),
         );
-        assert_eq!(
+        assert!(matches!(
             Empty::try_parse_from(["argx-test", "--", "--help"]),
-            Err(Error::UnexpectedArgument { token: b"--help".to_vec() }),
-        );
+            Err(Error::UnexpectedArgument { token, .. }) if token == b"--help"
+        ));
     }
 
     #[test]
@@ -1476,10 +1476,10 @@ Output:
             DefaultCli::try_parse_from(["argx-test", "--port", "8080", "--profile", "production"]),
             Ok(DefaultCli { port: 8080, profile: Some(String::from("production")) }),
         );
-        assert_eq!(
+        assert!(matches!(
             DefaultCli::try_parse_from(["argx-test", "--port", "1", "--port", "2"]),
-            Err(Error::DuplicateArgument { name: "--port" }),
-        );
+            Err(Error::DuplicateArgument { name: "--port", .. })
+        ));
         assert_eq!(
             FlattenedDefaults::try_parse_from(["argx-test"]),
             Ok(FlattenedDefaults { shared: DefaultShared { jobs: 4 } }),
@@ -1840,7 +1840,7 @@ Options:\n      --verbose\n      --region <REGION>\n      --profile <PROFILE>\n 
 
     #[test]
     fn scalar_global_occurrences_share_one_cardinality_across_command_boundaries() {
-        assert_eq!(
+        assert!(matches!(
             GlobalCli::try_parse_from([
                 "argx-test",
                 "--profile",
@@ -1850,8 +1850,8 @@ Options:\n      --verbose\n      --region <REGION>\n      --profile <PROFILE>\n 
                 "--profile",
                 "second",
             ]),
-            Err(Error::DuplicateArgument { name: "--profile" }),
-        );
+            Err(Error::DuplicateArgument { name: "--profile", .. })
+        ));
     }
 
     #[test]
@@ -1895,10 +1895,10 @@ Options:\n      --verbose\n      --region <REGION>\n      --profile <PROFILE>\n 
 
     #[test]
     fn separator_stops_command_selection_in_the_current_scope() {
-        assert_eq!(
+        assert!(matches!(
             SubcommandCli::try_parse_from(["argx-test", "acme", "--", "add"]),
-            Err(Error::UnexpectedArgument { token: b"add".to_vec() }),
-        );
+            Err(Error::UnexpectedArgument { token, .. }) if token == b"add"
+        ));
         assert_eq!(
             SubcommandCli::try_parse_from(["argx-test", "acme", "add", "--", "--force"]),
             Ok(SubcommandCli {

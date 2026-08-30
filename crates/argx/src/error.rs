@@ -58,6 +58,8 @@ pub enum Error {
     UnexpectedArgument {
         /// Encoded token supplied by the caller.
         token: Vec<u8>,
+        /// Corrective usage for the selected command scope, when available.
+        usage: Option<String>,
     },
     /// A word did not match any child command when command selection was required.
     #[error("unknown command `{}`", display_bytes(.token))]
@@ -90,6 +92,8 @@ pub enum Error {
     DuplicateArgument {
         /// Canonical user-facing argument label.
         name: &'static str,
+        /// Corrective usage for the selected command scope, when available.
+        usage: Option<String>,
     },
     /// An argument required by another supplied argument was not available.
     #[error("argument `{name}` is required when `{required_by}` is used")]
@@ -215,7 +219,24 @@ fn render_diagnostic(error: &Error, styled: bool) -> String {
     }
 
     let message = if styled { styled_diagnostic_message(error) } else { error.to_string() };
+    if let Some(usage) = structural_usage(error) {
+        let usage_label = emphasize("Usage:", styled, true);
+        let usage = if styled { style_usage_command(usage) } else { usage.to_owned() };
+        return format!(
+            "{error_label} {message}\n\n{usage_label} {usage}\n\nFor more information, try '{help}'.\n"
+        );
+    }
     format!("{error_label} {message}\n\nFor more information, try '{help}'.\n")
+}
+
+/// Returns corrective usage for diagnostics caused by command structure.
+fn structural_usage(error: &Error) -> Option<&str> {
+    match error {
+        Error::UnexpectedArgument { usage, .. } | Error::DuplicateArgument { usage, .. } => {
+            usage.as_deref()
+        }
+        _ => None,
+    }
 }
 
 /// Renders one diagnostic body, emphasizing only user-facing CLI tokens.
@@ -230,7 +251,7 @@ fn styled_diagnostic_message(error: &Error) -> String {
         Error::UnexpectedValue { name } => {
             format!("`{}` does not accept a value", emphasize(name, true, false))
         }
-        Error::UnexpectedArgument { token } => {
+        Error::UnexpectedArgument { token, .. } => {
             format!("unexpected argument `{}`", emphasize(&display_bytes(token), true, false))
         }
         Error::UnknownCommand { token } => {
@@ -242,7 +263,7 @@ fn styled_diagnostic_message(error: &Error) -> String {
         Error::MissingRequired { name } => {
             format!("required argument `{}` was not provided", emphasize(name, true, false))
         }
-        Error::DuplicateArgument { name } => {
+        Error::DuplicateArgument { name, .. } => {
             format!("argument `{}` cannot be used more than once", emphasize(name, true, false))
         }
         Error::MissingRequirement { name, required_by } => format!(
@@ -397,7 +418,7 @@ Usage: tool [OPTIONS]
             "`--verbose` does not accept a value",
         );
         assert_eq!(
-            Error::UnexpectedArgument { token: b"extra".to_vec() }.to_string(),
+            Error::UnexpectedArgument { token: b"extra".to_vec(), usage: None }.to_string(),
             "unexpected argument `extra`",
         );
         assert_eq!(
@@ -421,7 +442,7 @@ Usage: tool [OPTIONS]
             "the following required arguments were not provided:\n  --output <OUTPUT>\n\nUsage: tool [OPTIONS] --output <OUTPUT>",
         );
         assert_eq!(
-            Error::DuplicateArgument { name: "--verbose" }.to_string(),
+            Error::DuplicateArgument { name: "--verbose", usage: None }.to_string(),
             "argument `--verbose` cannot be used more than once",
         );
     }
@@ -483,6 +504,27 @@ Usage: tool [OPTIONS]
             "error: missing value for `--limit`\n\nFor more information, try '--help'.\n",
         );
         assert!(!rendered.contains('\x1b'));
+    }
+
+    #[test]
+    fn structural_diagnostics_include_corrective_usage() {
+        let unexpected = Error::UnexpectedArgument {
+            token: b"extra".to_vec(),
+            usage: Some(String::from("cli get <ID>")),
+        };
+        assert_eq!(
+            render_diagnostic(&unexpected, false),
+            "error: unexpected argument `extra`\n\nUsage: cli get <ID>\n\nFor more information, try '--help'.\n",
+        );
+
+        let duplicate = Error::DuplicateArgument {
+            name: "--limit",
+            usage: Some(String::from("cli list [OPTIONS] <ID>")),
+        };
+        assert_eq!(
+            render_diagnostic(&duplicate, false),
+            "error: argument `--limit` cannot be used more than once\n\nUsage: cli list [OPTIONS] <ID>\n\nFor more information, try '--help'.\n",
+        );
     }
 
     #[test]

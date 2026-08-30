@@ -92,7 +92,10 @@ fn parse_refs_inner<T: CommandArgs>(
                 };
             }
             Ok(event) => event,
-            Err(error) => return Err(raw_error(error)),
+            Err(error) => {
+                let command_path = parser.command_path().collect::<Vec<_>>();
+                return Err(raw_error(error, &command_path));
+            }
         };
         match &event {
             Event::Flag { flag, .. } => supplied.push(flag.key),
@@ -126,6 +129,10 @@ fn parse_refs_inner<T: CommandArgs>(
                     usage: help::render_required_usage(&command_path),
                 })
             }
+            Error::DuplicateArgument { name, .. } => Err(Error::DuplicateArgument {
+                name,
+                usage: Some(help::render_usage(&command_path)),
+            }),
             error => Err(error),
         };
     }
@@ -133,7 +140,10 @@ fn parse_refs_inner<T: CommandArgs>(
 }
 
 /// Converts one raw-parser error into the owned public error type.
-fn raw_error(error: RawError<'static, '_>) -> Error {
+fn raw_error(
+    error: RawError<'static, '_>,
+    command_path: &[&crate::cli::command::Command<'_>],
+) -> Error {
     match error {
         RawError::UnexpectedActionValue { action } => {
             Error::UnexpectedValue { name: action.diagnostic }
@@ -141,7 +151,10 @@ fn raw_error(error: RawError<'static, '_>) -> Error {
         RawError::UnknownFlag { token } => Error::UnknownFlag { token: token.to_vec() },
         RawError::MissingFlagValue { flag } => Error::MissingValue { name: flag.diagnostic },
         RawError::UnexpectedFlagValue { flag } => Error::UnexpectedValue { name: flag.diagnostic },
-        RawError::UnexpectedArg { token } => Error::UnexpectedArgument { token: token.to_vec() },
+        RawError::UnexpectedArg { token } => Error::UnexpectedArgument {
+            token: token.to_vec(),
+            usage: Some(help::render_usage(command_path)),
+        },
         RawError::UnknownCommand { token } => Error::UnknownCommand { token: token.to_vec() },
     }
 }
