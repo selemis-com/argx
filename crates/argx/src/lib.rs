@@ -1,80 +1,66 @@
-//! Derive-first command-line parsing and configuration from Rust data types.
+//! Derive-first command-line parsing and configuration for Rust.
 //!
-//! Argx derives static command and configuration models from Rust data types. Command metadata
-//! drives raw argv parsing, typed value binding, generated help and version output, diagnostics,
-//! dynamic shell completion, and schema discovery. Configuration metadata resolves the same typed
-//! fields across explicitly ordered defaults, files, environment values, and argv.
+//! Define your CLI and configuration with Rust types, and Argx derives parsing, help, diagnostics,
+//! completions, schema discovery, and layered configuration from those definitions.
 //!
 //! # Installation
-//!
-//! Add Argx with its default derive support:
 //!
 //! ```text
 //! cargo add argx
 //! ```
 //!
-//! The default `derive` feature re-exports the procedural macros used throughout this guide.
-//! Enable the optional `toml` feature to add the `Toml` configuration layer. Disable default
-//! features only when a crate needs the runtime API without derive macros.
+//! Derive support is enabled by default. Enable the optional `toml` feature when using TOML
+//! configuration layers:
 //!
-//! ## Cargo features
-//!
-//! - `derive` is enabled by default and exports the `Parser`, `Args`, `Subcommand`, `ValueEnum`,
-//!   and `Config` derives plus the unified `argx` attribute macro.
-//! - `toml` enables the `Toml` configuration layer and implies `derive`.
+//! ```text
+//! cargo add argx --features toml
+//! ```
 //!
 //! # Quick start
-//!
-//! A [`Parser`] struct defines the root command. A `#[derive(Subcommand)]` enum selects exact child
-//! commands, and an [`Args`] struct provides fields for a subcommand or reusable flattened group.
 //!
 //! ```
 //! use argx::{Args, Parser, Subcommand};
 //!
-//! /// Inspect stored objects.
-//! #[derive(Debug, Parser)]
+//! #[derive(Parser)]
 //! #[argx(name = "acme")]
 //! struct Cli {
-//!     /// Enable verbose diagnostics.
-//!     #[argx(long, global)]
-//!     verbose: bool,
-//!
 //!     #[argx(subcommand)]
 //!     command: Command,
 //! }
 //!
-//! #[derive(Debug, Subcommand)]
+//! #[derive(Subcommand)]
 //! enum Command {
-//!     /// Read one object.
-//!     Get(GetArgs),
+//!     /// Start the service.
+//!     Serve(Serve),
+//!
 //!     /// Print service status.
 //!     Status,
 //! }
 //!
-//! #[derive(Debug, Args)]
-//! struct GetArgs {
-//!     /// Object identifier.
-//!     id: String,
+//! #[derive(Args)]
+//! struct Serve {
+//!     /// Port to listen on.
+//!     #[argx(long, default = 8080)]
+//!     port: u16,
 //! }
 //!
-//! let cli = Cli::try_parse_from(["acme", "get", "object-7", "--verbose"])?;
-//! assert!(cli.verbose);
+//! let cli = Cli::try_parse_from(["acme", "serve", "--port", "3000"])?;
 //! match cli.command {
-//!     Command::Get(args) => assert_eq!(args.id, "object-7"),
+//!     Command::Serve(args) => assert_eq!(args.port, 3000),
 //!     Command::Status => unreachable!(),
 //! }
 //! # Ok::<(), argx::Error>(())
 //! ```
 //!
-//! [`Parser::parse`] is the ordinary process entry point. The `try_parse*` methods expose the same
-//! parser without process exit behavior and are useful for tests, embedding, and custom error
-//! handling.
+//! Rust documentation becomes CLI help, while field types define parsing. [`Parser::parse`] is the
+//! ordinary process entry point. The `try_parse*` methods return [`Error`] instead of printing and
+//! exiting.
 //!
 //! # Configuration
 //!
-//! `#[derive(Config)]` generates one typed configuration contract. A generated `loader()` starts
-//! empty. Applications add [`Defaults`], [`Dotenv`], [`Environment`], and [`Argv`] layers
-//! explicitly, in the precedence order they want. The optional `toml` feature adds `Toml`:
+//! `#[derive(Config)]` builds a typed configuration value from explicitly ordered layers. A
+//! generated `loader()` starts empty. Applications add [`Defaults`], [`Dotenv`], [`Environment`],
+//! and [`Argv`] in the precedence order they want. The optional `toml` feature adds `Toml`:
 //!
 //! ```
 //! use argx::{Argv, Defaults};
@@ -98,8 +84,8 @@
 //! # Ok::<(), argx::ConfigError>(())
 //! ```
 //!
-//! Layers are sparse and are applied in call order. A later layer replaces only fields it supplies.
-//! an absent value never masks an earlier one. Declared field defaults are therefore not implicit:
+//! Layers are applied in call order. A later layer replaces only fields it supplies. An absent
+//! value never masks an earlier one. Declared field defaults are therefore not implicit:
 //! they take effect only when [`Defaults`] appears in the layer stack. Non-optional fields are
 //! required only after all configured layers have been resolved.
 //!
@@ -148,7 +134,7 @@
 //! [`Argv::new`] expects a complete argument vector including the program name. [`Argv::current`]
 //! captures the current process argv in that form.
 //!
-//! # Command model
+//! # Commands and composition
 //!
 //! Argx has three derive roles:
 //!
@@ -268,8 +254,7 @@
 //!
 //! Argx accepts long options as either `--name value` or `--name=value`. Short options may be
 //! bundled. A value-taking short option consumes the remainder of its bundle as its value, or the
-//! next token when no remainder exists. Bundles are validated before any event from the bundle is
-//! committed, so a failing member does not partially apply earlier members.
+//! next token when no remainder exists.
 //!
 //! `--` stops flag interpretation in the active command scope. Ordinary flag-like detached values
 //! are refused by default. `allow_hyphen_values` permits them for a named value-taking option.
@@ -280,11 +265,11 @@
 //! therefore receive non-UTF-8 argv without forcing a lossy conversion. `String` and `FromStr`
 //! destinations require UTF-8 and report an [`Error`] when conversion is not possible.
 //!
-//! # Entry points and embedding
+//! # Parser entry points
 //!
 //! [`Parser::parse`] and [`Parser::try_parse`] read the current process arguments. The `*_from`
-//! variants accept a complete argv sequence including the program name. `parse` methods apply
-//! Argx's conventional terminal and process policy, while `try_parse` methods return [`Error`] to
+//! variants accept a complete argv sequence including the program name. `parse` methods print
+//! terminal actions and errors and may exit the process; `try_parse` methods return [`Error`] to
 //! the caller.
 //!
 //! ```
@@ -303,9 +288,8 @@
 //!
 //! # Help and version
 //!
-//! Help is generated from the same static command model used for parsing. Every command scope has
-//! built-in `-h` and `--help`. A root command or subcommand variant that declares `version` or
-//! `long_version` also receives `-V` and `--version`. If only one version expression is supplied,
+//! Every command scope has built-in `-h` and `--help`. A root command or subcommand variant that
+//! declares `version` or `long_version` also receives `-V` and `--version`. If only one version expression is supplied,
 //! it is used for both forms.
 //!
 //! Rust documentation participates directly in help generation:
@@ -327,12 +311,7 @@
 //! # Shell completions
 //!
 //! Argx generates dynamic completion adapters for Bash, Fish, Nushell, and Zsh through the
-//! [`completion`] module. Bash, Fish, and Zsh send the command line through the cursor back to the
-//! executable, while Nushell forwards the tokenized spans its external-completer API already
-//! provides. Argx normalizes either form and walks completed argv words through the same raw argv
-//! parser used for ordinary invocation. Command selection, aliases, global scope, lexical
-//! shadowing, option repeatability, conflicts, negative-number routing, and `--` therefore do not
-//! have a second shell-specific implementation.
+//! [`completion`] module.
 //!
 //! ```
 //! use argx::{Parser as _, completion::Shell};
@@ -345,66 +324,37 @@
 //! # Ok::<(), argx::completion::ScriptError>(())
 //! ```
 //!
-//! [`Parser::parse`] handles requests from generated adapters automatically. A binary that uses
-//! any other parser entry point for its current process should call [`Parser::handle_completion`]
-//! first and return when it yields `true`.
+//! [`Parser::parse`] handles completion requests automatically. A binary that uses another parser
+//! entry point for the current process should call [`Parser::handle_completion`] first and return
+//! when it yields `true`.
 //!
-//! Completion includes canonical values for fields marked `#[argx(value_enum)]`, using the same
-//! finite vocabulary already shared by parsing, help, and completion. Argx does not infer finite
-//! choices from arbitrary [`std::str::FromStr`] implementations, enumerate filesystem paths, or
-//! expose custom value completers. Hidden aliases remain accepted while reconstructing scope but
-//! are never suggested.
+//! Fields marked `#[argx(value_enum)]` complete from the same finite vocabulary used for parsing
+//! and help. Hidden aliases are accepted while reconstructing command scope but are not suggested.
+//! Argx does not infer choices from arbitrary [`std::str::FromStr`] implementations or provide
+//! filesystem or custom value completers.
 //!
-//! Applications normally expose the generated text through a small `completions <shell>` command,
-//! as demonstrated by the `completions` example. The adapter can then be sourced from shell startup
-//! or saved in the shell's normal completion location. For example, assuming an application named
-//! `acme` exposes that command:
-//!
-//! ```text
-//! # Bash
-//! source <(acme completions bash)
-//!
-//! # Fish
-//! acme completions fish | source
-//!
-//! # Zsh
-//! source <(acme completions zsh)
-//!
-//! # Nushell
-//! acme completions nushell | save --force ~/.cache/acme-completions.nu
-//! source ~/.cache/acme-completions.nu
-//! ```
-//!
-//! Because these adapters call the current executable dynamically, changes to the command tree do
-//! not require regenerating a shell-specific copy of the CLI. Regenerate only when updating the
-//! adapter itself is appropriate for the application installation.
+//! Applications typically expose generated adapters through a `completions <shell>` command. See
+//! the `completions` example for a complete integration.
 //!
 //! # Schema discovery
 //!
-//! A parser marked `#[argx(schema)]` exposes machine-readable Draft 2020-12 JSON Schema through
-//! `-S` / `--schema` in the selected command scope and through the root
-//! `schema [COMMAND]...` pseudo-command. Both discovery forms describe the same selected command.
-//! Discovery is shallow while the selected command has children: structural commands list only
-//! their immediate children. Leaf commands automatically expose their complete handler result,
-//! error, and type schemas. Append `--full` to either form to recursively expand descendants from a
-//! structural command.
+//! Mark commands that participate in schema discovery with `#[argx(schema)]`. Argx exposes
+//! Draft 2020-12 JSON Schema through `-S` / `--schema` in the selected command scope and through
+//! the root `schema [COMMAND]...` pseudo-command.
 //!
-//! Structural `Args` and `Subcommand` declarations opt into schema topology with the same
-//! `#[argx(schema)]` marker. Executable leaves are associated with typed result and error schemas
-//! through `#[argx(handler = CommandType)]` or an inherent `#[argx(handler = method)]` impl. For a
-//! zero-argument executable command, use an empty `Args` struct rather than a unit subcommand
-//! variant so the leaf has a concrete Rust type.
+//! Structural commands expose their immediate children by default, allowing tools to walk the
+//! command tree incrementally. Leaf commands expose their invocation schema and, when associated
+//! with a handler, typed result and error schemas. Use `--full` to recursively expand a structural
+//! command.
 //!
-//! `#[argx(schema)]` delegates Rust data-model schema generation to Schemars while Argx owns
-//! invocation schema projection and static command topology. The selected command's invocation is
-//! the root schema. Handler result and error schemas are bundled under `$defs.result` and
-//! `$defs.error`, with Schemars-generated type definitions under `$defs.types.$defs`. Structural
-//! paths bundle child command schemas under `$defs.subcommands.$defs`.
+//! Structural [`Args`] and `Subcommand` declarations use the same `#[argx(schema)]` marker.
+//! Associate executable leaves with result and error types using
+//! `#[argx(handler = CommandType)]` on a free function or `#[argx(handler = method)]` on an inherent
+//! impl. For a zero-argument executable command, use an empty `Args` struct rather than a unit
+//! subcommand variant so the leaf has a concrete Rust type.
 //!
-//! Handler associations are traversed statically from the command types into a short-lived local
-//! registry for one discovery operation. Argx uses neither linker inventory nor global
-//! registration. Schema discovery is represented during parsing as [`Error::DisplaySchema`] and
-//! follows the same successful terminal-action policy as help and version.
+//! `#[argx(schema)]` on result and error data types delegates their JSON Schema generation to
+//! Schemars. See the `schema` example for a complete structural and leaf discovery flow.
 //!
 //! # `#[argx(...)]` attribute reference
 //!
@@ -488,7 +438,7 @@
 //!
 //! # Failure model
 //!
-//! Parsing is terminal on the first public action or failure. [`Error`] is owned, non-exhaustive,
+//! Parsing stops at the first terminal action or failure. [`Error`] is owned and non-exhaustive,
 //! and preserves the relevant command-line bytes for diagnostics. Invalid values are classified
 //! separately from structural argv errors such as unknown options, missing values, duplicate
 //! scalar arguments, unknown commands, missing subcommands, and unsatisfied relationships.
@@ -507,18 +457,16 @@
 //! - subcommand variants support only unit variants or one unnamed direct `Args` payload.
 //! - nested `Option` / `Vec` wrappers outside the recognized shapes are unsupported.
 //! - `value_enum` fields cannot depend on the containing command's generic parameters because their
-//!   vocabulary is part of static command metadata.
-//! - reserved built-in help/version/schema spellings and invalid composed layouts are rejected
-//!   during derivation or const-time composition.
+//!   vocabulary must be known when the derive is expanded.
+//! - reserved built-in help/version/schema spellings and invalid layouts are rejected during
+//!   derivation.
 //!
-//! These restrictions keep generated metadata statically coherent and make unsupported behavior a
-//! compile-time error.
+//! Unsupported shapes are rejected at compile time rather than approximated at runtime.
 //!
 //! # Platform support
 //!
 //! The supported native targets are Linux and macOS. Windows is supported through the Windows
-//! Subsystem for Linux (WSL). Native Windows targets are not supported. The parser still uses
-//! [`OsString`] internally so supported Unix targets do not need to force argv through UTF-8.
+//! Subsystem for Linux (WSL). Native Windows targets are not supported.
 #![doc(
     html_logo_url = "https://raw.githubusercontent.com/selemis-com/argx/master/.github/assets/logo.jpg",
     html_favicon_url = "https://raw.githubusercontent.com/selemis-com/argx/master/.github/assets/favicon.ico"
@@ -559,9 +507,8 @@ pub use config::{Argv, Defaults, Dotenv, Environment, Error as ConfigError};
 
 /// Parses command-line arguments into a typed value.
 ///
-/// The derive generates one static command model and the hidden binding implementation required by
-/// these entry points. Prefer the `try_parse*` methods when the caller owns process policy. The
-/// corresponding `parse*` methods are convenience entry points for ordinary CLI binaries.
+/// Use the `parse*` methods for ordinary CLI process behavior and the `try_parse*` methods when
+/// the caller owns error and process handling.
 pub trait Parser: Sized + __private::CommandArgs {
     /// Parses the current process arguments, excluding the program name.
     ///
@@ -637,14 +584,10 @@ pub trait Parser: Sized + __private::CommandArgs {
 
     /// Handles a dynamic shell-completion request for the current process.
     ///
-    /// Generated completion adapters use a private, versioned invocation protocol that is
-    /// intercepted before ordinary argv parsing. [`Self::parse`] calls this automatically. Binaries
-    /// that use another parser entry point for their current process should call this method first
-    /// and return from `main` when it yields `true`.
+    /// [`Self::parse`] calls this automatically. Binaries that use another parser entry point for
+    /// the current process should call this first and return from `main` when it yields `true`.
     ///
-    /// Ordinary invocations return `false` without writing output or changing parser state. Call
-    /// this before expensive application startup or writing to standard output, because generated
-    /// adapters invoke the process for every completion request.
+    /// Ordinary invocations return `false`.
     #[must_use]
     fn handle_completion() -> bool {
         completion::handle_process::<Self>()
