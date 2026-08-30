@@ -5,14 +5,16 @@
 //! derived command interface. Fields marked `#[argx(value_enum)]` complete from their declared
 //! finite values.
 //!
-//! [`crate::Parser::parse`] handles completion requests automatically.
+//! [`crate::Parser::parse`] and [`crate::Parser::try_parse`] handle completion requests from the
+//! current process automatically. Explicit-argv entry points such as [`crate::Parser::parse_from`]
+//! and [`crate::Parser::try_parse_from`] do not inspect this process-level protocol.
 
 mod engine;
 mod script;
 
 use std::{fmt, str::FromStr};
 
-pub(crate) use engine::handle_process;
+pub(crate) use engine::process_request;
 
 /// Environment marker used only by generated completion adapters.
 const PROTOCOL_ENV: &str = "ARGX_COMPLETE";
