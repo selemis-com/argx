@@ -448,15 +448,15 @@ Usage: tool [OPTIONS]
 
         let rendered = render_diagnostic(
             &Error::InvalidValue {
-                name: "<WORKSPACE_ID>",
-                value: String::from("not-a-uuid"),
-                reason: String::from("invalid UUID"),
+                name: "<VALUE>",
+                value: String::from("invalid"),
+                reason: String::from("invalid value"),
             },
             true,
         );
         assert_eq!(
             rendered,
-            "\x1b[1merror:\x1b[0m invalid value `\x1b[1mnot-a-uuid\x1b[0m` for `\x1b[1m<WORKSPACE_ID>\x1b[0m`: invalid UUID\n\nFor more information, try '\x1b[1m--help\x1b[0m'.\n",
+            "\x1b[1merror:\x1b[0m invalid value `\x1b[1minvalid\x1b[0m` for `\x1b[1m<VALUE>\x1b[0m`: invalid value\n\nFor more information, try '\x1b[1m--help\x1b[0m'.\n",
         );
     }
 
@@ -464,16 +464,14 @@ Usage: tool [OPTIONS]
     fn styled_missing_required_diagnostic_emphasizes_usage_structure() {
         let rendered = render_diagnostic(
             &Error::MissingRequiredArguments {
-                argument: String::from("--username <USERNAME>"),
-                usage: String::from(
-                    "kivald admin users create --username <USERNAME> --display-name <DISPLAY_NAME>",
-                ),
+                argument: String::from("--required <REQUIRED>"),
+                usage: String::from("cli command --required <REQUIRED> --optional <OPTIONAL>"),
             },
             true,
         );
         assert_eq!(
             rendered,
-            "\x1b[1merror:\x1b[0m the following required arguments were not provided:\n  --username <USERNAME>\n\n\x1b[1;4mUsage:\x1b[0m \x1b[1mkivald admin users create\x1b[0m --username <USERNAME> --display-name <DISPLAY_NAME>\n\nFor more information, try '\x1b[1m--help\x1b[0m'.\n",
+            "\x1b[1merror:\x1b[0m the following required arguments were not provided:\n  --required <REQUIRED>\n\n\x1b[1;4mUsage:\x1b[0m \x1b[1mcli command\x1b[0m --required <REQUIRED> --optional <OPTIONAL>\n\nFor more information, try '\x1b[1m--help\x1b[0m'.\n",
         );
     }
 

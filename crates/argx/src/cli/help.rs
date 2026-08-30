@@ -588,6 +588,24 @@ fn render_usage_inner(path: &[&Command<'_>], include_options: bool) -> String {
     usage
 }
 
+/// Collects every unsupplied required argument in command-path declaration order.
+pub(crate) fn missing_required_labels(path: &[&Command<'_>], supplied: &[Key]) -> Vec<String> {
+    let mut missing = Vec::new();
+    for command in path {
+        for flag in command.flags.iter().filter(|flag| flag.required) {
+            if !supplied.contains(&flag.key) {
+                missing.push(required_flag_usage(flag));
+            }
+        }
+        for arg in command.args.iter().filter(|arg| arg.required) {
+            if !supplied.contains(&arg.key) {
+                missing.push(arg_usage(arg));
+            }
+        }
+    }
+    missing
+}
+
 /// Resolves one generated missing-required label to the spelling shown in help and usage.
 pub(crate) fn missing_required_label(path: &[&Command<'_>], diagnostic: &str) -> Option<String> {
     if diagnostic.starts_with('<') && diagnostic.ends_with('>') {

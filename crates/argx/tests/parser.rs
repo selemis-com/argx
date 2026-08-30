@@ -41,6 +41,12 @@ mod tests {
     }
 
     #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    struct RequiredPositionals {
+        first: String,
+        second: String,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
     struct BoolPositional {
         enabled: bool,
     }
@@ -849,6 +855,20 @@ mod tests {
             Err(Error::MissingRequiredArguments {
                 argument: String::from("--destination <OUTPUT>"),
                 usage: String::from("required-flag --destination <OUTPUT>"),
+            })
+        );
+        assert_eq!(
+            RequiredPositionals::try_parse_from(["argx-test"]),
+            Err(Error::MissingRequiredArguments {
+                argument: String::from("<FIRST>\n  <SECOND>"),
+                usage: String::from("required-positionals <FIRST> <SECOND>"),
+            })
+        );
+        assert_eq!(
+            RequiredPositionals::try_parse_from(["argx-test", "first"]),
+            Err(Error::MissingRequiredArguments {
+                argument: String::from("<SECOND>"),
+                usage: String::from("required-positionals <FIRST> <SECOND>"),
             })
         );
     }

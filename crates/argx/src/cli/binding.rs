@@ -45,6 +45,7 @@ fn parse_refs_inner<T: CommandArgs>(
     registry: Option<&crate::__private::SchemaRegistry>,
 ) -> Result<T, Error> {
     let mut partial = T::start();
+    let mut supplied = Vec::new();
     let mut parser: crate::cli::argv::ArgvParser<'static, '_, '_> =
         crate::cli::argv::ArgvParser::new_with_schema(T::COMMAND, argv, registry.is_some());
 
@@ -93,6 +94,11 @@ fn parse_refs_inner<T: CommandArgs>(
             Ok(event) => event,
             Err(error) => return Err(raw_error(error)),
         };
+        match &event {
+            Event::Flag { flag, .. } => supplied.push(flag.key),
+            Event::Arg { arg, .. } => supplied.push(arg.key),
+            Event::Command { .. } | Event::Action { .. } => {}
+        }
         let applied = T::apply(&mut partial, &event);
         assert!(applied, "generated command metadata and binding diverged");
     }
@@ -108,8 +114,13 @@ fn parse_refs_inner<T: CommandArgs>(
                 ),
             }),
             Error::MissingRequired { name } => {
-                let argument = help::missing_required_label(&command_path, name)
-                    .unwrap_or_else(|| name.to_owned());
+                let arguments = help::missing_required_labels(&command_path, &supplied);
+                let argument = if arguments.is_empty() {
+                    help::missing_required_label(&command_path, name)
+                        .unwrap_or_else(|| name.to_owned())
+                } else {
+                    arguments.join("\n  ")
+                };
                 Err(Error::MissingRequiredArguments {
                     argument,
                     usage: help::render_required_usage(&command_path),
