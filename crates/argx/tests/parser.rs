@@ -929,7 +929,7 @@ mod tests {
         );
         assert_eq!(
             Cli::try_parse_from(["argx-test", "--port"]),
-            Err(Error::MissingValue { name: "--port" })
+            Err(Error::MissingValue { name: "--port", possible_values: &[] })
         );
         assert_eq!(
             Cli::try_parse_from(["argx-test", "--verbose=true", "input"]),
@@ -939,6 +939,14 @@ mod tests {
             Empty::try_parse_from(["argx-test", "extra"]),
             Err(Error::UnexpectedArgument { token, .. }) if token == b"extra"
         ));
+    }
+
+    #[test]
+    fn missing_value_preserves_value_enum_choices() {
+        assert_eq!(
+            HelpDetailCli::try_parse_from(["help-detail", "--format"]),
+            Err(Error::MissingValue { name: "--format", possible_values: &["human", "json"] }),
+        );
     }
 
     #[test]
@@ -1412,7 +1420,7 @@ Output:
         ));
         assert_eq!(
             HelpCli::try_parse_from(["argx-test", "--destination", "--help"]),
-            Err(Error::MissingValue { name: "--destination" }),
+            Err(Error::MissingValue { name: "--destination", possible_values: &[] }),
         );
         assert!(matches!(
             Empty::try_parse_from(["argx-test", "--", "--help"]),
@@ -1490,7 +1498,7 @@ Output:
     fn typed_defaults_do_not_repair_invalid_or_incomplete_argv() {
         assert_eq!(
             DefaultCli::try_parse_from(["argx-test", "--port"]),
-            Err(Error::MissingValue { name: "--port" }),
+            Err(Error::MissingValue { name: "--port", possible_values: &[] }),
         );
 
         let error = DefaultCli::try_parse_from(["argx-test", "--port", "not-a-port"])

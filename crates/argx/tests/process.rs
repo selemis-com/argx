@@ -116,6 +116,11 @@ For more information, try '--help'.
             .stderr_eq(snapbox::str![[r#"
 error: missing value for `--format`
 
+Possible values:
+  - human
+  - json
+  - json-lines
+
 For more information, try '--help'.
 
 "#]]);

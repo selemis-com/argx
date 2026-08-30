@@ -52,6 +52,8 @@ pub enum Error {
     MissingValue {
         /// Canonical user-facing argument label.
         name: &'static str,
+        /// Finite values accepted by this option, when known.
+        possible_values: &'static [&'static str],
     },
     /// A value was attached to a switch that does not accept one.
     #[error("`{name}` does not accept a value")]
@@ -228,6 +230,14 @@ fn render_diagnostic(error: &Error, styled: bool) -> String {
     }
 
     let message = if styled { styled_diagnostic_message(error) } else { error.to_string() };
+    if let Error::MissingValue { possible_values, .. } = error
+        && !possible_values.is_empty()
+    {
+        return format!(
+            "{error_label} {message}\n\nPossible values:\n{}\nFor more information, try '{help}'.\n",
+            render_possible_values(possible_values),
+        );
+    }
     if let Some(usage) = structural_usage(error) {
         let usage_label = emphasize("Usage:", styled, true);
         let usage = if styled { style_usage_command(usage) } else { usage.to_owned() };
@@ -236,6 +246,17 @@ fn render_diagnostic(error: &Error, styled: bool) -> String {
         );
     }
     format!("{error_label} {message}\n\nFor more information, try '{help}'.\n")
+}
+
+/// Renders finite values for a missing-value diagnostic.
+fn render_possible_values(values: &[&str]) -> String {
+    let mut rendered = String::new();
+    for value in values {
+        rendered.push_str("  - ");
+        rendered.push_str(&display_bytes(value.as_bytes()));
+        rendered.push('\n');
+    }
+    rendered
 }
 
 /// Returns corrective usage for diagnostics caused by command structure.
@@ -254,7 +275,7 @@ fn styled_diagnostic_message(error: &Error) -> String {
         Error::UnknownFlag { token } => {
             format!("unknown flag `{}`", emphasize(&display_bytes(token), true, false))
         }
-        Error::MissingValue { name } => {
+        Error::MissingValue { name, .. } => {
             format!("missing value for `{}`", emphasize(name, true, false))
         }
         Error::UnexpectedValue { name } => {
@@ -429,7 +450,7 @@ Usage: tool [OPTIONS]
             r"unknown flag `--bad\nflag`",
         );
         assert_eq!(
-            Error::MissingValue { name: "--output" }.to_string(),
+            Error::MissingValue { name: "--output", possible_values: &[] }.to_string(),
             "missing value for `--output`",
         );
         assert_eq!(
@@ -516,8 +537,23 @@ Usage: tool [OPTIONS]
     }
 
     #[test]
+    fn missing_value_diagnostic_lists_known_values() {
+        let rendered = render_diagnostic(
+            &Error::MissingValue { name: "--output", possible_values: &["text", "json"] },
+            false,
+        );
+        assert_eq!(
+            rendered,
+            "error: missing value for `--output`\n\nPossible values:\n  - text\n  - json\n\nFor more information, try '--help'.\n",
+        );
+    }
+
+    #[test]
     fn diagnostic_renderer_keeps_plain_output_free_of_terminal_controls() {
-        let rendered = render_diagnostic(&Error::MissingValue { name: "--limit" }, false);
+        let rendered = render_diagnostic(
+            &Error::MissingValue { name: "--limit", possible_values: &[] },
+            false,
+        );
         assert_eq!(
             rendered,
             "error: missing value for `--limit`\n\nFor more information, try '--help'.\n",
