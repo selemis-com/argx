@@ -44,6 +44,29 @@ impl Environment {
         self.values.get(OsStr::new(name)).map(OsString::as_os_str)
     }
 
+    /// Returns one mapped value as UTF-8 while preserving field-aware diagnostics.
+    fn utf8<'a>(
+        &'a self,
+        field: &'static str,
+        variable: &str,
+    ) -> Result<Option<&'a str>, EnvironmentError> {
+        let Some(value) = self.raw(variable) else {
+            return Ok(None);
+        };
+        value
+            .to_str()
+            .map(Some)
+            .ok_or_else(|| EnvironmentError::new(field, variable, EnvironmentValueError::NonUtf8))
+    }
+
+    /// Builds a deterministic environment scope from UTF-8 string pairs for tests.
+    #[cfg(test)]
+    pub(super) fn from_pairs(values: &[(&str, &str)]) -> Self {
+        Self::from_utf8(
+            values.iter().map(|(key, value)| (String::from(*key), String::from(*value))).collect(),
+        )
+    }
+
     /// Overlays another environment-like scope for later interpolation.
     pub(crate) fn overlay(&mut self, higher: Self) {
         self.values.extend(higher.values);
@@ -139,6 +162,11 @@ pub struct EnvironmentError {
 }
 
 impl EnvironmentError {
+    /// Builds one field-aware conversion failure.
+    fn new(field: &'static str, variable: &str, source: EnvironmentValueError) -> Self {
+        Self { field: String::from(field), variable: String::from(variable), source }
+    }
+
     /// Qualifies an environment conversion error with one nested parent field.
     #[doc(hidden)]
     #[must_use]
@@ -170,20 +198,13 @@ pub fn parse_environment_field<T: DeserializeOwned>(
     field: &'static str,
     variable: &str,
 ) -> Result<Option<T>, EnvironmentError> {
-    let Some(value) = environment.raw(variable) else {
+    let Some(value) = environment.utf8(field, variable)? else {
         return Ok(None);
     };
-    let Some(value) = value.to_str() else {
-        return Err(EnvironmentError {
-            field: String::from(field),
-            variable: String::from(variable),
-            source: EnvironmentValueError::NonUtf8,
-        });
-    };
 
-    T::deserialize(EnvironmentValueDeserializer { input: value }).map(Some).map_err(|source| {
-        EnvironmentError { field: String::from(field), variable: String::from(variable), source }
-    })
+    T::deserialize(EnvironmentValueDeserializer { input: value })
+        .map(Some)
+        .map_err(|source| EnvironmentError::new(field, variable, source))
 }
 
 /// Reads and decodes one comma-delimited collection field from an environment scope.
@@ -197,15 +218,8 @@ pub fn parse_environment_delimited_field<T: DeserializeOwned>(
     field: &'static str,
     variable: &str,
 ) -> Result<Option<Vec<T>>, EnvironmentError> {
-    let Some(value) = environment.raw(variable) else {
+    let Some(value) = environment.utf8(field, variable)? else {
         return Ok(None);
-    };
-    let Some(value) = value.to_str() else {
-        return Err(EnvironmentError {
-            field: String::from(field),
-            variable: String::from(variable),
-            source: EnvironmentValueError::NonUtf8,
-        });
     };
 
     value
@@ -214,11 +228,7 @@ pub fn parse_environment_delimited_field<T: DeserializeOwned>(
         .map(|input| T::deserialize(EnvironmentValueDeserializer { input }))
         .collect::<Result<Vec<_>, _>>()
         .map(Some)
-        .map_err(|source| EnvironmentError {
-            field: String::from(field),
-            variable: String::from(variable),
-            source,
-        })
+        .map_err(|source| EnvironmentError::new(field, variable, source))
 }
 
 /// Error produced by the scalar environment deserializer.
@@ -555,16 +565,9 @@ mod tests {
         }
     }
 
-    /// Builds a deterministic environment scope from UTF-8 string pairs.
-    fn environment(values: &[(&str, &str)]) -> Environment {
-        Environment::from_utf8(
-            values.iter().map(|(key, value)| (String::from(*key), String::from(*value))).collect(),
-        )
-    }
-
     #[test]
     fn scalar_environment_values_follow_the_requested_serde_type() {
-        let environment = environment(&[
+        let environment = Environment::from_pairs(&[
             ("BOOL", "true"),
             ("COUNT", "42"),
             ("TEXT", "hello"),
@@ -595,7 +598,7 @@ mod tests {
 
     #[test]
     fn structured_environment_values_fail_explicitly() {
-        let environment = environment(&[("TAGS", "one,two")]);
+        let environment = Environment::from_pairs(&[("TAGS", "one,two")]);
         let error = parse_environment_field::<Vec<String>>(&environment, "tags", "TAGS")
             .expect_err("Argx has not declared an environment collection syntax");
 
@@ -605,7 +608,7 @@ mod tests {
     #[test]
     fn custom_deserializer_errors_cannot_echo_environment_values() {
         const SECRET: &str = "credential-that-must-not-appear";
-        let environment = environment(&[("SECRET", SECRET)]);
+        let environment = Environment::from_pairs(&[("SECRET", SECRET)]);
         let error = parse_environment_field::<EchoingSecret>(&environment, "secret", "SECRET")
             .expect_err("custom deserializer should reject the value");
 

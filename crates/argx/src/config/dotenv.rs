@@ -611,13 +611,6 @@ mod tests {
 
     use super::*;
 
-    /// Builds a deterministic environment scope from UTF-8 string pairs.
-    fn environment(values: &[(&str, &str)]) -> Environment {
-        Environment::from_utf8(
-            values.iter().map(|(key, value)| (String::from(*key), String::from(*value))).collect(),
-        )
-    }
-
     #[test]
     fn parser_supports_quotes_export_comments_bom_and_multiline_values() {
         let input = concat!(
@@ -658,8 +651,11 @@ mod tests {
             "FROM_DOTENV=$BASE\n",
             "FROM_PROCESS=${SHADOW}\n",
         );
-        let values = parse(Cursor::new(input.as_bytes()), &environment(&[("SHADOW", "process")]))
-            .expect("dotenv substitutions should parse");
+        let values = parse(
+            Cursor::new(input.as_bytes()),
+            &Environment::from_pairs(&[("SHADOW", "process")]),
+        )
+        .expect("dotenv substitutions should parse");
 
         assert_eq!(values.get("FROM_DOTENV").map(String::as_str), Some("second"));
         assert_eq!(values.get("FROM_PROCESS").map(String::as_str), Some("process"));

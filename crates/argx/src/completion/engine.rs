@@ -105,6 +105,132 @@ impl<'t> Position<'t> {
     fn command_path(&self) -> impl DoubleEndedIterator<Item = &'t Command<'t>> + '_ {
         self.ancestors.iter().copied().chain(std::iter::once(self.command))
     }
+
+    /// Reports whether flag spellings remain meaningful for the current prefix.
+    fn flags_possible(&self, prefix: &str) -> bool {
+        if self.flags_stopped {
+            return false;
+        }
+
+        let bytes = prefix.as_bytes();
+        if !bytes.starts_with(b"-") {
+            return prefix.is_empty();
+        }
+
+        !routes_negative_number_to_arg(self.command, &self.ancestors, self.next_arg, bytes)
+    }
+
+    /// Reports whether a value-taking option remains valid enough to offer value candidates.
+    fn flag_available_for_value(&self, flag: &Flag<'_>) -> bool {
+        (flag.repeatable || !self.given.contains(&flag.key)) && !self.conflicts_with(flag.key)
+    }
+
+    /// Reports whether one candidate key conflicts with any argument already supplied on argv.
+    fn conflicts_with(&self, candidate: Key) -> bool {
+        self.command_path().any(|command| {
+            command.constraints.iter().any(|constraint| {
+                constraint.kind == ConstraintKind::Conflicts
+                    && ((constraint.source == candidate && self.given.contains(&constraint.target))
+                        || (constraint.target == candidate
+                            && self.given.contains(&constraint.source)))
+            })
+        })
+    }
+
+    /// Checks that a canonical long action spelling still resolves after shadowing.
+    fn resolves_action_long(&self, action: &Action<'_>, long: &str) -> bool {
+        matches!(
+            resolve_long(self.command, &self.ancestors, long.as_bytes()),
+            Some(Named::Action(found)) if std::ptr::eq(found, action)
+        )
+    }
+
+    /// Checks that a canonical short action spelling still resolves after shadowing.
+    fn resolves_action_short(&self, action: &Action<'_>, short: u8) -> bool {
+        matches!(
+            resolve_short(self.command, &self.ancestors, short),
+            Some(Named::Action(found)) if std::ptr::eq(found, action)
+        )
+    }
+
+    /// Checks that a canonical long flag spelling still resolves after shadowing.
+    fn resolves_flag_long(&self, flag: &Flag<'_>, long: &str) -> bool {
+        matches!(
+            resolve_long(self.command, &self.ancestors, long.as_bytes()),
+            Some(Named::Flag { flag: found, .. }) if std::ptr::eq(found, flag)
+        )
+    }
+
+    /// Checks that a canonical short flag spelling still resolves after shadowing.
+    fn resolves_flag_short(&self, flag: &Flag<'_>, short: u8) -> bool {
+        matches!(
+            resolve_short(self.command, &self.ancestors, short),
+            Some(Named::Flag { flag: found, .. }) if std::ptr::eq(found, flag)
+        )
+    }
+
+    /// Resolves one attached long-option value under the cursor.
+    fn attached_long_value<'a>(&self, prefix: &'a str) -> Option<(&'t Flag<'t>, &'a str, &'a str)> {
+        let body = prefix.strip_prefix("--")?;
+        let (name, value_prefix) = body.split_once('=')?;
+        let Some(Named::Flag { flag, .. }) =
+            resolve_long(self.command, &self.ancestors, name.as_bytes())
+        else {
+            return None;
+        };
+        if !flag.takes_value {
+            return None;
+        }
+
+        let insertion_prefix = &prefix[..prefix.len() - value_prefix.len()];
+        Some((flag, value_prefix, insertion_prefix))
+    }
+
+    /// Resolves one attached short-option value under the cursor.
+    fn attached_short_value<'a>(
+        &self,
+        prefix: &'a str,
+    ) -> Option<(&'t Flag<'t>, &'a str, &'a str)> {
+        let body = prefix.strip_prefix('-')?;
+        if body.starts_with('-') {
+            return None;
+        }
+
+        let bytes = body.as_bytes();
+        let mut index = 0;
+        while let Some(&short) = bytes.get(index) {
+            match resolve_short(self.command, &self.ancestors, short) {
+                Some(Named::Flag { flag, .. }) if flag.takes_value => {
+                    let tail = index + 1;
+                    if tail == bytes.len() {
+                        return None;
+                    }
+                    let value_start = tail + usize::from(bytes[tail] == b'=');
+                    let value_prefix = &body[value_start..];
+                    let insertion_prefix = &prefix[..value_start + 1];
+                    return Some((flag, value_prefix, insertion_prefix));
+                }
+                Some(Named::Flag { .. }) => index += 1,
+                Some(Named::Action(_)) | None => return None,
+            }
+        }
+        None
+    }
+
+    /// Reports whether one finite spelling binds to `arg` instead of being parsed structurally.
+    fn positional_value_reaches_arg(&self, arg: &Arg<'_>, value: &str) -> bool {
+        if self.flags_stopped {
+            return true;
+        }
+
+        if self.command.subcommands.iter().any(|command| command.aliases.contains(&value)) {
+            return false;
+        }
+
+        let bytes = value.as_bytes();
+        !matches!(bytes, [b'-', rest @ ..] if !rest.is_empty())
+            || routes_negative_number_to_arg(self.command, &self.ancestors, Some(arg), bytes)
+    }
 }
 
 /// Completes one shell line already truncated at the cursor.
@@ -167,18 +293,18 @@ fn complete_split<'t>(
     };
 
     if let Some(flag) = position.awaiting_value {
-        return if flag_available_for_value(&position, flag) {
+        return if position.flag_available_for_value(flag) {
             detached_value_candidates(flag, &split.prefix)
         } else {
             Vec::new()
         };
     }
 
-    if let Some((flag, value_prefix, insertion_prefix)) =
-        attached_long_value(&position, &split.prefix)
-            .or_else(|| attached_short_value(&position, &split.prefix))
+    if let Some((flag, value_prefix, insertion_prefix)) = position
+        .attached_long_value(&split.prefix)
+        .or_else(|| position.attached_short_value(&split.prefix))
     {
-        return if flag_available_for_value(&position, flag) {
+        return if position.flag_available_for_value(flag) {
             value_candidates(flag.accepted_values, value_prefix, insertion_prefix)
         } else {
             Vec::new()
@@ -256,57 +382,6 @@ fn walk<'t>(root: &'t Command<'t>, argv: &[String], schema_enabled: bool) -> Opt
     })
 }
 
-/// Resolves one attached long-option value under the cursor.
-fn attached_long_value<'a, 't>(
-    position: &Position<'t>,
-    prefix: &'a str,
-) -> Option<(&'t Flag<'t>, &'a str, &'a str)> {
-    let body = prefix.strip_prefix("--")?;
-    let (name, value_prefix) = body.split_once('=')?;
-    let Some(Named::Flag { flag, .. }) =
-        resolve_long(position.command, &position.ancestors, name.as_bytes())
-    else {
-        return None;
-    };
-    if !flag.takes_value {
-        return None;
-    }
-
-    let insertion_prefix = &prefix[..prefix.len() - value_prefix.len()];
-    Some((flag, value_prefix, insertion_prefix))
-}
-
-/// Resolves one attached short-option value under the cursor.
-fn attached_short_value<'a, 't>(
-    position: &Position<'t>,
-    prefix: &'a str,
-) -> Option<(&'t Flag<'t>, &'a str, &'a str)> {
-    let body = prefix.strip_prefix('-')?;
-    if body.starts_with('-') {
-        return None;
-    }
-
-    let bytes = body.as_bytes();
-    let mut index = 0;
-    while let Some(&short) = bytes.get(index) {
-        match resolve_short(position.command, &position.ancestors, short) {
-            Some(Named::Flag { flag, .. }) if flag.takes_value => {
-                let tail = index + 1;
-                if tail == bytes.len() {
-                    return None;
-                }
-                let value_start = tail + usize::from(bytes[tail] == b'=');
-                let value_prefix = &body[value_start..];
-                let insertion_prefix = &prefix[..value_start + 1];
-                return Some((flag, value_prefix, insertion_prefix));
-            }
-            Some(Named::Flag { .. }) => index += 1,
-            Some(Named::Action(_)) | None => return None,
-        }
-    }
-    None
-}
-
 /// Builds available candidates for one parser position and typed prefix.
 fn candidates<'t>(position: &Position<'t>, prefix: &str) -> Vec<Candidate<'t>> {
     let mut candidates = Vec::new();
@@ -328,12 +403,12 @@ fn candidates<'t>(position: &Position<'t>, prefix: &str) -> Vec<Candidate<'t>> {
     }
 
     if let Some(arg) = position.next_arg
-        && !conflicts_with_given(position, arg.key)
+        && !position.conflicts_with(arg.key)
     {
         push_positional_values(&mut candidates, &mut seen, position, arg, prefix);
     }
 
-    if flags_possible(position, prefix) {
+    if position.flags_possible(prefix) {
         if position.schema_enabled {
             for &long in SCHEMA_ACTION.longs {
                 push_option(
@@ -358,12 +433,12 @@ fn candidates<'t>(position: &Position<'t>, prefix: &str) -> Vec<Candidate<'t>> {
         }
         for &action in position.command.actions {
             for &long in action.longs {
-                if resolves_action_long(position, action, long) {
+                if position.resolves_action_long(action, long) {
                     push_option(&mut candidates, &mut seen, prefix, "--", long, Some(action.help));
                 }
             }
             for &short in action.shorts {
-                if resolves_action_short(position, action, short) {
+                if position.resolves_action_short(action, short) {
                     let spelling = format!("-{}", char::from(short));
                     push_owned_candidate(
                         &mut candidates,
@@ -382,18 +457,18 @@ fn candidates<'t>(position: &Position<'t>, prefix: &str) -> Vec<Candidate<'t>> {
                     continue;
                 }
                 if (!flag.repeatable && position.given.contains(&flag.key))
-                    || conflicts_with_given(position, flag.key)
+                    || position.conflicts_with(flag.key)
                 {
                     continue;
                 }
 
                 for &long in flag.longs {
-                    if resolves_flag_long(position, flag, long) {
+                    if position.resolves_flag_long(flag, long) {
                         push_option(&mut candidates, &mut seen, prefix, "--", long, flag.help);
                     }
                 }
                 for &short in flag.shorts {
-                    if resolves_flag_short(position, flag, short) {
+                    if position.resolves_flag_short(flag, short) {
                         let spelling = format!("-{}", char::from(short));
                         push_owned_candidate(
                             &mut candidates,
@@ -410,70 +485,6 @@ fn candidates<'t>(position: &Position<'t>, prefix: &str) -> Vec<Candidate<'t>> {
 
     candidates.sort_by(|left, right| left.value.cmp(&right.value));
     candidates
-}
-
-/// Reports whether flag spellings remain meaningful for the current prefix.
-fn flags_possible(position: &Position<'_>, prefix: &str) -> bool {
-    if position.flags_stopped {
-        return false;
-    }
-
-    let bytes = prefix.as_bytes();
-    if !bytes.starts_with(b"-") {
-        return prefix.is_empty();
-    }
-
-    !routes_negative_number_to_arg(position.command, &position.ancestors, position.next_arg, bytes)
-}
-
-/// Reports whether a value-taking option remains valid enough to offer value candidates.
-fn flag_available_for_value(position: &Position<'_>, flag: &Flag<'_>) -> bool {
-    (flag.repeatable || !position.given.contains(&flag.key))
-        && !conflicts_with_given(position, flag.key)
-}
-
-/// Reports whether one candidate key conflicts with any argument already supplied on argv.
-fn conflicts_with_given(position: &Position<'_>, candidate: Key) -> bool {
-    position.command_path().any(|command| {
-        command.constraints.iter().any(|constraint| {
-            constraint.kind == ConstraintKind::Conflicts
-                && ((constraint.source == candidate && position.given.contains(&constraint.target))
-                    || (constraint.target == candidate
-                        && position.given.contains(&constraint.source)))
-        })
-    })
-}
-
-/// Checks that a canonical long action spelling still resolves to that action after shadowing.
-fn resolves_action_long(position: &Position<'_>, action: &Action<'_>, long: &str) -> bool {
-    matches!(
-        resolve_long(position.command, &position.ancestors, long.as_bytes()),
-        Some(Named::Action(found)) if std::ptr::eq(found, action)
-    )
-}
-
-/// Checks that a canonical short action spelling still resolves to that action after shadowing.
-fn resolves_action_short(position: &Position<'_>, action: &Action<'_>, short: u8) -> bool {
-    matches!(
-        resolve_short(position.command, &position.ancestors, short),
-        Some(Named::Action(found)) if std::ptr::eq(found, action)
-    )
-}
-
-/// Checks that a canonical long flag spelling still resolves to that flag after shadowing.
-fn resolves_flag_long(position: &Position<'_>, flag: &Flag<'_>, long: &str) -> bool {
-    matches!(
-        resolve_long(position.command, &position.ancestors, long.as_bytes()),
-        Some(Named::Flag { flag: found, .. }) if std::ptr::eq(found, flag)
-    )
-}
-
-/// Checks that a canonical short flag spelling still resolves to that flag after shadowing.
-fn resolves_flag_short(position: &Position<'_>, flag: &Flag<'_>, short: u8) -> bool {
-    matches!(
-        resolve_short(position.command, &position.ancestors, short),
-        Some(Named::Flag { flag: found, .. }) if std::ptr::eq(found, flag)
-    )
 }
 
 /// Builds finite detached values that ordinary flag parsing can actually consume.
@@ -501,28 +512,13 @@ fn push_positional_values<'t>(
     typed: &str,
 ) {
     for &value in arg.accepted_values {
-        if positional_value_reaches_arg(position, arg, value)
+        if position.positional_value_reaches_arg(arg, value)
             && value.starts_with(typed)
             && protocol_safe_value(value)
         {
             push_owned_candidate(candidates, seen, "", value.to_owned(), None);
         }
     }
-}
-
-/// Reports whether one finite spelling would bind to `arg` instead of being parsed structurally.
-fn positional_value_reaches_arg(position: &Position<'_>, arg: &Arg<'_>, value: &str) -> bool {
-    if position.flags_stopped {
-        return true;
-    }
-
-    if position.command.subcommands.iter().any(|command| command.aliases.contains(&value)) {
-        return false;
-    }
-
-    let bytes = value.as_bytes();
-    !matches!(bytes, [b'-', rest @ ..] if !rest.is_empty())
-        || routes_negative_number_to_arg(position.command, &position.ancestors, Some(arg), bytes)
 }
 
 /// Builds finite value candidates using one typed value prefix and insertion prefix.

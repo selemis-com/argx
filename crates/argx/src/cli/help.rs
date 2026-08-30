@@ -34,6 +34,67 @@ struct VisibleFlag<'a> {
     shorts: Vec<u8>,
 }
 
+impl<'a> VisibleFlag<'a> {
+    /// Resolves flags visible from the selected command using the parser's lexical scope rules.
+    ///
+    /// The resolver retains the command-path scope of each match so repeated mounts of one
+    /// reusable `Args` declaration remain distinguishable even though they share static metadata
+    /// pointers.
+    fn collect(path: &[&'a Command<'a>]) -> Vec<Self> {
+        let Some((&command, ancestors)) = path.split_last() else {
+            return Vec::new();
+        };
+        let current = ancestors.len();
+
+        let candidates = command.flags.iter().copied().map(|flag| (current, flag)).chain(
+            ancestors.iter().enumerate().rev().flat_map(|(scope, command)| {
+                command
+                    .flags
+                    .iter()
+                    .copied()
+                    .filter(|flag| flag.global)
+                    .map(move |flag| (scope, flag))
+            }),
+        );
+
+        candidates
+            .filter_map(|(scope, flag)| {
+                let longs = flag
+                    .longs
+                    .iter()
+                    .copied()
+                    .filter(|long| {
+                        matches!(
+                            resolve_long(command, ancestors, long.as_bytes()),
+                            Some(Named::Flag { flag: resolved, scope: resolved_scope })
+                                if resolved_scope == scope && std::ptr::eq(resolved, flag)
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                let shorts = flag
+                    .shorts
+                    .iter()
+                    .copied()
+                    .filter(|short| {
+                        matches!(
+                            resolve_short(command, ancestors, *short),
+                            Some(Named::Flag { flag: resolved, scope: resolved_scope })
+                                if resolved_scope == scope && std::ptr::eq(resolved, flag)
+                        )
+                    })
+                    .collect::<Vec<_>>();
+
+                (!longs.is_empty() || !shorts.is_empty()).then_some(Self {
+                    scope,
+                    flag,
+                    longs,
+                    shorts,
+                })
+            })
+            .collect()
+    }
+}
+
 /// Amount of detail requested by the help spelling.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum HelpStyle {
@@ -41,6 +102,52 @@ pub(crate) enum HelpStyle {
     Short,
     /// Expanded `--help` output.
     Long,
+}
+
+impl HelpStyle {
+    /// Selects compact or expanded prose, falling back to compact prose for long help.
+    fn text<'a>(self, short: Option<&'a str>, long: Option<&'a str>) -> Option<&'a str> {
+        match self {
+            Self::Short => short,
+            Self::Long => long.or(short),
+        }
+    }
+
+    /// Renders built-in action help with a hint for the alternate help spelling.
+    fn action_help(self, action: &Action<'_>) -> String {
+        if !matches!(action.kind, crate::__private::ActionKind::Help) {
+            return action.help.to_owned();
+        }
+        match self {
+            Self::Short => "Print help (see more with '--help')".to_owned(),
+            Self::Long => "Print help (see a summary with '-h')".to_owned(),
+        }
+    }
+
+    /// Renders one positional argument row.
+    fn arg_row(self, arg: &Arg<'_>) -> (String, String) {
+        (
+            arg_usage(arg),
+            metadata_help(self.text(arg.help, arg.long_help), arg.accepted_values, None, self),
+        )
+    }
+
+    /// Renders one named flag row.
+    fn flag_row(self, flag: &VisibleFlag<'_>) -> (String, String) {
+        (
+            spellings_label(
+                &flag.shorts,
+                &flag.longs,
+                flag.flag.takes_value.then_some(flag.flag.name),
+            ),
+            metadata_help(
+                self.text(flag.flag.help, flag.flag.long_help),
+                flag.flag.accepted_values,
+                flag.flag.default_value,
+                self,
+            ),
+        )
+    }
 }
 
 /// Renders help for one selected command path.
@@ -62,14 +169,11 @@ pub(crate) fn render_with_schema(
         return String::new();
     };
 
-    let visible_flags = visible_flags(path);
+    let visible_flags = VisibleFlag::collect(path);
     let (grouped_keys, grouped_rows) = grouped_rows(path, &visible_flags, style);
 
     let mut output = String::new();
-    let description = match style {
-        HelpStyle::Short => command.about,
-        HelpStyle::Long => command.description.or(command.about),
-    };
+    let description = style.text(command.about, command.description);
     if let Some(description) = description.filter(|description| !description.is_empty()) {
         output.push_str(description);
         output.push_str("\n\n");
@@ -87,10 +191,7 @@ pub(crate) fn render_with_schema(
         .collect::<Vec<_>>();
     if !ungrouped_args.is_empty() {
         output.push_str("\nArguments:\n");
-        let rows = ungrouped_args
-            .iter()
-            .map(|arg| (arg_usage(arg), arg_help(arg, style)))
-            .collect::<Vec<_>>();
+        let rows = ungrouped_args.iter().map(|arg| style.arg_row(arg)).collect::<Vec<_>>();
         write_rows(&mut output, &rows, style);
     }
 
@@ -115,13 +216,16 @@ pub(crate) fn render_with_schema(
     let mut rows = visible_flags
         .iter()
         .filter(|flag| !grouped_keys.contains(&flag.flag.key))
-        .map(|flag| (flag_label(flag), flag_help(flag.flag, style)))
+        .map(|flag| style.flag_row(flag))
         .collect::<Vec<_>>();
-    rows.extend(
-        command.actions.iter().map(|action| (action_label(action), action_help(action, style))),
-    );
+    rows.extend(command.actions.iter().map(|action| {
+        (spellings_label(action.shorts, action.longs, None), style.action_help(action))
+    }));
     if schema_enabled {
-        rows.push((action_label(&SCHEMA_ACTION), action_help(&SCHEMA_ACTION, style)));
+        rows.push((
+            spellings_label(SCHEMA_ACTION.shorts, SCHEMA_ACTION.longs, None),
+            style.action_help(&SCHEMA_ACTION),
+        ));
     }
     write_rows(&mut output, &rows, style);
 
@@ -268,7 +372,7 @@ fn grouped_rows<'a>(
                 for arg in selected.args {
                     if group_contains_arg(group, arg) && !grouped_keys.contains(&arg.key) {
                         grouped_keys.push(arg.key);
-                        rows.push((arg_usage(arg), arg_help(arg, style)));
+                        rows.push(style.arg_row(arg));
                     }
                 }
             }
@@ -278,7 +382,7 @@ fn grouped_rows<'a>(
                     && !grouped_keys.contains(&flag.flag.key)
                 {
                     grouped_keys.push(flag.flag.key);
-                    rows.push((flag_label(flag), flag_help(flag.flag, style)));
+                    rows.push(style.flag_row(flag));
                 }
             }
             if rows.is_empty() {
@@ -307,59 +411,6 @@ fn group_contains_arg(group: &HelpGroup<'_>, arg: &Arg<'_>) -> bool {
     group.args.iter().any(|candidate| std::ptr::eq(*candidate, arg))
 }
 
-/// Resolves flags visible from the selected command using the parser's lexical scope rules.
-///
-/// The resolver retains the command-path scope of each match so repeated mounts of one reusable
-/// `Args` declaration remain distinguishable even though they share static metadata pointers.
-fn visible_flags<'a>(path: &[&'a Command<'a>]) -> Vec<VisibleFlag<'a>> {
-    let Some((&command, ancestors)) = path.split_last() else {
-        return Vec::new();
-    };
-    let current = ancestors.len();
-
-    let candidates = command.flags.iter().copied().map(|flag| (current, flag)).chain(
-        ancestors.iter().enumerate().rev().flat_map(|(scope, command)| {
-            command.flags.iter().copied().filter(|flag| flag.global).map(move |flag| (scope, flag))
-        }),
-    );
-
-    candidates
-        .filter_map(|(scope, flag)| {
-            let longs = flag
-                .longs
-                .iter()
-                .copied()
-                .filter(|long| {
-                    matches!(
-                        resolve_long(command, ancestors, long.as_bytes()),
-                        Some(Named::Flag { flag: resolved, scope: resolved_scope })
-                            if resolved_scope == scope && std::ptr::eq(resolved, flag)
-                    )
-                })
-                .collect::<Vec<_>>();
-            let shorts = flag
-                .shorts
-                .iter()
-                .copied()
-                .filter(|short| {
-                    matches!(
-                        resolve_short(command, ancestors, *short),
-                        Some(Named::Flag { flag: resolved, scope: resolved_scope })
-                            if resolved_scope == scope && std::ptr::eq(resolved, flag)
-                    )
-                })
-                .collect::<Vec<_>>();
-
-            (!longs.is_empty() || !shorts.is_empty()).then_some(VisibleFlag {
-                scope,
-                flag,
-                longs,
-                shorts,
-            })
-        })
-        .collect()
-}
-
 /// Writes aligned help rows without terminal-width-dependent wrapping.
 ///
 /// Long-only options reserve the same short-option column as rows such as `-h, --help`, matching
@@ -381,7 +432,6 @@ fn write_rows(output: &mut String, rows: &[(String, String)], style: HelpStyle) 
 
     let labels = rows.iter().map(|(label, _)| aligned_label(label)).collect::<Vec<_>>();
     let width = labels.iter().map(|label| label.chars().count()).max().unwrap_or(0);
-
     for ((_, help), label) in rows.iter().zip(labels) {
         if help.is_empty() {
             let _ = writeln!(output, "  {label}");
@@ -389,6 +439,11 @@ fn write_rows(output: &mut String, rows: &[(String, String)], style: HelpStyle) 
             let _ = writeln!(output, "  {label:<width$}  {help}");
         }
     }
+}
+
+/// Reserves the short-option column for long-only option rows.
+fn aligned_label(label: &str) -> String {
+    if label.starts_with("--") { format!("    {label}") } else { label.to_owned() }
 }
 
 /// Writes multiline help with a fixed continuation indent.
@@ -401,34 +456,6 @@ fn write_indented(output: &mut String, text: &str, indent: usize) {
             let _ = writeln!(output, "{padding}{line}");
         }
     }
-}
-
-/// Reserves the short-option column for long-only option rows.
-fn aligned_label(label: &str) -> String {
-    if label.starts_with("--") { format!("    {label}") } else { label.to_owned() }
-}
-
-/// Renders one named flag in an options table.
-fn flag_label(flag: &VisibleFlag<'_>) -> String {
-    spellings_label(&flag.shorts, &flag.longs, flag.flag.takes_value.then_some(flag.flag.name))
-}
-
-/// Renders help text plus finite-value and default metadata.
-fn flag_help(flag: &Flag<'_>, style: HelpStyle) -> String {
-    let help = match style {
-        HelpStyle::Short => flag.help,
-        HelpStyle::Long => flag.long_help.or(flag.help),
-    };
-    metadata_help(help, flag.accepted_values, flag.default_value, style)
-}
-
-/// Renders positional help plus finite accepted values.
-fn arg_help(arg: &Arg<'_>, style: HelpStyle) -> String {
-    let help = match style {
-        HelpStyle::Short => arg.help,
-        HelpStyle::Long => arg.long_help.or(arg.help),
-    };
-    metadata_help(help, arg.accepted_values, None, style)
 }
 
 /// Combines prose with metadata according to compact or expanded help style.
@@ -499,22 +526,6 @@ fn append_inline_default(help: &mut String, default: Option<&str>) {
     help.push_str("[default: ");
     help.push_str(&display_bytes(default.as_bytes()));
     help.push(']');
-}
-
-/// Renders one built-in action in an options table.
-fn action_label(action: &Action<'_>) -> String {
-    spellings_label(action.shorts, action.longs, None)
-}
-
-/// Renders built-in action help with a hint for the alternate help spelling.
-fn action_help(action: &Action<'_>, style: HelpStyle) -> String {
-    if !matches!(action.kind, crate::__private::ActionKind::Help) {
-        return action.help.to_owned();
-    }
-    match style {
-        HelpStyle::Short => "Print help (see more with '--help')".to_owned(),
-        HelpStyle::Long => "Print help (see a summary with '-h')".to_owned(),
-    }
 }
 
 /// Renders short and long spellings with an optional value placeholder.

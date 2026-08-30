@@ -64,6 +64,34 @@ pub(crate) struct CommandSemantics {
     pub schema: bool,
 }
 
+impl CommandSemantics {
+    /// Combines explicit command attributes with documentation-derived help metadata.
+    fn from_attrs(
+        name: String,
+        attributes: crate::args::attrs::CommandAttrs,
+        docs: crate::args::attrs::DocHelp,
+    ) -> Self {
+        let about = attributes.about.clone().or(docs.summary);
+        let description = attributes.about.or(docs.description);
+        let help_sections = docs
+            .sections
+            .into_iter()
+            .map(|section| HelpSection { heading: section.heading, body: section.body })
+            .collect();
+
+        Self {
+            name,
+            about,
+            description,
+            help_sections,
+            version: attributes.version,
+            long_version: attributes.long_version,
+            aliases: attributes.aliases,
+            schema: attributes.schema,
+        }
+    }
+}
+
 /// One user-authored command help section.
 pub(crate) struct HelpSection {
     /// Section heading.
@@ -244,6 +272,21 @@ enum GenericName {
     Lifetime(syn::Ident),
 }
 
+impl GenericName {
+    /// Collects the generic parameter names declared by one containing type.
+    fn collect(generics: &syn::Generics) -> Vec<Self> {
+        generics
+            .params
+            .iter()
+            .map(|param| match param {
+                syn::GenericParam::Type(param) => Self::Ident(param.ident.clone()),
+                syn::GenericParam::Const(param) => Self::Ident(param.ident.clone()),
+                syn::GenericParam::Lifetime(param) => Self::Lifetime(param.lifetime.ident.clone()),
+            })
+            .collect()
+    }
+}
+
 /// Visitor that detects use of one containing generic parameter inside a flattened type.
 #[derive(Debug)]
 struct GenericUse<'a> {
@@ -251,6 +294,15 @@ struct GenericUse<'a> {
     params: &'a [GenericName],
     /// Whether a matching parameter was encountered.
     found: bool,
+}
+
+impl GenericUse<'_> {
+    /// Reports whether a type references any generic parameter from the containing declaration.
+    fn finds(params: &[GenericName], ty: &Type) -> bool {
+        let mut visitor = GenericUse { params, found: false };
+        syn::visit::Visit::visit_type(&mut visitor, ty);
+        visitor.found
+    }
 }
 
 impl<'ast> syn::visit::Visit<'ast> for GenericUse<'_> {
