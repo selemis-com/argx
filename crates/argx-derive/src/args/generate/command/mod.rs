@@ -169,11 +169,6 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
             impl #impl_generics #facade::__private::InvocableCommandHandler
                 for #ident #ty_generics #where_clause
             {}
-
-            #[doc(hidden)]
-            impl #impl_generics #facade::InvocableHandlerCommand
-                for #ident #ty_generics #where_clause
-            {}
         }
     });
     let schema_command_impl = (!command.binding.root && command.semantics.schema).then(|| {
@@ -524,7 +519,13 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
             impl #impl_generics #facade::Parser for #ident #ty_generics #where_clause {}
         }
     });
-
+    let args_impl = (!command.binding.root).then(|| {
+        quote! {
+            impl #impl_generics #facade::__private::Args
+                for #ident #ty_generics #where_clause
+            {}
+        }
+    });
 
     // A private const namespace keeps all generated statics and assertions local to the derived
     // declaration while still allowing trait associated constants to point at `'static` tables.
@@ -681,6 +682,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
             }
 
             #parser_impl
-            };
+            #args_impl
+        };
     }
 }

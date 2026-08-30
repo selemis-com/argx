@@ -26,9 +26,7 @@ mod tests {
             .arg("__argx_complete__")
             .assert()
             .success()
-            .stdout_eq(
-                "--help\tPrint help\n",
-            )
+            .stdout_eq("--help\tPrint help\n")
             .stderr_eq("");
     }
 
@@ -41,9 +39,7 @@ mod tests {
             .arg("__argx_complete__")
             .assert()
             .success()
-            .stdout_eq(
-                "--help\tPrint help\n",
-            )
+            .stdout_eq("--help\tPrint help\n")
             .stderr_eq("");
     }
 
@@ -137,7 +133,7 @@ Minimal command with no application-defined arguments.
 Usage: cli [OPTIONS]
 
 Options:
-  -h, --help             Print help
+  -h, --help  Print help
 
 "#]])
             .stderr_eq("");
@@ -162,8 +158,8 @@ Commands:
   status  Shows status without additional arguments.
 
 Options:
-  -h, --help             Print help
-  -V, --version          Print version
+  -h, --help     Print help
+  -V, --version  Print version
 
 Common options:
   -v, --verbose  Enables verbose output.
@@ -187,8 +183,8 @@ Arguments:
   <VALUE>  Value to add or remove.
 
 Options:
-      --force            Forces the operation.
-  -h, --help             Print help
+      --force  Forces the operation.
+  -h, --help   Print help
 
 Common options:
   -v, --verbose  Enables verbose output.
@@ -248,8 +244,8 @@ Shows status without additional arguments.
 Usage: cli status [OPTIONS]
 
 Options:
-  -h, --help             Print help
-  -V, --version          Print version
+  -h, --help     Print help
+  -V, --version  Print version
 
 Common options:
   -v, --verbose  Enables verbose output.
@@ -269,8 +265,8 @@ Arguments:
   <VALUE>  Value to add or remove.
 
 Options:
-      --force            Forces the operation.
-  -h, --help             Print help
+      --force  Forces the operation.
+  -h, --help   Print help
 
 Common options:
   -v, --verbose  Enables verbose output.

@@ -131,7 +131,7 @@ fn expand_association(
         #item
 
         #(#conditional)*
-        impl #facade::HandlerSchemaSource for #command_type {
+        impl #facade::__private::HandlerSchemaSource for #command_type {
             fn handler_schemas(
                 generator: &mut #facade::__private::schemars::SchemaGenerator,
             ) -> #facade::__private::HandlerSchemas {

@@ -14,7 +14,10 @@ pub(super) fn binding_generics(command: &model::Command, facade: &TokenStream) -
         match &field.semantics {
             model::FieldSemantics::Flatten => {
                 let ty = &field.binding.ty;
-                generics.make_where_clause().predicates.push(parse_quote!(#ty: #facade::__private::CommandArgs));
+                generics
+                    .make_where_clause()
+                    .predicates
+                    .push(parse_quote!(#ty: #facade::__private::Args));
                 continue;
             }
             model::FieldSemantics::Subcommand => {

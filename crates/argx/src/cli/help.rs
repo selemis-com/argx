@@ -10,8 +10,8 @@ use std::{fmt::Write as _, io::IsTerminal as _};
 
 use crate::{
     __private::{
-        Action, Arg, Command, Flag, HelpGroup, Key, Named, SCHEMA_ACTION,
-        resolve_long, resolve_short,
+        Action, Arg, Command, Flag, HelpGroup, Key, Named, SCHEMA_ACTION, resolve_long,
+        resolve_short,
     },
     error::display_bytes,
 };
@@ -668,8 +668,8 @@ Options:
 Usage: tool --token <ROOT_TOKEN> --config <CONFIG> leaf [OPTIONS]
 
 Options:
-      --token <TOKEN>    Leaf token
-  -h, --help             Print help
+      --token <TOKEN>  Leaf token
+  -h, --help           Print help
 
 "#]],
         );

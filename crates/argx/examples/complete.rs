@@ -22,9 +22,7 @@ use std::{
     io::{self, Write},
 };
 
-use argx::{
-    Args, Defaults, Dotenv, Environment, Parser as _, Subcommand, argx, completion::Shell,
-};
+use argx::{Args, Defaults, Dotenv, Environment, Parser as _, Subcommand, argx, completion::Shell};
 use serde::Serialize;
 
 /// Short version displayed by `--version`.
@@ -43,7 +41,6 @@ struct Settings {
     /// Default service endpoint.
     #[argx(default = String::from("http://localhost:8080"))]
     endpoint: String,
-
 }
 
 /// Options inherited by every selected command.

@@ -20,7 +20,10 @@ pub use crate::cli::{
         concat_constraints, concat_flags, concat_help_groups, flag_spellings_unique,
         positional_layout_valid, table_len,
     },
-    protocol::{CommandArgs, HandlerResult, HandlerSchemas, InvocableCommandHandler, Subcommands},
+    protocol::{
+        Args, CommandArgs, HandlerResult, HandlerSchemaSource, HandlerSchemas,
+        InvocableCommandHandler, Subcommands,
+    },
     value::{
         comma_values, os_value, os_values, parsed_value, parsed_values, text_value, text_values,
         value_enum_value, value_enum_values,

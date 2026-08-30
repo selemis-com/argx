@@ -53,7 +53,7 @@ error: `value_enum` takes no value
             "duplicate_handler",
             "argx",
             snapbox::str![[r#"
-error[E0119]: conflicting implementations of trait `HandlerSchemaSource` for type `Command`
+error[E0119]: conflicting implementations of trait `argx::__private::HandlerSchemaSource` for type `Command`
 error[E0119]: conflicting implementations of trait `argx::__private::SchemaCommand` for type `Command`
 
 "#]],
@@ -66,7 +66,7 @@ error[E0119]: conflicting implementations of trait `argx::__private::SchemaComma
             "non_invocable_handler",
             "argx",
             snapbox::str![[r#"
-error[E0277]: the trait bound `GroupArgs: argx::InvocableHandlerCommand` is not satisfied
+error[E0277]: the trait bound `GroupArgs: argx::__private::InvocableCommandHandler` is not satisfied
 
 "#]],
         );
@@ -302,7 +302,7 @@ error[..]: [..]flattened command contains duplicate long or short flag spellings
             "parser_as_flatten",
             "argx",
             snapbox::str![[r#"
-error[..]: the trait bound `Child: argx::Args` is not satisfied
+error[E0277]: the trait bound `Child: argx::__private::Args` is not satisfied
 
 "#]],
         );
@@ -355,7 +355,7 @@ error: `flatten` and `subcommand` cannot be combined
 error: a command can contain only one `subcommand` field
 error: `subcommand` cannot depend on the containing struct's generic parameters; use a concrete derived type
 error: subcommand payload cannot depend on the enum's generic parameters; use a concrete Args type
-error[..]: the trait bound `ParserPayload: argx::Args` is not satisfied
+error[E0277]: the trait bound `ParserPayload: argx::__private::Args` is not satisfied
 
 "#]],
         );

@@ -233,7 +233,8 @@ mod tests {
 
     #[test]
     fn direct_root_schema_keeps_schema_available_as_a_positional_value() {
-        let direct = Direct::try_parse_from(["argx-test", "schema"]).expect("schema is positional data here");
+        let direct = Direct::try_parse_from(["argx-test", "schema"])
+            .expect("schema is positional data here");
         assert_eq!(direct.value, "schema");
 
         let error = match Direct::try_parse_from(["argx-test", "-S"]) {
@@ -291,7 +292,8 @@ mod tests {
     #[test]
     fn handlers_associate_invocation_result_and_error_schemas() {
         let mut generator = schemars::SchemaGenerator::default();
-        let schemas = <HandlerArgs as argx::HandlerSchemaSource>::handler_schemas(&mut generator);
+        let schemas =
+            <HandlerArgs as argx::__private::HandlerSchemaSource>::handler_schemas(&mut generator);
         let result = serde_json::to_value(&schemas.result).expect("result schema should serialize");
         let error = serde_json::to_value(&schemas.error).expect("error schema should serialize");
 

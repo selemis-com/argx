@@ -419,7 +419,7 @@ fn subcommand_generics(subcommand: &model::Subcommand, facade: &TokenStream) -> 
             continue;
         }
         bounded.push(rendered);
-        generics.make_where_clause().predicates.push(parse_quote!(#ty: #facade::__private::CommandArgs));
+        generics.make_where_clause().predicates.push(parse_quote!(#ty: #facade::__private::Args));
     }
     generics
 }

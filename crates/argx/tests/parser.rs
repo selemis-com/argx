@@ -688,7 +688,8 @@ mod tests {
 
     #[test]
     fn parses_typed_switches_values_and_positionals() {
-        let parsed = Cli::try_parse_from(["argx-test",
+        let parsed = Cli::try_parse_from([
+            "argx-test",
             "-v",
             "--port",
             "8080",
@@ -723,13 +724,22 @@ mod tests {
             CountCli::try_parse_from(["argx-test"]),
             Ok(CountCli { verbosity: 3, quiet: false })
         );
-        assert_eq!(CountCli::try_parse_from(["argx-test", "-v"]), Ok(CountCli { verbosity: 1, quiet: false }));
-        assert_eq!(CountCli::try_parse_from(["argx-test", "-vvv"]), Ok(CountCli { verbosity: 3, quiet: false }));
+        assert_eq!(
+            CountCli::try_parse_from(["argx-test", "-v"]),
+            Ok(CountCli { verbosity: 1, quiet: false })
+        );
+        assert_eq!(
+            CountCli::try_parse_from(["argx-test", "-vvv"]),
+            Ok(CountCli { verbosity: 3, quiet: false })
+        );
         assert_eq!(
             CountCli::try_parse_from(["argx-test", "--verbosity", "--verbosity"]),
             Ok(CountCli { verbosity: 2, quiet: false })
         );
-        assert_eq!(CountCli::try_parse_from(["argx-test", "-vvq"]), Ok(CountCli { verbosity: 2, quiet: true }));
+        assert_eq!(
+            CountCli::try_parse_from(["argx-test", "-vvq"]),
+            Ok(CountCli { verbosity: 2, quiet: true })
+        );
     }
 
     #[test]
@@ -753,7 +763,6 @@ mod tests {
     fn complete_argv_entry_point_discards_only_argv0() {
         let parsed = Cli::try_parse_from(["argx-test", "input.txt"]).expect("valid argv");
         assert_eq!(parsed.input, "input.txt");
-
     }
 
     #[test]
@@ -821,8 +830,9 @@ mod tests {
             Err(Error::DuplicateArgument { name: "--port" })
         );
 
-        let parsed = Cli::try_parse_from(["argx-test", "--define", "one", "--define", "two", "input"])
-            .expect("repeatable value flag");
+        let parsed =
+            Cli::try_parse_from(["argx-test", "--define", "one", "--define", "two", "input"])
+                .expect("repeatable value flag");
         assert_eq!(parsed.define, vec![String::from("one"), String::from("two")]);
     }
 
@@ -859,7 +869,10 @@ mod tests {
             Empty::try_parse_from(["argx-test", "--unknown"]),
             Err(Error::UnknownFlag { token: b"--unknown".to_vec() })
         );
-        assert_eq!(Cli::try_parse_from(["argx-test", "--port"]), Err(Error::MissingValue { name: "--port" }));
+        assert_eq!(
+            Cli::try_parse_from(["argx-test", "--port"]),
+            Err(Error::MissingValue { name: "--port" })
+        );
         assert_eq!(
             Cli::try_parse_from(["argx-test", "--verbose=true", "input"]),
             Err(Error::UnexpectedValue { name: "--verbose" })
@@ -875,10 +888,10 @@ mod tests {
         let error = Cli::try_parse_from(["argx-test", "--port", "not-a-port", "input"])
             .expect_err("invalid integer must fail");
         match error {
-            Error::InvalidValue(error) => {
-                assert_eq!(error.name, "--port");
-                assert_eq!(error.value, "not-a-port");
-                assert!(!error.reason.is_empty());
+            Error::InvalidValue { name, value, reason } => {
+                assert_eq!(name, "--port");
+                assert_eq!(value, "not-a-port");
+                assert!(!reason.is_empty());
             }
             other => panic!("unexpected error: {other:?}"),
         }
@@ -886,7 +899,10 @@ mod tests {
 
     #[test]
     fn bool_positionals_are_values_not_switches() {
-        assert_eq!(BoolPositional::try_parse_from(["argx-test", "true"]), Ok(BoolPositional { enabled: true }));
+        assert_eq!(
+            BoolPositional::try_parse_from(["argx-test", "true"]),
+            Ok(BoolPositional { enabled: true })
+        );
         assert_eq!(
             BoolPositional::try_parse_from(["argx-test", "false"]),
             Ok(BoolPositional { enabled: false })
@@ -907,10 +923,7 @@ mod tests {
 
     #[test]
     fn optional_collection_preserves_absence_and_empty_values() {
-        assert_eq!(
-            OptionalMany::try_parse_from(["argx-test"]),
-            Ok(OptionalMany { tags: None })
-        );
+        assert_eq!(OptionalMany::try_parse_from(["argx-test"]), Ok(OptionalMany { tags: None }));
         assert_eq!(
             OptionalMany::try_parse_from(["argx-test", "--tags="]),
             Ok(OptionalMany { tags: Some(vec![String::new()]) })
@@ -922,7 +935,8 @@ mod tests {
         assert_eq!("human-readable".parse::<OutputMode>(), Ok(OutputMode::HumanReadable),);
         assert!("HumanReadable".parse::<OutputMode>().is_err());
 
-        let parsed = ValueEnumCli::try_parse_from(["argx-test",
+        let parsed = ValueEnumCli::try_parse_from([
+            "argx-test",
             "--mode",
             "json",
             "--include",
@@ -955,10 +969,12 @@ mod tests {
 
         let error = ValueEnumCli::try_parse_from(["argx-test", "--mode", "yaml", "quiet"])
             .expect_err("unknown enum spelling must fail");
-        let Error::InvalidValue(error) = error else { panic!("unexpected error: {error:?}") };
-        assert_eq!(error.name, "--mode");
-        assert_eq!(error.value, "yaml");
-        assert_eq!(error.reason, "expected one of: human-readable, json, quiet");
+        let Error::InvalidValue { name, value, reason } = error else {
+            panic!("unexpected error: {error:?}");
+        };
+        assert_eq!(name, "--mode");
+        assert_eq!(value, "yaml");
+        assert_eq!(reason, "expected one of: human-readable, json, quiet");
     }
 
     #[test]
@@ -968,7 +984,8 @@ mod tests {
             Ok(ParsedMany { numbers: vec![10, 20] }),
         );
 
-        let error = ParsedMany::try_parse_from(["argx-test",
+        let error = ParsedMany::try_parse_from([
+            "argx-test",
             "--numbers",
             "10",
             "--numbers",
@@ -977,17 +994,18 @@ mod tests {
             "30",
         ])
         .expect_err("the first invalid repeated value must fail conversion");
-        let Error::InvalidValue(error) = error else {
+        let Error::InvalidValue { name, value, reason } = error else {
             panic!("unexpected error: {error:?}");
         };
-        assert_eq!(error.name, "--numbers");
-        assert_eq!(error.value, "not-a-number");
-        assert!(!error.reason.is_empty());
+        assert_eq!(name, "--numbers");
+        assert_eq!(value, "not-a-number");
+        assert!(!reason.is_empty());
     }
 
     #[test]
     fn flattened_args_compose_recursively_and_preserve_positional_order() {
-        let parsed = FlattenedCli::try_parse_from(["argx-test",
+        let parsed = FlattenedCli::try_parse_from([
+            "argx-test",
             "--root",
             "--nested=42",
             "--shared",
@@ -1042,11 +1060,16 @@ mod tests {
     #[test]
     fn flattened_checks_preserve_global_error_precedence() {
         assert_eq!(
-            FlattenPrecedence::try_parse_from(["argx-test", "--duplicate=not-a-number", "--duplicate=2",]),
+            FlattenPrecedence::try_parse_from([
+                "argx-test",
+                "--duplicate=not-a-number",
+                "--duplicate=2",
+            ]),
             Err(Error::DuplicateArgument { name: "--duplicate" })
         );
         assert_eq!(
-            FlattenPrecedence::try_parse_from(["argx-test",
+            FlattenPrecedence::try_parse_from([
+                "argx-test",
                 "--duplicate=not-a-number",
                 "--duplicate=2",
                 "--unknown",
@@ -1065,10 +1088,12 @@ mod tests {
         use std::os::unix::ffi::{OsStrExt as _, OsStringExt as _};
 
         let raw = OsString::from_vec(vec![b'p', 0xff, b't']);
-        let parsed = PathCli::try_parse_from([OsString::from("argx-test"), raw.clone()]).expect("valid Unix path bytes");
+        let parsed = PathCli::try_parse_from([OsString::from("argx-test"), raw.clone()])
+            .expect("valid Unix path bytes");
         assert_eq!(parsed.path.as_os_str().as_bytes(), raw.as_os_str().as_bytes());
 
-        let parsed = OsStringCli::try_parse_from([OsString::from("argx-test"), raw.clone()]).expect("valid Unix OS string");
+        let parsed = OsStringCli::try_parse_from([OsString::from("argx-test"), raw.clone()])
+            .expect("valid Unix OS string");
         assert_eq!(parsed.value.as_os_str().as_bytes(), raw.as_os_str().as_bytes());
     }
 
@@ -1084,7 +1109,8 @@ mod tests {
         }
 
         let raw = OsString::from_vec(vec![b'-', b'-', b'p', b'a', b't', b'h', b'=', 0xff]);
-        let parsed = Attached::try_parse_from([OsString::from("argx-test"), raw]).expect("valid Unix path bytes");
+        let parsed = Attached::try_parse_from([OsString::from("argx-test"), raw])
+            .expect("valid Unix path bytes");
         assert_eq!(parsed.path.as_os_str().as_bytes(), &[0xff]);
     }
 
@@ -1125,9 +1151,19 @@ Options:
 "#]],
         );
 
-        assert_eq!(HelpCli::try_parse_from(["argx-test", "--help"]), Err(Error::DisplayHelp { help: root }),);
+        assert_eq!(
+            HelpCli::try_parse_from(["argx-test", "--help"]),
+            Err(Error::DisplayHelp { help: root }),
+        );
 
-        let nested = HelpCli::try_parse_from(["argx-test", "--destination", "out", "acme", "config", "--help"]);
+        let nested = HelpCli::try_parse_from([
+            "argx-test",
+            "--destination",
+            "out",
+            "acme",
+            "config",
+            "--help",
+        ]);
         let Err(Error::DisplayHelp { help }) = nested else {
             panic!("nested help request did not return generated help")
         };
@@ -1142,22 +1178,30 @@ Arguments:
   <KEY>  Configuration key.
 
 Options:
-      --local            Use local configuration.
-  -h, --help             Print help
+      --local  Use local configuration.
+  -h, --help   Print help
 
 "#]],
         );
 
-        let status = HelpCli::try_parse_from(["argx-test", "--destination", "out", "acme", "status"])
-            .expect("status command should parse");
+        let status =
+            HelpCli::try_parse_from(["argx-test", "--destination", "out", "acme", "status"])
+                .expect("status command should parse");
         assert!(!status.verbose);
         assert_eq!(status.output, "out");
         assert_eq!(status.workspace, "acme");
         assert!(matches!(status.command, HelpCommand::Status));
 
-        let config =
-            HelpCli::try_parse_from(["argx-test", "--destination", "out", "acme", "config", "--local", "theme"])
-                .expect("config command should parse");
+        let config = HelpCli::try_parse_from([
+            "argx-test",
+            "--destination",
+            "out",
+            "acme",
+            "config",
+            "--local",
+            "theme",
+        ])
+        .expect("config command should parse");
         let HelpCommand::Config(config) = config.command else {
             panic!("config command did not construct its payload")
         };
@@ -1213,7 +1257,7 @@ Commands:
   status  Show current status.
 
 Options:
-  -h, --help             Print help
+  -h, --help  Print help
 
 Output:
       --json           Emit structured output.
@@ -1328,7 +1372,10 @@ Output:
             UserVersionFlag::try_parse_from(["argx-test", "--version"]),
             Ok(UserVersionFlag { version: true }),
         );
-        assert_eq!(UserVersionFlag::try_parse_from(["argx-test", "-V"]), Ok(UserVersionFlag { version: true }),);
+        assert_eq!(
+            UserVersionFlag::try_parse_from(["argx-test", "-V"]),
+            Ok(UserVersionFlag { version: true }),
+        );
     }
 
     #[test]
@@ -1360,9 +1407,11 @@ Output:
 
         let error = DefaultCli::try_parse_from(["argx-test", "--port", "not-a-port"])
             .expect_err("an explicit invalid value must not fall back to the default");
-        let Error::InvalidValue(error) = error else { panic!("unexpected error: {error:?}") };
-        assert_eq!(error.name, "--port");
-        assert_eq!(error.value, "not-a-port");
+        let Error::InvalidValue { name, value, .. } = error else {
+            panic!("unexpected error: {error:?}");
+        };
+        assert_eq!(name, "--port");
+        assert_eq!(value, "not-a-port");
     }
 
     #[test]
@@ -1376,7 +1425,8 @@ Output:
     #[test]
     fn subcommands_bind_unit_payload_and_nested_command_trees() {
         assert_eq!(
-            SubcommandCli::try_parse_from(["argx-test",
+            SubcommandCli::try_parse_from([
+                "argx-test",
                 "--verbose",
                 "acme",
                 "add",
@@ -1408,8 +1458,15 @@ Output:
         );
 
         assert_eq!(
-            SubcommandCli::try_parse_from(["argx-test",
-                "acme", "config", "--local", "set", "--raw", "theme", "dark",
+            SubcommandCli::try_parse_from([
+                "argx-test",
+                "acme",
+                "config",
+                "--local",
+                "set",
+                "--raw",
+                "theme",
+                "dark",
             ]),
             Ok(SubcommandCli {
                 verbose: false,
@@ -1457,7 +1514,7 @@ Output:
                 help: String::from(
                     "Usage: aliases [OPTIONS] <COMMAND>\n\n\
 Commands:\n  remove\n  status\n\n\
-Options:\n      --color <COLOR>\n  -h, --help             Print help\n",
+Options:\n      --color <COLOR>\n  -h, --help           Print help\n",
                 ),
             }),
         );
@@ -1470,7 +1527,8 @@ Options:\n      --color <COLOR>\n  -h, --help             Print help\n",
             Err(Error::MissingRequirement { name: "--auth-token", required_by: "--endpoint" }),
         );
         assert_eq!(
-            ConstraintCli::try_parse_from(["argx-test",
+            ConstraintCli::try_parse_from([
+                "argx-test",
                 "--endpoint",
                 "https://example.test",
                 "--token",
@@ -1497,7 +1555,13 @@ Options:\n      --color <COLOR>\n  -h, --help             Print help\n",
         }
 
         assert_eq!(
-            ConstraintCli::try_parse_from(["argx-test", "--destination", "out.txt", "--mode", "manual"]),
+            ConstraintCli::try_parse_from([
+                "argx-test",
+                "--destination",
+                "out.txt",
+                "--mode",
+                "manual"
+            ]),
             Err(Error::ConflictingArguments { name: "--destination", other: "--mode" }),
         );
     }
@@ -1545,11 +1609,16 @@ Options:\n      --color <COLOR>\n  -h, --help             Print help\n",
     #[test]
     fn constraints_resolve_across_flattening_and_selected_subcommands() {
         assert_eq!(
-            FlattenedConstraintCli::try_parse_from(["argx-test", "--endpoint", "https://example.test"]),
+            FlattenedConstraintCli::try_parse_from([
+                "argx-test",
+                "--endpoint",
+                "https://example.test"
+            ]),
             Err(Error::MissingRequirement { name: "--token", required_by: "--endpoint" }),
         );
         assert_eq!(
-            FlattenedConstraintCli::try_parse_from(["argx-test",
+            FlattenedConstraintCli::try_parse_from([
+                "argx-test",
                 "--endpoint",
                 "https://example.test",
                 "--token",
@@ -1684,7 +1753,8 @@ Options:\n      --verbose\n      --region <REGION>\n      --profile <PROFILE>\n 
     #[test]
     fn scalar_global_occurrences_share_one_cardinality_across_command_boundaries() {
         assert_eq!(
-            GlobalCli::try_parse_from(["argx-test",
+            GlobalCli::try_parse_from([
+                "argx-test",
                 "--profile",
                 "first",
                 "outer",
@@ -1699,7 +1769,12 @@ Options:\n      --verbose\n      --region <REGION>\n      --profile <PROFILE>\n 
     #[test]
     fn selected_commands_own_all_following_parser_events() {
         assert_eq!(
-            ReusedAcrossScopes::try_parse_from(["argx-test", "--value=root", "child", "--value=child"]),
+            ReusedAcrossScopes::try_parse_from([
+                "argx-test",
+                "--value=root",
+                "child",
+                "--value=child"
+            ]),
             Ok(ReusedAcrossScopes {
                 root: ReusedArgs { value: Some(String::from("root")) },
                 command: ReusedCommand::Child(ReusedArgs { value: Some(String::from("child")) }),
@@ -1718,7 +1793,14 @@ Options:\n      --verbose\n      --region <REGION>\n      --profile <PROFILE>\n 
     #[test]
     fn child_syntax_errors_precede_deferred_parent_cardinality_errors() {
         assert_eq!(
-            SubcommandCli::try_parse_from(["argx-test", "--verbose", "--verbose", "acme", "add", "--unknown",]),
+            SubcommandCli::try_parse_from([
+                "argx-test",
+                "--verbose",
+                "--verbose",
+                "acme",
+                "add",
+                "--unknown",
+            ]),
             Err(Error::UnknownFlag { token: b"--unknown".to_vec() }),
         );
     }

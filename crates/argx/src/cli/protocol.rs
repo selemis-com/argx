@@ -43,7 +43,7 @@ where
 }
 
 /// Schema source attached to an invocable command by `#[argx(handler = CommandType)]`.
-pub trait HandlerSchemaSource: crate::InvocableHandlerCommand {
+pub trait HandlerSchemaSource: InvocableCommandHandler {
     /// Generates the handler-specific result and error schemas into one shared schema document.
     #[doc(hidden)]
     fn handler_schemas(generator: &mut schemars::SchemaGenerator) -> HandlerSchemas;
@@ -121,6 +121,10 @@ pub trait CommandArgs: Sized {
     /// converted to the destination field type.
     fn finish(partial: Self::Partial) -> Result<Self, crate::Error>;
 }
+
+/// Marker implemented only by generated reusable `Args` declarations.
+#[doc(hidden)]
+pub trait Args: CommandArgs {}
 
 /// Generated command semantics and typed binding for a derived subcommand enum.
 pub trait Subcommands: Sized {

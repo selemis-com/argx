@@ -5,7 +5,7 @@
 
 use std::{ffi::OsString, fmt, str::FromStr};
 
-use crate::{Error, InvalidValue, ValueEnum, ValueEnumError};
+use crate::{Error, ValueEnum, ValueEnumError};
 
 /// Splits repeated raw values on commas while preserving occurrence order.
 ///
@@ -51,12 +51,10 @@ where
     T::Err: fmt::Display,
 {
     let text = text_bytes(value, name)?;
-    T::from_str(&text).map_err(|reason| {
-        Error::InvalidValue(Box::new(InvalidValue {
-            name,
-            value: text,
-            reason: reason.to_string(),
-        }))
+    T::from_str(&text).map_err(|reason| Error::InvalidValue {
+        name,
+        value: text,
+        reason: reason.to_string(),
     })
 }
 
@@ -73,12 +71,10 @@ where
     let mut parsed = Vec::with_capacity(values.len());
     for value in values {
         let text = text_bytes(value, name)?;
-        parsed.push(T::from_str(&text).map_err(|reason| {
-            Error::InvalidValue(Box::new(InvalidValue {
-                name,
-                value: text,
-                reason: reason.to_string(),
-            }))
+        parsed.push(T::from_str(&text).map_err(|reason| Error::InvalidValue {
+            name,
+            value: text,
+            reason: reason.to_string(),
         })?);
     }
     Ok(parsed)
@@ -94,12 +90,10 @@ where
     T: ValueEnum,
 {
     let text = text_bytes(value, name)?;
-    T::from_value(&text).ok_or_else(|| {
-        Error::InvalidValue(Box::new(InvalidValue {
-            name,
-            value: text,
-            reason: ValueEnumError::new(T::VALUES).to_string(),
-        }))
+    T::from_value(&text).ok_or_else(|| Error::InvalidValue {
+        name,
+        value: text,
+        reason: ValueEnumError::new(T::VALUES).to_string(),
     })
 }
 
@@ -116,11 +110,11 @@ where
     for value in values {
         let text = text_bytes(value, name)?;
         let Some(value) = T::from_value(&text) else {
-            return Err(Error::InvalidValue(Box::new(InvalidValue {
+            return Err(Error::InvalidValue {
                 name,
                 value: text,
                 reason: ValueEnumError::new(T::VALUES).to_string(),
-            })));
+            });
         };
         parsed.push(value);
     }

@@ -12,18 +12,6 @@ use std::{
     process,
 };
 
-/// Details for a value that the destination Rust type rejected.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
-pub struct InvalidValue {
-    /// Canonical user-facing argument label.
-    pub name: &'static str,
-    /// Text supplied on argv.
-    pub value: String,
-    /// Conversion failure reported by the target type.
-    pub reason: String,
-}
-
 /// A control-flow or failure result while parsing command-line arguments.
 ///
 /// Help, version, and schema discovery are represented explicitly rather than printed by the
@@ -124,12 +112,18 @@ pub enum Error {
     },
     /// A UTF-8 value could not be converted to the field's Rust type.
     #[error(
-        "invalid value `{}` for `{}`: {}",
-        display_bytes(.0.value.as_bytes()),
-        .0.name,
-        display_bytes(.0.reason.as_bytes())
+        "invalid value `{}` for `{name}`: {}",
+        display_bytes(.value.as_bytes()),
+        display_bytes(.reason.as_bytes())
     )]
-    InvalidValue(Box<InvalidValue>),
+    InvalidValue {
+        /// Canonical user-facing argument label.
+        name: &'static str,
+        /// Text supplied on argv.
+        value: String,
+        /// Conversion failure reported by the target type.
+        reason: String,
+    },
     /// Encoded argument bytes could not be reconstructed as an operating-system string.
     #[error(
         "value `{}` for `{name}` cannot be reconstructed as an operating-system string",
@@ -353,11 +347,11 @@ Usage: tool [OPTIONS]
             r"value `bad\nvalue` for `input` is not valid UTF-8",
         );
         assert_eq!(
-            Error::InvalidValue(Box::new(InvalidValue {
+            Error::InvalidValue {
                 name: "--port",
                 value: String::from("bad\nvalue"),
                 reason: String::from("invalid\nnumber"),
-            }))
+            }
             .to_string(),
             r"invalid value `bad\nvalue` for `--port`: invalid\nnumber",
         );
