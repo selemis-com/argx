@@ -121,17 +121,6 @@ pub enum Error {
         /// Conversion failure reported by the target type.
         reason: String,
     },
-    /// Encoded argument bytes could not be reconstructed as an operating-system string.
-    #[error(
-        "value `{}` for `{name}` cannot be reconstructed as an operating-system string",
-        display_bytes(.value)
-    )]
-    InvalidOsValue {
-        /// Canonical user-facing argument label.
-        name: &'static str,
-        /// Encoded value supplied by the caller.
-        value: Vec<u8>,
-    },
 }
 
 impl Error {
@@ -351,10 +340,6 @@ Usage: tool [OPTIONS]
             }
             .to_string(),
             r"invalid value `bad\nvalue` for `--port`: invalid\nnumber",
-        );
-        assert_eq!(
-            Error::InvalidOsValue { name: "path", value: b"bad\npath".to_vec() }.to_string(),
-            r"value `bad\npath` for `path` cannot be reconstructed as an operating-system string",
         );
     }
 }

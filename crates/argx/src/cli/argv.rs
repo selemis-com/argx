@@ -376,18 +376,11 @@ impl<'t, 'a, 'v> ArgvParser<'t, 'a, 'v> {
     }
 }
 
-/// Views an operating-system argument as native bytes on supported Unix targets.
-#[cfg(unix)]
+/// Views an operating-system argument as native bytes.
 fn bytes(value: &OsStr) -> &[u8] {
     use std::os::unix::ffi::OsStrExt as _;
 
     value.as_bytes()
-}
-
-/// Keeps unsupported non-Unix targets buildable without claiming native-string round trips.
-#[cfg(not(unix))]
-fn bytes(value: &OsStr) -> &[u8] {
-    value.as_encoded_bytes()
 }
 
 /// Reports whether a token is syntactically flag-like.

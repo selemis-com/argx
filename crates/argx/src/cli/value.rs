@@ -154,20 +154,9 @@ fn text_bytes(value: Vec<u8>, name: &'static str) -> Result<String, Error> {
     String::from_utf8(value).map_err(|bad| Error::InvalidUtf8 { name, value: bad.into_bytes() })
 }
 
-/// Reconstructs an operating-system string from bytes emitted by the raw argv parser.
-fn os_string(value: Vec<u8>, name: &'static str) -> Result<OsString, Error> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::ffi::OsStringExt as _;
-        let _ = name;
-        Ok(OsString::from_vec(value))
-    }
+/// Reconstructs an operating-system string from raw argv bytes.
+fn os_string(value: Vec<u8>) -> OsString {
+    use std::os::unix::ffi::OsStringExt as _;
 
-    #[cfg(not(unix))]
-    {
-        match String::from_utf8(value) {
-            Ok(text) => Ok(OsString::from(text)),
-            Err(bad) => Err(Error::InvalidOsValue { name, value: bad.into_bytes() }),
-        }
-    }
+    OsString::from_vec(value)
 }
