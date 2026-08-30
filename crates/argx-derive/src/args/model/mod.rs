@@ -303,15 +303,17 @@ impl GenericUse<'_> {
         syn::visit::Visit::visit_type(&mut visitor, ty);
         visitor.found
     }
+
+    /// Reports whether an identifier names a containing type or const parameter.
+    fn identifies(&self, ident: &syn::Ident) -> bool {
+        self.params.iter().any(|param| matches!(param, GenericName::Ident(name) if name == ident))
+    }
 }
 
 impl<'ast> syn::visit::Visit<'ast> for GenericUse<'_> {
     fn visit_type_path(&mut self, path: &'ast syn::TypePath) {
         if let Some(first) = path.path.segments.first()
-            && self
-                .params
-                .iter()
-                .any(|param| matches!(param, GenericName::Ident(name) if name == &first.ident))
+            && self.identifies(&first.ident)
         {
             self.found = true;
             return;
@@ -321,10 +323,7 @@ impl<'ast> syn::visit::Visit<'ast> for GenericUse<'_> {
 
     fn visit_expr_path(&mut self, path: &'ast syn::ExprPath) {
         if let Some(first) = path.path.segments.first()
-            && self
-                .params
-                .iter()
-                .any(|param| matches!(param, GenericName::Ident(name) if name == &first.ident))
+            && self.identifies(&first.ident)
         {
             self.found = true;
             return;

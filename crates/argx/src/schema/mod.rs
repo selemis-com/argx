@@ -180,7 +180,7 @@ fn concise_command_schema(path: &[&Command<'_>]) -> Value {
 }
 
 /// Returns the first non-empty paragraph from command documentation.
-fn doc_summary(documentation: &str) -> Option<&str> {
+pub(super) fn doc_summary(documentation: &str) -> Option<&str> {
     documentation.split("\n\n").map(str::trim).find(|paragraph| !paragraph.is_empty())
 }
 

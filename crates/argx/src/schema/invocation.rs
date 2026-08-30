@@ -9,6 +9,7 @@
 
 use serde_json::{Map, Value};
 
+use super::doc_summary;
 use crate::cli::command::{
     Command, ConstraintKind, Flag, Key, Named, long as resolve_long, short as resolve_short,
 };
@@ -51,7 +52,7 @@ pub(crate) fn invocation_schema_for_path(path: &[&Command<'_>]) -> schemars::Sch
     let mut root = Map::new();
     root.insert("$schema".to_owned(), Value::String(DRAFT_2020_12.to_owned()));
     root.insert("title".to_owned(), Value::String(command.name.to_owned()));
-    if let Some(description) = command.description.or(command.about).and_then(summary) {
+    if let Some(description) = command.description.or(command.about).and_then(doc_summary) {
         root.insert("description".to_owned(), Value::String(description.to_owned()));
     }
     root.insert("type".to_owned(), Value::String("object".to_owned()));
@@ -154,15 +155,11 @@ fn repeated_schema(item: Value) -> Value {
 
 /// Attaches generated CLI help to one property schema when documentation is available.
 fn set_description(schema: &mut Value, description: Option<&str>) {
-    let (Value::Object(schema), Some(description)) = (schema, description.and_then(summary)) else {
+    let (Value::Object(schema), Some(description)) = (schema, description.and_then(doc_summary))
+    else {
         return;
     };
     schema.insert("description".to_owned(), Value::String(description.to_owned()));
-}
-
-/// Returns the first non-empty documentation paragraph for machine-readable discovery.
-fn summary(documentation: &str) -> Option<&str> {
-    documentation.split("\n\n").map(str::trim).find(|paragraph| !paragraph.is_empty())
 }
 
 /// Projects normalized Argx relationships into native JSON Schema object constraints.
