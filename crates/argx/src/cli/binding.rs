@@ -98,17 +98,25 @@ fn parse_refs_inner<T: CommandArgs>(
     }
 
     if let Err(error) = T::check(&mut partial) {
-        if matches!(error, Error::MissingSubcommand { .. }) {
-            let command_path = parser.command_path().collect::<Vec<_>>();
-            return Err(Error::DisplayHelp {
+        let command_path = parser.command_path().collect::<Vec<_>>();
+        return match error {
+            Error::MissingSubcommand { .. } => Err(Error::DisplayHelp {
                 help: help::render_with_schema(
                     &command_path,
                     registry.is_some(),
                     help::HelpStyle::Short,
                 ),
-            });
-        }
-        return Err(error);
+            }),
+            Error::MissingRequired { name } => {
+                let argument = help::missing_required_label(&command_path, name)
+                    .unwrap_or_else(|| name.to_owned());
+                Err(Error::MissingRequiredArguments {
+                    argument,
+                    usage: help::render_required_usage(&command_path),
+                })
+            }
+            error => Err(error),
+        };
     }
     T::finish(partial)
 }

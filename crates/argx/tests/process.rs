@@ -202,6 +202,21 @@ Options:
     }
 
     #[test]
+    fn missing_required_arguments_render_cli_spelling_and_usage() {
+        support::example_command("commands").arg("add").assert().failure().stdout_eq("").stderr_eq(
+            snapbox::str![[r#"
+error: the following required arguments were not provided:
+  <VALUE>
+
+Usage: cli add <VALUE>
+
+For more information, try '--help'.
+
+"#]],
+        );
+    }
+
+    #[test]
     fn version_actions_use_stdout_and_success_status() {
         support::example_command("commands")
             .arg("-V")

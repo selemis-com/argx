@@ -839,11 +839,17 @@ mod tests {
     fn missing_required_values_are_reported_during_finalization() {
         assert_eq!(
             Cli::try_parse_from(["argx-test"]),
-            Err(Error::MissingRequired { name: "input" })
+            Err(Error::MissingRequiredArguments {
+                argument: String::from("<INPUT>"),
+                usage: String::from("cli <INPUT> [REST]..."),
+            })
         );
         assert_eq!(
             RequiredFlag::try_parse_from(["argx-test"]),
-            Err(Error::MissingRequired { name: "--destination" })
+            Err(Error::MissingRequiredArguments {
+                argument: String::from("--destination <OUTPUT>"),
+                usage: String::from("required-flag --destination <OUTPUT>"),
+            })
         );
     }
 
@@ -1110,7 +1116,10 @@ mod tests {
         );
         assert_eq!(
             FlattenPrecedence::try_parse_from(["argx-test"]),
-            Err(Error::MissingRequired { name: "--required" })
+            Err(Error::MissingRequiredArguments {
+                argument: String::from("--required <REQUIRED>"),
+                usage: String::from("flatten-precedence --required <REQUIRED>"),
+            })
         );
     }
 

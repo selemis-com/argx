@@ -71,11 +71,19 @@ pub enum Error {
         /// Canonical field name.
         name: &'static str,
     },
-    /// A required field was not supplied.
+    /// A required field was not supplied during generated binding.
     #[error("required argument `{name}` was not provided")]
     MissingRequired {
         /// Canonical user-facing argument label.
         name: &'static str,
+    },
+    /// One or more required arguments were missing from a parsed command invocation.
+    #[error("the following required arguments were not provided:\n  {argument}\n\nUsage: {usage}")]
+    MissingRequiredArguments {
+        /// Canonical CLI rendering of the missing argument.
+        argument: String,
+        /// Usage for the selected command scope.
+        usage: String,
     },
     /// A scalar argument was supplied more than once.
     #[error("argument `{name}` cannot be used more than once")]
@@ -177,6 +185,13 @@ impl Error {
             | Self::DisplaySchema { schema: text } => ExitOutput {
                 stream: ExitStream::Stdout,
                 text: Cow::Borrowed(text.as_str()),
+                code: self.exit_code(),
+            },
+            Self::MissingRequiredArguments { argument, usage } => ExitOutput {
+                stream: ExitStream::Stderr,
+                text: Cow::Owned(format!(
+                    "error: the following required arguments were not provided:\n  {argument}\n\nUsage: {usage}\n\nFor more information, try '--help'.\n"
+                )),
                 code: self.exit_code(),
             },
             _ => ExitOutput {
@@ -307,6 +322,14 @@ Usage: tool [OPTIONS]
         assert_eq!(
             Error::MissingRequired { name: "--output" }.to_string(),
             "required argument `--output` was not provided",
+        );
+        assert_eq!(
+            Error::MissingRequiredArguments {
+                argument: String::from("--output <OUTPUT>"),
+                usage: String::from("tool [OPTIONS] --output <OUTPUT>"),
+            }
+            .to_string(),
+            "the following required arguments were not provided:\n  --output <OUTPUT>\n\nUsage: tool [OPTIONS] --output <OUTPUT>",
         );
         assert_eq!(
             Error::DuplicateArgument { name: "--verbose" }.to_string(),

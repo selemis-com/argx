@@ -75,31 +75,8 @@ pub(crate) fn render_with_schema(
         output.push_str("\n\n");
     }
 
-    output.push_str("Usage:");
-    for (index, command) in path.iter().enumerate() {
-        output.push(' ');
-        output.push_str(&display_bytes(command.name.as_bytes()));
-        if index + 1 == path.len() {
-            output.push_str(" [OPTIONS]");
-        }
-        for flag in command.flags.iter().filter(|flag| flag.required) {
-            output.push(' ');
-            output.push_str(&required_flag_usage(flag));
-        }
-        if index + 1 != path.len() {
-            for arg in command.args.iter().filter(|arg| arg.required) {
-                output.push(' ');
-                output.push_str(&arg_usage(arg));
-            }
-        }
-    }
-    for arg in command.args {
-        output.push(' ');
-        output.push_str(&arg_usage(arg));
-    }
-    if !command.subcommands.is_empty() {
-        output.push_str(" <COMMAND>");
-    }
+    output.push_str("Usage: ");
+    output.push_str(&render_usage(path));
     output.push('\n');
 
     let ungrouped_args = command
@@ -563,6 +540,65 @@ fn spellings_label(shorts: &[u8], longs: &[&str], value_name: Option<&str>) -> S
         label.push('>');
     }
     label
+}
+
+/// Renders the selected command path as a help usage expression without the `Usage:` prefix.
+pub(crate) fn render_usage(path: &[&Command<'_>]) -> String {
+    render_usage_inner(path, true)
+}
+
+/// Renders the corrective usage shown for missing required arguments.
+pub(crate) fn render_required_usage(path: &[&Command<'_>]) -> String {
+    render_usage_inner(path, false)
+}
+
+/// Renders one usage expression, optionally advertising the generic optional-argument bucket.
+fn render_usage_inner(path: &[&Command<'_>], include_options: bool) -> String {
+    let Some(&command) = path.last() else {
+        return String::new();
+    };
+
+    let mut usage = String::new();
+    for (index, command) in path.iter().enumerate() {
+        if !usage.is_empty() {
+            usage.push(' ');
+        }
+        usage.push_str(&display_bytes(command.name.as_bytes()));
+        if include_options && index + 1 == path.len() {
+            usage.push_str(" [OPTIONS]");
+        }
+        for flag in command.flags.iter().filter(|flag| flag.required) {
+            usage.push(' ');
+            usage.push_str(&required_flag_usage(flag));
+        }
+        if index + 1 != path.len() {
+            for arg in command.args.iter().filter(|arg| arg.required) {
+                usage.push(' ');
+                usage.push_str(&arg_usage(arg));
+            }
+        }
+    }
+    for arg in command.args {
+        usage.push(' ');
+        usage.push_str(&arg_usage(arg));
+    }
+    if !command.subcommands.is_empty() {
+        usage.push_str(" <COMMAND>");
+    }
+    usage
+}
+
+/// Resolves one generated missing-required label to the spelling shown in help and usage.
+pub(crate) fn missing_required_label(path: &[&Command<'_>], diagnostic: &str) -> Option<String> {
+    for command in path.iter().rev() {
+        if let Some(flag) = command.flags.iter().find(|flag| flag.diagnostic == diagnostic) {
+            return Some(required_flag_usage(flag));
+        }
+        if let Some(arg) = command.args.iter().find(|arg| arg.name == diagnostic) {
+            return Some(arg_usage(arg));
+        }
+    }
+    None
 }
 
 /// Renders the canonical spelling of a required named flag for the usage line.
