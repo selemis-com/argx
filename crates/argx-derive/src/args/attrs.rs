@@ -393,6 +393,7 @@ fn doc_lines(attributes: &[Attribute]) -> Vec<String> {
             let line = value.value();
             Some(line.strip_prefix(' ').unwrap_or(&line).trim_end().to_owned())
         })
+        .filter(|line| line != "~~~text" && line != "~~~")
         .collect()
 }
 
