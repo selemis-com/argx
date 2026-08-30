@@ -362,7 +362,7 @@ pub(crate) fn doc_heading(attributes: &[Attribute]) -> Option<String> {
 pub(crate) fn doc_help(attributes: &[Attribute]) -> DocHelp {
     let source_lines = doc_source_lines(attributes);
     let summary = first_paragraph(trim_blank_lines(&source_lines));
-    let lines = source_lines.into_iter().filter(|line| !is_text_fence(line)).collect::<Vec<_>>();
+    let lines = strip_ignore_fences(source_lines);
     let first_heading =
         lines.iter().position(|line| level_one_heading(line).is_some()).unwrap_or(lines.len());
     let preamble = trim_blank_lines(&lines[..first_heading]);
@@ -425,15 +425,39 @@ fn trim_blank_lines(lines: &[String]) -> &[String] {
 fn first_paragraph(lines: &[String]) -> Option<String> {
     let paragraph = lines
         .iter()
-        .take_while(|line| !line.trim().is_empty() && !is_text_fence(line))
+        .take_while(|line| !line.trim().is_empty() && ignore_fence(line).is_none())
         .collect::<Vec<_>>();
     (!paragraph.is_empty())
         .then(|| paragraph.into_iter().map(|line| line.trim()).collect::<Vec<_>>().join(" "))
 }
 
-/// Returns whether a source doc line starts or ends a text fence stripped from rendered help.
-fn is_text_fence(line: &str) -> bool {
-    matches!(line.trim(), "~~~text" | "~~~")
+/// Removes explicit `ignore` fences while retaining their contents as rendered help text.
+fn strip_ignore_fences(lines: Vec<String>) -> Vec<String> {
+    let mut fence = None;
+    lines
+        .into_iter()
+        .filter(|line| {
+            if let Some(active) = fence {
+                if line.trim() == active {
+                    fence = None;
+                    return false;
+                }
+            } else if let Some(opening) = ignore_fence(line) {
+                fence = Some(opening);
+                return false;
+            }
+            true
+        })
+        .collect()
+}
+
+/// Returns the closing delimiter for an explicit ignored Markdown fence.
+fn ignore_fence(line: &str) -> Option<&'static str> {
+    match line.trim() {
+        "```ignore" => Some("```"),
+        "~~~ignore" => Some("~~~"),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
@@ -478,10 +502,10 @@ mod tests {
     }
 
     #[test]
-    fn doc_summary_stops_before_a_stripped_text_fence() {
+    fn doc_summary_stops_before_a_stripped_ignore_fence() {
         let input: DeriveInput = parse_quote! {
             /// CLI server to host Kival.
-            /// ~~~text
+            /// ~~~ignore
             ///     __ __ __
             ///    / //_//_/
             /// ~~~
@@ -493,6 +517,47 @@ mod tests {
         assert_eq!(
             help.description.as_deref(),
             Some("CLI server to host Kival.\n    __ __ __\n   / //_//_/")
+        );
+    }
+
+    #[test]
+    fn doc_help_strips_backtick_ignore_fences() {
+        let input: DeriveInput = parse_quote! {
+            /// CLI server to host Kival.
+            /// ```ignore
+            ///     __ __ __
+            ///    / //_//_/
+            /// ```
+            struct Example;
+        };
+
+        let help = doc_help(&input.attrs);
+        assert_eq!(help.summary.as_deref(), Some("CLI server to host Kival."));
+        assert_eq!(
+            help.description.as_deref(),
+            Some("CLI server to host Kival.\n    __ __ __\n   / //_//_/")
+        );
+    }
+
+    #[test]
+    fn doc_help_preserves_non_ignore_fences() {
+        let input: DeriveInput = parse_quote! {
+            /// Short summary.
+            ///
+            /// ```text
+            /// tool run
+            /// ```
+            ///
+            /// ~~~rust
+            /// let value = 1;
+            /// ~~~
+            struct Example;
+        };
+
+        let help = doc_help(&input.attrs);
+        assert_eq!(
+            help.description.as_deref(),
+            Some("Short summary.\n\n```text\ntool run\n```\n\n~~~rust\nlet value = 1;\n~~~")
         );
     }
 
