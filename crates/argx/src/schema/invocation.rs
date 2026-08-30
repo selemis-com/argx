@@ -1,13 +1,15 @@
 //! JSON Schema projection for Argx invocation values.
 //!
 //! Invocation schemas describe explicit values a caller can provide to one command context. They
-//! intentionally model the public CLI rather than destination Rust field types: named properties
-//! use canonical option spellings, argv values are strings unless Argx knows a finite `ValueEnum`
-//! vocabulary, and switches are represented by presence with the value `true`. Environment
+//! intentionally model the public CLI rather than destination Rust values: named properties use
+//! canonical option spellings, argv values are strings with finite vocabularies and recognized
+//! semantic formats projected where available, and switches are represented by presence with the
+//! value `true`. Environment
 //! fallbacks and typed defaults remain outside the explicit invocation value object.
 
 use serde_json::{Map, Value};
 
+use super::doc_summary;
 use crate::cli::command::{
     Command, ConstraintKind, Flag, Key, Named, long as resolve_long, short as resolve_short,
 };
@@ -25,7 +27,7 @@ pub(crate) fn invocation_schema_for_path(path: &[&Command<'_>]) -> schemars::Sch
 
     for (flag, name) in visible_flags(path) {
         let item = if flag.takes_value {
-            lexical_value_schema(flag.accepted_values)
+            lexical_value_schema(flag.accepted_values, flag.value_schema.format())
         } else {
             true_switch_schema()
         };
@@ -38,7 +40,7 @@ pub(crate) fn invocation_schema_for_path(path: &[&Command<'_>]) -> schemars::Sch
     }
 
     for arg in command.args {
-        let item = lexical_value_schema(arg.accepted_values);
+        let item = lexical_value_schema(arg.accepted_values, arg.value_schema.format());
         let mut schema = if arg.variadic { repeated_schema(item) } else { item };
         set_description(&mut schema, arg.help);
         properties.insert(arg.name.to_owned(), schema);
@@ -50,7 +52,7 @@ pub(crate) fn invocation_schema_for_path(path: &[&Command<'_>]) -> schemars::Sch
     let mut root = Map::new();
     root.insert("$schema".to_owned(), Value::String(DRAFT_2020_12.to_owned()));
     root.insert("title".to_owned(), Value::String(command.name.to_owned()));
-    if let Some(description) = command.description.or(command.about).and_then(summary) {
+    if let Some(description) = command.description.or(command.about).and_then(doc_summary) {
         root.insert("description".to_owned(), Value::String(description.to_owned()));
     }
     root.insert("type".to_owned(), Value::String("object".to_owned()));
@@ -118,9 +120,12 @@ fn visible_ancestor_spelling(
 }
 
 /// Builds the schema for one argv value, optionally constrained to a finite vocabulary.
-fn lexical_value_schema(accepted_values: &[&str]) -> Value {
+fn lexical_value_schema(accepted_values: &[&str], format: Option<&str>) -> Value {
     let mut schema = Map::new();
     schema.insert("type".to_owned(), Value::String("string".to_owned()));
+    if let Some(format) = format {
+        schema.insert("format".to_owned(), Value::String(format.to_owned()));
+    }
     if !accepted_values.is_empty() {
         schema.insert(
             "enum".to_owned(),
@@ -150,15 +155,11 @@ fn repeated_schema(item: Value) -> Value {
 
 /// Attaches generated CLI help to one property schema when documentation is available.
 fn set_description(schema: &mut Value, description: Option<&str>) {
-    let (Value::Object(schema), Some(description)) = (schema, description.and_then(summary)) else {
+    let (Value::Object(schema), Some(description)) = (schema, description.and_then(doc_summary))
+    else {
         return;
     };
     schema.insert("description".to_owned(), Value::String(description.to_owned()));
-}
-
-/// Returns the first non-empty documentation paragraph for machine-readable discovery.
-fn summary(documentation: &str) -> Option<&str> {
-    documentation.split("\n\n").map(str::trim).find(|paragraph| !paragraph.is_empty())
 }
 
 /// Projects normalized Argx relationships into native JSON Schema object constraints.
@@ -369,5 +370,100 @@ mod tests {
         assert_eq!(schema["properties"]["-v"]["const"], true);
         assert_eq!(schema["properties"]["--profile"]["type"], "string");
         assert_eq!(schema["properties"]["--region"]["type"], "string");
+    }
+    #[cfg(feature = "chrono")]
+    #[test]
+    fn chrono_datetime_values_expose_the_date_time_format() {
+        let at = Flag {
+            key: 29,
+            name: "at",
+            diagnostic: "--at",
+            longs: &["at"],
+            value_schema: crate::cli::command::ValueSchema::DateTime,
+            ..Flag::VALUE
+        };
+        let flags = [&at];
+        let command = Command { name: "show", flags: &flags, ..Command::EMPTY };
+
+        let schema = serde_json::to_value(invocation_schema_for_path(&[&command]))
+            .expect("schema should serialize");
+
+        assert_eq!(schema["properties"]["--at"]["format"], "date-time");
+    }
+
+    #[cfg(feature = "chrono")]
+    #[test]
+    fn chrono_date_values_expose_only_standard_formats() {
+        let date = Flag {
+            key: 30,
+            name: "date",
+            diagnostic: "--date",
+            longs: &["date"],
+            value_schema: crate::cli::command::ValueSchema::Date,
+            ..Flag::VALUE
+        };
+        let local_time = Flag {
+            key: 31,
+            name: "local-time",
+            diagnostic: "--local-time",
+            longs: &["local-time"],
+            value_schema: crate::cli::command::ValueSchema::Lexical,
+            ..Flag::VALUE
+        };
+        let local_datetime = Flag {
+            key: 32,
+            name: "local-datetime",
+            diagnostic: "--local-datetime",
+            longs: &["local-datetime"],
+            value_schema: crate::cli::command::ValueSchema::Lexical,
+            ..Flag::VALUE
+        };
+        let flags = [&date, &local_time, &local_datetime];
+        let command = Command { name: "show", flags: &flags, ..Command::EMPTY };
+
+        let schema = serde_json::to_value(invocation_schema_for_path(&[&command]))
+            .expect("schema should serialize");
+
+        assert_eq!(schema["properties"]["--date"]["format"], "date");
+        assert!(schema["properties"]["--local-time"].get("format").is_none());
+        assert!(schema["properties"]["--local-datetime"].get("format").is_none());
+    }
+
+    #[cfg(feature = "uuid")]
+    #[test]
+    fn uuid_values_expose_the_uuid_format() {
+        let id = Arg {
+            key: 30,
+            name: "id",
+            value_schema: crate::cli::command::ValueSchema::Uuid,
+            ..Arg::REQUIRED
+        };
+        let args = [&id];
+        let command = Command { name: "show", args: &args, ..Command::EMPTY };
+
+        let schema = serde_json::to_value(invocation_schema_for_path(&[&command]))
+            .expect("schema should serialize");
+
+        assert_eq!(schema["properties"]["id"]["format"], "uuid");
+    }
+
+    #[cfg(feature = "url")]
+    #[test]
+    fn url_values_expose_the_uri_format() {
+        let endpoint = Flag {
+            key: 31,
+            name: "endpoint",
+            diagnostic: "--endpoint",
+            longs: &["endpoint"],
+            value_schema: crate::cli::command::ValueSchema::Url,
+            ..Flag::VALUE
+        };
+        let flags = [&endpoint];
+        let command = Command { name: "call", flags: &flags, ..Command::EMPTY };
+
+        let schema = serde_json::to_value(invocation_schema_for_path(&[&command]))
+            .expect("schema should serialize");
+
+        assert_eq!(schema["properties"]["--endpoint"]["format"], "uri");
     }
 }

@@ -164,6 +164,35 @@ impl Command<'static> {
     };
 }
 
+/// Schema-relevant semantic type of one CLI value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ValueSchema {
+    /// Ordinary lexical string value.
+    Lexical,
+    /// Chrono date value recognized when the `chrono` integration is enabled.
+    Date,
+    /// Chrono date-time value recognized when the `chrono` integration is enabled.
+    DateTime,
+    /// UUID value recognized when the `uuid` integration is enabled.
+    Uuid,
+    /// URL value recognized when the `url` integration is enabled.
+    Url,
+}
+
+impl ValueSchema {
+    /// Returns the JSON Schema string format exposed by the enabled integration.
+    #[must_use]
+    pub(crate) const fn format(self) -> Option<&'static str> {
+        match self {
+            Self::Date if cfg!(feature = "chrono") => Some("date"),
+            Self::DateTime if cfg!(feature = "chrono") => Some("date-time"),
+            Self::Uuid if cfg!(feature = "uuid") => Some("uuid"),
+            Self::Url if cfg!(feature = "url") => Some("uri"),
+            Self::Lexical | Self::Date | Self::DateTime | Self::Uuid | Self::Url => None,
+        }
+    }
+}
+
 /// Static semantics for one named argument.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Flag<'a> {
@@ -173,8 +202,10 @@ pub struct Flag<'a> {
     pub name: &'a str,
     /// Canonical user-facing spelling used by diagnostics.
     pub diagnostic: &'a str,
-    /// One-line description shown in generated help.
+    /// One-line description shown in compact generated help.
     pub help: Option<&'a str>,
+    /// Full description shown in long generated help.
+    pub long_help: Option<&'a str>,
     /// Canonical long spellings without the leading `--`.
     pub longs: &'a [&'a str],
     /// Hidden long aliases without the leading `--`.
@@ -187,12 +218,16 @@ pub struct Flag<'a> {
     pub takes_value: bool,
     /// Canonical finite values accepted by this option, when declared as a `ValueEnum`.
     pub accepted_values: &'a [&'a str],
+    /// Lazy schema metadata for the destination value type.
+    pub value_schema: ValueSchema,
     /// Whether this named argument may occur more than once.
     pub repeatable: bool,
     /// Whether this flag must occur at least once.
     pub required: bool,
     /// Whether absence is satisfied by a typed Rust default expression.
     pub has_default: bool,
+    /// Static user-facing spelling of the declared default, when it can be derived safely.
+    pub default_value: Option<&'a str>,
     /// Whether a detached value may itself be flag-like.
     pub allow_hyphen_values: bool,
     /// Whether a detached negative number may be consumed while other flag-like values are
@@ -207,15 +242,18 @@ impl Flag<'static> {
         name: "",
         diagnostic: "",
         help: None,
+        long_help: None,
         longs: &[],
         aliases: &[],
         shorts: &[],
         global: false,
         takes_value: false,
         accepted_values: &[],
+        value_schema: ValueSchema::Lexical,
         repeatable: false,
         required: false,
         has_default: false,
+        default_value: None,
         allow_hyphen_values: false,
         allow_negative_numbers: false,
     };
@@ -231,14 +269,18 @@ pub struct Arg<'a> {
     pub key: Key,
     /// Canonical field name used by generated binding and help.
     pub name: &'a str,
-    /// One-line description shown in generated help.
+    /// One-line description shown in compact generated help.
     pub help: Option<&'a str>,
+    /// Full description shown in long generated help.
+    pub long_help: Option<&'a str>,
     /// Whether this positional must receive at least one value.
     pub required: bool,
     /// Whether this positional may receive multiple values.
     pub variadic: bool,
     /// Canonical finite values accepted by this positional, when declared as a `ValueEnum`.
     pub accepted_values: &'a [&'a str],
+    /// Lazy schema metadata for the destination value type.
+    pub value_schema: ValueSchema,
     /// Whether a negative number may bind here while flag parsing remains enabled.
     pub allow_negative_numbers: bool,
 }
@@ -249,9 +291,11 @@ impl Arg<'static> {
         key: 0,
         name: "",
         help: None,
+        long_help: None,
         required: true,
         variadic: false,
         accepted_values: &[],
+        value_schema: ValueSchema::Lexical,
         allow_negative_numbers: false,
     };
 }

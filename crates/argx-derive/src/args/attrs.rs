@@ -87,6 +87,8 @@ pub(crate) struct FieldAttrs {
     pub value_enum: bool,
     /// Explicit one-line argument description.
     pub help: Option<String>,
+    /// Internal static default spelling forwarded by the Config derive.
+    pub help_default: Option<String>,
 }
 
 /// Parses every `#[argx(...)]` attribute on a command declaration.
@@ -252,6 +254,12 @@ pub(crate) fn field(attributes: &[Attribute]) -> syn::Result<FieldAttrs> {
                 }
                 parsed.allow_negative_numbers = true;
                 Ok(())
+            } else if meta.path.is_ident("__help_default") {
+                if parsed.help_default.is_some() {
+                    return Err(meta.error("duplicate internal help default"));
+                }
+                parsed.help_default = Some(meta.value()?.parse::<LitStr>()?.value());
+                Ok(())
             } else if meta.path.is_ident("value_enum") {
                 if parsed.value_enum {
                     return Err(meta.error("duplicate `value_enum` attribute"));
@@ -341,20 +349,24 @@ pub(crate) fn reject(attributes: &[Attribute], context: &str) -> syn::Result<()>
     Ok(())
 }
 
-/// Returns the first paragraph of Rust doc comments as a one-line help summary.
-pub(crate) fn doc_summary(attributes: &[Attribute]) -> Option<String> {
-    let lines = doc_lines(attributes);
-    first_paragraph(trim_blank_lines(&lines))
+/// Returns a leading level-one Markdown heading from Rust doc comments.
+///
+/// Flattened argument groups are explicit: ordinary field prose remains documentation, while a
+/// leading `# Heading` opts the flattened field into a named terminal help section.
+pub(crate) fn doc_heading(attributes: &[Attribute]) -> Option<String> {
+    let lines = doc_source_lines(attributes);
+    trim_blank_lines(&lines).first().and_then(|line| level_one_heading(line)).map(str::to_owned)
 }
 
 /// Parses command-level Rust docs into prose plus user-authored level-one help sections.
 pub(crate) fn doc_help(attributes: &[Attribute]) -> DocHelp {
-    let lines = doc_lines(attributes);
+    let source_lines = doc_source_lines(attributes);
+    let summary = first_paragraph(trim_blank_lines(&source_lines));
+    let lines = strip_ignore_fences(source_lines);
     let first_heading =
         lines.iter().position(|line| level_one_heading(line).is_some()).unwrap_or(lines.len());
     let preamble = trim_blank_lines(&lines[..first_heading]);
     let description = (!preamble.is_empty()).then(|| preamble.join("\n"));
-    let summary = first_paragraph(preamble);
 
     let mut sections = Vec::new();
     let mut index = first_heading;
@@ -375,8 +387,8 @@ pub(crate) fn doc_help(attributes: &[Attribute]) -> DocHelp {
     DocHelp { summary, description, sections }
 }
 
-/// Extracts normalized source lines from `#[doc = ...]` attributes.
-fn doc_lines(attributes: &[Attribute]) -> Vec<String> {
+/// Extracts normalized source lines while retaining fences needed to delimit short prose help.
+fn doc_source_lines(attributes: &[Attribute]) -> Vec<String> {
     attributes
         .iter()
         .filter(|attribute| attribute.path().is_ident("doc"))
@@ -411,9 +423,41 @@ fn trim_blank_lines(lines: &[String]) -> &[String] {
 
 /// Collapses the first prose paragraph to one line for short command descriptions.
 fn first_paragraph(lines: &[String]) -> Option<String> {
-    let paragraph = lines.iter().take_while(|line| !line.trim().is_empty()).collect::<Vec<_>>();
+    let paragraph = lines
+        .iter()
+        .take_while(|line| !line.trim().is_empty() && ignore_fence(line).is_none())
+        .collect::<Vec<_>>();
     (!paragraph.is_empty())
         .then(|| paragraph.into_iter().map(|line| line.trim()).collect::<Vec<_>>().join(" "))
+}
+
+/// Removes explicit `ignore` fences while retaining their contents as rendered help text.
+fn strip_ignore_fences(lines: Vec<String>) -> Vec<String> {
+    let mut fence = None;
+    lines
+        .into_iter()
+        .filter(|line| {
+            if let Some(active) = fence {
+                if line.trim() == active {
+                    fence = None;
+                    return false;
+                }
+            } else if let Some(opening) = ignore_fence(line) {
+                fence = Some(opening);
+                return false;
+            }
+            true
+        })
+        .collect()
+}
+
+/// Returns the closing delimiter for an explicit ignored Markdown fence.
+fn ignore_fence(line: &str) -> Option<&'static str> {
+    match line.trim() {
+        "```ignore" => Some("```"),
+        "~~~ignore" => Some("~~~"),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
@@ -431,7 +475,90 @@ mod tests {
             /// Detailed text is not part of short help.
             struct Example;
         };
-        assert_eq!(doc_summary(&input.attrs).as_deref(), Some("First line. Second line."));
+        assert_eq!(doc_help(&input.attrs).summary.as_deref(), Some("First line. Second line."));
+    }
+
+    #[test]
+    fn doc_heading_requires_a_leading_level_one_heading() {
+        let prose: DeriveInput = parse_quote! {
+            /// Object containing the comment.
+            struct Prose;
+        };
+        assert_eq!(doc_heading(&prose.attrs), None);
+
+        let heading: DeriveInput = parse_quote! {
+            /// # Object containing the comment
+            struct Heading;
+        };
+        assert_eq!(doc_heading(&heading.attrs).as_deref(), Some("Object containing the comment"));
+
+        let later_heading: DeriveInput = parse_quote! {
+            /// Ordinary field documentation.
+            ///
+            /// # Details
+            struct LaterHeading;
+        };
+        assert_eq!(doc_heading(&later_heading.attrs), None);
+    }
+
+    #[test]
+    fn doc_summary_stops_before_a_stripped_ignore_fence() {
+        let input: DeriveInput = parse_quote! {
+            /// CLI server to host Kival.
+            /// ~~~ignore
+            ///     __ __ __
+            ///    / //_//_/
+            /// ~~~
+            struct Example;
+        };
+
+        let help = doc_help(&input.attrs);
+        assert_eq!(help.summary.as_deref(), Some("CLI server to host Kival."));
+        assert_eq!(
+            help.description.as_deref(),
+            Some("CLI server to host Kival.\n    __ __ __\n   / //_//_/")
+        );
+    }
+
+    #[test]
+    fn doc_help_strips_backtick_ignore_fences() {
+        let input: DeriveInput = parse_quote! {
+            /// CLI server to host Kival.
+            /// ```ignore
+            ///     __ __ __
+            ///    / //_//_/
+            /// ```
+            struct Example;
+        };
+
+        let help = doc_help(&input.attrs);
+        assert_eq!(help.summary.as_deref(), Some("CLI server to host Kival."));
+        assert_eq!(
+            help.description.as_deref(),
+            Some("CLI server to host Kival.\n    __ __ __\n   / //_//_/")
+        );
+    }
+
+    #[test]
+    fn doc_help_preserves_non_ignore_fences() {
+        let input: DeriveInput = parse_quote! {
+            /// Short summary.
+            ///
+            /// ```text
+            /// tool run
+            /// ```
+            ///
+            /// ~~~rust
+            /// let value = 1;
+            /// ~~~
+            struct Example;
+        };
+
+        let help = doc_help(&input.attrs);
+        assert_eq!(
+            help.description.as_deref(),
+            Some("Short summary.\n\n```text\ntool run\n```\n\n~~~rust\nlet value = 1;\n~~~")
+        );
     }
 
     #[test]

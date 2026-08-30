@@ -23,6 +23,19 @@ use binding::{apply_arm, argument_state_branch, binding_generics, finish_field};
 use metadata::{command_tables, constraint_tables};
 use projection::partial_projection;
 
+/// Projects one normalized value type into runtime schema metadata.
+fn value_schema(field: &model::Field, facade: &TokenStream) -> TokenStream {
+    match field.binding.value.as_ref().map(|binding| binding.schema) {
+        Some(model::ValueSchema::Date) => quote!(#facade::__private::ValueSchema::Date),
+        Some(model::ValueSchema::DateTime) => quote!(#facade::__private::ValueSchema::DateTime),
+        Some(model::ValueSchema::Uuid) => quote!(#facade::__private::ValueSchema::Uuid),
+        Some(model::ValueSchema::Url) => quote!(#facade::__private::ValueSchema::Url),
+        Some(model::ValueSchema::Lexical) | None => {
+            quote!(#facade::__private::ValueSchema::Lexical)
+        }
+    }
+}
+
 /// Generates static parse metadata and typed binding for one command struct.
 pub(crate) fn command(command: &model::Command) -> TokenStream {
     let facade = support::facade_path();
@@ -82,6 +95,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
         let name = &field.binding.name;
         let diagnostic = &argument.diagnostic;
         let help = option_str(argument.help.as_deref());
+        let long_help = option_str(argument.long_help.as_deref());
         let global = argument.global;
         let takes_value = field.takes_value();
         let accepted_values = if argument.value_enum {
@@ -90,11 +104,13 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
         } else {
             quote!(&[])
         };
+        let value_schema = value_schema(field, &facade);
         let repeatable = field.is_repeatable();
         let required = argument.shape == model::Shape::Required
             && !argument.has_default
             && field.takes_value();
         let has_default = argument.has_default;
+        let default_value = option_str(argument.default_value.as_deref());
         let allow_hyphen_values = argument.allow_hyphen_values;
         let allow_negative_numbers = argument.allow_negative_numbers;
         quote! {
@@ -103,15 +119,18 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                 name: #name,
                 diagnostic: #diagnostic,
                 help: #help,
+                long_help: #long_help,
                 longs: &[#(#longs),*],
                 aliases: &[#(#aliases),*],
                 shorts: &[#(#shorts),*],
                 global: #global,
                 takes_value: #takes_value,
                 accepted_values: #accepted_values,
+                value_schema: #value_schema,
                 repeatable: #repeatable,
                 required: #required,
                 has_default: #has_default,
+                default_value: #default_value,
                 allow_hyphen_values: #allow_hyphen_values,
                 allow_negative_numbers: #allow_negative_numbers,
             };
@@ -126,6 +145,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
         };
         let name = &field.binding.name;
         let help = option_str(argument.help.as_deref());
+        let long_help = option_str(argument.long_help.as_deref());
         let required = matches!(argument.shape, model::Shape::Bool | model::Shape::Required);
         let variadic = argument.shape == model::Shape::Many;
         let accepted_values = if argument.value_enum {
@@ -134,6 +154,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
         } else {
             quote!(&[])
         };
+        let value_schema = value_schema(field, &facade);
         let allow_negative_numbers = argument.allow_negative_numbers;
         quote! {
             static #table: #facade::__private::Arg<'static> =
@@ -141,9 +162,11 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                     key: #key,
                     name: #name,
                     help: #help,
+                    long_help: #long_help,
                     required: #required,
                     variadic: #variadic,
                     accepted_values: #accepted_values,
+                    value_schema: #value_schema,
                     allow_negative_numbers: #allow_negative_numbers,
                 };
         }
@@ -327,7 +350,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                 Some(quote! {
                     if partial.#slot.1 {
                         return ::std::result::Result::Err(
-                            #facade::Error::DuplicateArgument { name: #name },
+                            #facade::Error::DuplicateArgument { name: #name, usage: None },
                         );
                     }
                 })

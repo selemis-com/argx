@@ -6,7 +6,7 @@
 
 use std::{
     borrow::Cow,
-    io::{self, Write as _},
+    io::{self, IsTerminal as _, Write as _},
     process,
 };
 
@@ -58,6 +58,8 @@ pub enum Error {
     UnexpectedArgument {
         /// Encoded token supplied by the caller.
         token: Vec<u8>,
+        /// Corrective usage for the selected command scope, when available.
+        usage: Option<String>,
     },
     /// A word did not match any child command when command selection was required.
     #[error("unknown command `{}`", display_bytes(.token))]
@@ -71,17 +73,27 @@ pub enum Error {
         /// Canonical field name.
         name: &'static str,
     },
-    /// A required field was not supplied.
+    /// A required field was not supplied during generated binding.
     #[error("required argument `{name}` was not provided")]
     MissingRequired {
         /// Canonical user-facing argument label.
         name: &'static str,
+    },
+    /// One or more required arguments were missing from a parsed command invocation.
+    #[error("the following required arguments were not provided:\n  {argument}\n\nUsage: {usage}")]
+    MissingRequiredArguments {
+        /// Canonical CLI rendering of the missing argument.
+        argument: String,
+        /// Usage for the selected command scope.
+        usage: String,
     },
     /// A scalar argument was supplied more than once.
     #[error("argument `{name}` cannot be used more than once")]
     DuplicateArgument {
         /// Canonical user-facing argument label.
         name: &'static str,
+        /// Corrective usage for the selected command scope, when available.
+        usage: Option<String>,
     },
     /// An argument required by another supplied argument was not available.
     #[error("argument `{name}` is required when `{required_by}` is used")]
@@ -181,11 +193,124 @@ impl Error {
             },
             _ => ExitOutput {
                 stream: ExitStream::Stderr,
-                text: Cow::Owned(format!("error: {self}\n\nFor more information, try '--help'.\n")),
+                text: Cow::Owned(render_diagnostic(self, diagnostic_styling_enabled())),
                 code: self.exit_code(),
             },
         }
     }
+}
+
+/// Whether interactive diagnostics should use minimal ANSI emphasis.
+fn diagnostic_styling_enabled() -> bool {
+    io::stderr().is_terminal() && std::env::var_os("NO_COLOR").is_none()
+}
+
+/// Renders one parser diagnostic using the terminal styling policy selected by the caller.
+fn render_diagnostic(error: &Error, styled: bool) -> String {
+    let error_label = emphasize("error:", styled, false);
+    let help = emphasize("--help", styled, false);
+
+    if let Error::MissingRequiredArguments { argument, usage } = error {
+        let usage_label = emphasize("Usage:", styled, true);
+        let usage = if styled { style_usage_command(usage) } else { usage.clone() };
+        return format!(
+            "{error_label} the following required arguments were not provided:\n  {argument}\n\n{usage_label} {usage}\n\nFor more information, try '{help}'.\n"
+        );
+    }
+
+    let message = if styled { styled_diagnostic_message(error) } else { error.to_string() };
+    if let Some(usage) = structural_usage(error) {
+        let usage_label = emphasize("Usage:", styled, true);
+        let usage = if styled { style_usage_command(usage) } else { usage.to_owned() };
+        return format!(
+            "{error_label} {message}\n\n{usage_label} {usage}\n\nFor more information, try '{help}'.\n"
+        );
+    }
+    format!("{error_label} {message}\n\nFor more information, try '{help}'.\n")
+}
+
+/// Returns corrective usage for diagnostics caused by command structure.
+fn structural_usage(error: &Error) -> Option<&str> {
+    match error {
+        Error::UnexpectedArgument { usage, .. } | Error::DuplicateArgument { usage, .. } => {
+            usage.as_deref()
+        }
+        _ => None,
+    }
+}
+
+/// Renders one diagnostic body, emphasizing only user-facing CLI tokens.
+fn styled_diagnostic_message(error: &Error) -> String {
+    match error {
+        Error::UnknownFlag { token } => {
+            format!("unknown flag `{}`", emphasize(&display_bytes(token), true, false))
+        }
+        Error::MissingValue { name } => {
+            format!("missing value for `{}`", emphasize(name, true, false))
+        }
+        Error::UnexpectedValue { name } => {
+            format!("`{}` does not accept a value", emphasize(name, true, false))
+        }
+        Error::UnexpectedArgument { token, .. } => {
+            format!("unexpected argument `{}`", emphasize(&display_bytes(token), true, false))
+        }
+        Error::UnknownCommand { token } => {
+            format!("unknown command `{}`", emphasize(&display_bytes(token), true, false))
+        }
+        Error::MissingSubcommand { name } => {
+            format!("required subcommand `{}` was not provided", emphasize(name, true, false))
+        }
+        Error::MissingRequired { name } => {
+            format!("required argument `{}` was not provided", emphasize(name, true, false))
+        }
+        Error::DuplicateArgument { name, .. } => {
+            format!("argument `{}` cannot be used more than once", emphasize(name, true, false))
+        }
+        Error::MissingRequirement { name, required_by } => format!(
+            "argument `{}` is required when `{}` is used",
+            emphasize(name, true, false),
+            emphasize(required_by, true, false)
+        ),
+        Error::ConflictingArguments { name, other } => format!(
+            "argument `{}` cannot be used with `{}`",
+            emphasize(name, true, false),
+            emphasize(other, true, false)
+        ),
+        Error::InvalidUtf8 { name, value } => format!(
+            "value `{}` for `{}` is not valid UTF-8",
+            emphasize(&display_bytes(value), true, false),
+            emphasize(name, true, false)
+        ),
+        Error::InvalidValue { name, value, reason } => format!(
+            "invalid value `{}` for `{}`: {}",
+            emphasize(&display_bytes(value.as_bytes()), true, false),
+            emphasize(name, true, false),
+            display_bytes(reason.as_bytes())
+        ),
+        _ => error.to_string(),
+    }
+}
+
+/// Applies optional bold or bold-and-underlined terminal emphasis.
+fn emphasize(value: &str, styled: bool, underline: bool) -> Cow<'_, str> {
+    if !styled {
+        return Cow::Borrowed(value);
+    }
+    let code = if underline { "1;4" } else { "1" };
+    Cow::Owned(format!("\x1b[{code}m{value}\x1b[0m"))
+}
+
+/// Emphasizes the command prefix while leaving usage arguments unstyled.
+fn style_usage_command(usage: &str) -> String {
+    let boundary = usage
+        .find(" --")
+        .into_iter()
+        .chain(usage.find(" <"))
+        .chain(usage.find(" ["))
+        .min()
+        .unwrap_or(usage.len());
+    let (command, arguments) = usage.split_at(boundary);
+    format!("{}{arguments}", emphasize(command, true, false))
 }
 
 /// Terminal stream selected by the conventional CLI exit policy.
@@ -293,7 +418,7 @@ Usage: tool [OPTIONS]
             "`--verbose` does not accept a value",
         );
         assert_eq!(
-            Error::UnexpectedArgument { token: b"extra".to_vec() }.to_string(),
+            Error::UnexpectedArgument { token: b"extra".to_vec(), usage: None }.to_string(),
             "unexpected argument `extra`",
         );
         assert_eq!(
@@ -309,7 +434,15 @@ Usage: tool [OPTIONS]
             "required argument `--output` was not provided",
         );
         assert_eq!(
-            Error::DuplicateArgument { name: "--verbose" }.to_string(),
+            Error::MissingRequiredArguments {
+                argument: String::from("--output <OUTPUT>"),
+                usage: String::from("tool [OPTIONS] --output <OUTPUT>"),
+            }
+            .to_string(),
+            "the following required arguments were not provided:\n  --output <OUTPUT>\n\nUsage: tool [OPTIONS] --output <OUTPUT>",
+        );
+        assert_eq!(
+            Error::DuplicateArgument { name: "--verbose", usage: None }.to_string(),
             "argument `--verbose` cannot be used more than once",
         );
     }
@@ -323,6 +456,74 @@ Usage: tool [OPTIONS]
         assert_eq!(
             Error::ConflictingArguments { name: "--output", other: "--stdout" }.to_string(),
             "argument `--output` cannot be used with `--stdout`",
+        );
+    }
+
+    #[test]
+    fn styled_diagnostics_emphasize_error_tokens_and_help_hint() {
+        let rendered = render_diagnostic(&Error::UnknownFlag { token: b"--wat".to_vec() }, true);
+        assert_eq!(
+            rendered,
+            "\x1b[1merror:\x1b[0m unknown flag `\x1b[1m--wat\x1b[0m`\n\nFor more information, try '\x1b[1m--help\x1b[0m'.\n",
+        );
+
+        let rendered = render_diagnostic(
+            &Error::InvalidValue {
+                name: "<VALUE>",
+                value: String::from("invalid"),
+                reason: String::from("invalid value"),
+            },
+            true,
+        );
+        assert_eq!(
+            rendered,
+            "\x1b[1merror:\x1b[0m invalid value `\x1b[1minvalid\x1b[0m` for `\x1b[1m<VALUE>\x1b[0m`: invalid value\n\nFor more information, try '\x1b[1m--help\x1b[0m'.\n",
+        );
+    }
+
+    #[test]
+    fn styled_missing_required_diagnostic_emphasizes_usage_structure() {
+        let rendered = render_diagnostic(
+            &Error::MissingRequiredArguments {
+                argument: String::from("--required <REQUIRED>"),
+                usage: String::from("cli command --required <REQUIRED> --optional <OPTIONAL>"),
+            },
+            true,
+        );
+        assert_eq!(
+            rendered,
+            "\x1b[1merror:\x1b[0m the following required arguments were not provided:\n  --required <REQUIRED>\n\n\x1b[1;4mUsage:\x1b[0m \x1b[1mcli command\x1b[0m --required <REQUIRED> --optional <OPTIONAL>\n\nFor more information, try '\x1b[1m--help\x1b[0m'.\n",
+        );
+    }
+
+    #[test]
+    fn diagnostic_renderer_keeps_plain_output_free_of_terminal_controls() {
+        let rendered = render_diagnostic(&Error::MissingValue { name: "--limit" }, false);
+        assert_eq!(
+            rendered,
+            "error: missing value for `--limit`\n\nFor more information, try '--help'.\n",
+        );
+        assert!(!rendered.contains('\x1b'));
+    }
+
+    #[test]
+    fn structural_diagnostics_include_corrective_usage() {
+        let unexpected = Error::UnexpectedArgument {
+            token: b"extra".to_vec(),
+            usage: Some(String::from("cli get <ID>")),
+        };
+        assert_eq!(
+            render_diagnostic(&unexpected, false),
+            "error: unexpected argument `extra`\n\nUsage: cli get <ID>\n\nFor more information, try '--help'.\n",
+        );
+
+        let duplicate = Error::DuplicateArgument {
+            name: "--limit",
+            usage: Some(String::from("cli list [OPTIONS] <ID>")),
+        };
+        assert_eq!(
+            render_diagnostic(&duplicate, false),
+            "error: argument `--limit` cannot be used more than once\n\nUsage: cli list [OPTIONS] <ID>\n\nFor more information, try '--help'.\n",
         );
     }
 

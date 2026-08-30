@@ -2,11 +2,11 @@
 
 use proc_macro2::Span;
 use quote::ToTokens as _;
-use syn::{Data, DeriveInput, Fields, GenericParam, Type, visit::Visit as _};
+use syn::{Data, DeriveInput, Fields, Type};
 
 use super::{
     Argument, ArgumentKind, Command, CommandBinding, CommandSemantics, Field, FieldBinding,
-    FieldSemantics, GenericName, GenericUse, HelpSection, Shape, ValueBinding, ValueConversion,
+    FieldSemantics, GenericName, GenericUse, Shape, ValueBinding, ValueConversion, ValueSchema,
     shape::{peel_option, peel_vec, rendered_path, validate_value_shape},
 };
 use crate::{args::attrs, support};
@@ -43,7 +43,7 @@ impl Command {
 
         // Command-level syntax is normalized independently from field syntax. Root-only and
         // subcommand-only policy is enforced here so the canonical model cannot represent it.
-        let attributes = attrs::command(&input.attrs)?;
+        let mut attributes = attrs::command(&input.attrs)?;
         if !attributes.aliases.is_empty() {
             return Err(syn::Error::new_spanned(
                 &input.ident,
@@ -76,21 +76,12 @@ impl Command {
         // Only after validation do we derive human-facing metadata. This keeps inferred names and
         // doc-derived help in the same semantic representation as explicit attribute overrides.
         let rust_name = support::ident_name(&input.ident);
-        let name = attributes.name.unwrap_or_else(|| support::to_kebab(&rust_name));
+        let name = attributes.name.take().unwrap_or_else(|| support::to_kebab(&rust_name));
         if name.is_empty() {
             return Err(syn::Error::new(Span::call_site(), "command name cannot be empty"));
         }
-        let docs = attrs::doc_help(&input.attrs);
-        let about = attributes.about.clone().or(docs.summary);
-        let description = attributes.about.or(docs.description);
-        let help_sections = docs
-            .sections
-            .into_iter()
-            .map(|section| HelpSection { heading: section.heading, body: section.body })
-            .collect();
-        let version = attributes.version;
-        let long_version = attributes.long_version;
-        let schema = attributes.schema;
+        let semantics =
+            CommandSemantics::from_attrs(name, attributes, attrs::doc_help(&input.attrs));
 
         Ok(Self {
             binding: CommandBinding {
@@ -101,16 +92,7 @@ impl Command {
                 root,
                 unit,
             },
-            semantics: CommandSemantics {
-                name,
-                about,
-                description,
-                help_sections,
-                version,
-                long_version,
-                aliases: Vec::new(),
-                schema,
-            },
+            semantics,
             fields,
         })
     }
@@ -195,7 +177,7 @@ impl Field {
         Ok(Self {
             binding,
             semantics: FieldSemantics::Flatten,
-            help_heading: attrs::doc_summary(&field.attrs),
+            help_heading: attrs::doc_heading(&field.attrs),
         })
     }
 
@@ -217,6 +199,12 @@ impl Field {
 
         let diagnostic = argument_diagnostic(&binding, &kind);
         let has_default = attributes.default.is_some();
+        let default_value = attributes.help_default.clone().or_else(|| {
+            attributes
+                .default
+                .as_ref()
+                .and_then(|expression| support::default_help(expression, attributes.value_enum))
+        });
         let switch = matches!(&kind, ArgumentKind::Flag { .. }) && shape == Shape::Bool;
         let count = attributes.count;
         if attributes.value_enum && switch {
@@ -230,16 +218,20 @@ impl Field {
         }
         binding.default = attributes.default;
 
-        let help = attributes.help.or_else(|| attrs::doc_summary(&field.attrs));
+        let docs = attrs::doc_help(&field.attrs);
+        let help = attributes.help.clone().or(docs.summary);
+        let long_help = attributes.help.or(docs.description).or_else(|| help.clone());
         Ok(Self {
             binding,
             semantics: FieldSemantics::Argument(Argument {
                 help,
+                long_help,
                 kind,
                 diagnostic,
                 global: attributes.global,
                 shape,
                 has_default,
+                default_value,
                 requires: attributes.requires.into_iter().map(|value| value.value()).collect(),
                 conflicts: attributes.conflicts.into_iter().map(|value| value.value()).collect(),
                 allow_hyphen_values: attributes.allow_hyphen_values,
@@ -330,6 +322,7 @@ fn validate_structural_metadata(
         attributes.allow_negative_numbers,
         attributes.value_enum,
         attributes.help.is_some(),
+        attributes.help_default.is_some(),
     ]
     .into_iter()
     .any(|present| present);
@@ -468,7 +461,9 @@ fn argument_diagnostic(binding: &FieldBinding, kind: &ArgumentKind) -> String {
             },
             |long| format!("--{long}"),
         ),
-        ArgumentKind::Positional => binding.name.clone(),
+        ArgumentKind::Positional => {
+            format!("<{}>", binding.name.replace('-', "_").to_ascii_uppercase())
+        }
     }
 }
 
@@ -485,6 +480,19 @@ fn value_binding(ty: &Type, shape: Shape) -> ValueBinding {
         }
     };
     let rendered = rendered_path(value_ty);
+    let schema = if ["DateTime<", "chrono::DateTime<", "::chrono::DateTime<"]
+        .iter()
+        .any(|prefix| rendered.starts_with(prefix))
+    {
+        ValueSchema::DateTime
+    } else {
+        match rendered.as_str() {
+            "NaiveDate" | "chrono::NaiveDate" | "::chrono::NaiveDate" => ValueSchema::Date,
+            "Uuid" | "uuid::Uuid" | "::uuid::Uuid" => ValueSchema::Uuid,
+            "Url" | "url::Url" | "::url::Url" => ValueSchema::Url,
+            _ => ValueSchema::Lexical,
+        }
+    };
     let conversion = if matches!(
         rendered.as_str(),
         "String"
@@ -511,6 +519,7 @@ fn value_binding(ty: &Type, shape: Shape) -> ValueBinding {
     ValueBinding {
         ty: value_ty.clone(),
         conversion,
+        schema,
         optional_collection: shape == Shape::Many && peel_option(ty).is_some(),
     }
 }
@@ -724,15 +733,7 @@ fn validate_constraints(fields: &[Field]) -> syn::Result<()> {
 /// such as `Shared<String>` is fine, but a child whose type still depends on `T`, `'a`, or a const
 /// parameter cannot be named from that static initializer on stable Rust.
 fn validate_composed_generics(fields: &[Field], generics: &syn::Generics) -> syn::Result<()> {
-    let params = generics
-        .params
-        .iter()
-        .map(|param| match param {
-            GenericParam::Type(param) => GenericName::Ident(param.ident.clone()),
-            GenericParam::Const(param) => GenericName::Ident(param.ident.clone()),
-            GenericParam::Lifetime(param) => GenericName::Lifetime(param.lifetime.ident.clone()),
-        })
-        .collect::<Vec<_>>();
+    let params = GenericName::collect(generics);
     if params.is_empty() {
         return Ok(());
     }
@@ -744,9 +745,7 @@ fn validate_composed_generics(fields: &[Field], generics: &syn::Generics) -> syn
             FieldSemantics::Argument(_) => continue,
         };
         let ty = &field.binding.ty;
-        let mut visitor = GenericUse { params: &params, found: false };
-        visitor.visit_type(ty);
-        if visitor.found {
+        if GenericUse::finds(&params, ty) {
             return Err(syn::Error::new_spanned(
                 ty,
                 format!(
@@ -764,15 +763,7 @@ fn validate_composed_generics(fields: &[Field], generics: &syn::Generics) -> syn
 /// command monomorphization. Concrete generic types remain valid; only references to the containing
 /// declaration's own generic parameters are rejected.
 fn validate_value_enum_generics(fields: &[Field], generics: &syn::Generics) -> syn::Result<()> {
-    let params = generics
-        .params
-        .iter()
-        .map(|param| match param {
-            GenericParam::Type(param) => GenericName::Ident(param.ident.clone()),
-            GenericParam::Const(param) => GenericName::Ident(param.ident.clone()),
-            GenericParam::Lifetime(param) => GenericName::Lifetime(param.lifetime.ident.clone()),
-        })
-        .collect::<Vec<_>>();
+    let params = GenericName::collect(generics);
     if params.is_empty() {
         return Ok(());
     }
@@ -785,9 +776,7 @@ fn validate_value_enum_generics(fields: &[Field], generics: &syn::Generics) -> s
             continue;
         }
         let ty = &field.value_binding().ty;
-        let mut visitor = GenericUse { params: &params, found: false };
-        visitor.visit_type(ty);
-        if visitor.found {
+        if GenericUse::finds(&params, ty) {
             return Err(syn::Error::new_spanned(
                 ty,
                 "`value_enum` cannot depend on the containing struct's generic parameters; use a concrete ValueEnum type",

@@ -33,6 +33,16 @@ The `derive` feature is enabled by default. Enable `toml` when using TOML config
 cargo add argx --features toml
 ```
 
+Enable `chrono`, `url`, or `uuid` when command values and schema-enabled types use those crates.
+Argx preserves recognized formats in invocation schemas and enables the matching Schemars
+integrations. Chrono `DateTime` and `NaiveDate` values receive standard `date-time` and `date`
+formats. `NaiveTime` and `NaiveDateTime` remain lexical strings because JSON Schema has no standard
+format that faithfully represents their timezone-free values:
+
+```sh
+cargo add argx --features chrono,url,uuid
+```
+
 ## Quick start
 
 ```rust

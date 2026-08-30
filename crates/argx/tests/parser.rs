@@ -13,7 +13,7 @@ mod tests {
     use argx::{Error, Parser as _};
 
     fn root_help<P: argx::Parser>() -> String {
-        match P::try_parse_from(["argx-test", "--help"]) {
+        match P::try_parse_from(["argx-test", "-h"]) {
             Err(Error::DisplayHelp { help }) => help,
             Ok(_) => panic!("help request unexpectedly parsed"),
             Err(error) => panic!("unexpected help error: {error:?}"),
@@ -38,6 +38,12 @@ mod tests {
     struct RequiredFlag {
         #[argx(long = "destination")]
         output: String,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    struct RequiredPositionals {
+        first: String,
+        second: String,
     }
 
     #[derive(Debug, PartialEq, Eq, argx::Parser)]
@@ -310,6 +316,22 @@ mod tests {
         Status,
     }
 
+    #[derive(Debug, PartialEq, Eq, argx::ValueEnum)]
+    enum HelpFormat {
+        Human,
+        Json,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    #[argx(name = "help-detail")]
+    struct HelpDetailCli {
+        /// Output format.
+        ///
+        /// Controls how records are rendered to stdout.
+        #[argx(long, value_enum, default = HelpFormat::Human)]
+        format: HelpFormat,
+    }
+
     #[derive(Debug, PartialEq, Eq, argx::Args)]
     struct HelpConfig {
         /// Use local configuration.
@@ -381,11 +403,19 @@ mod tests {
     #[derive(Debug, PartialEq, Eq, argx::Parser)]
     #[argx(name = "grouped-help")]
     struct GroupedHelpCli {
-        /// Output
+        /// # Output
         #[argx(flatten)]
         output: GroupedOutputArgs,
         #[argx(subcommand)]
         command: GroupedHelpCommand,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    #[argx(name = "documented-flatten")]
+    struct DocumentedFlattenCli {
+        /// Output settings shared with other commands.
+        #[argx(flatten)]
+        output: GroupedOutputArgs,
     }
 
     #[derive(Debug, PartialEq, Eq, argx::Args)]
@@ -397,7 +427,7 @@ mod tests {
     #[derive(Debug, PartialEq, Eq, argx::Parser)]
     #[argx(name = "grouped-positional")]
     struct GroupedPositionalCli {
-        /// Input
+        /// # Input
         #[argx(flatten)]
         input: GroupedInputArgs,
     }
@@ -419,10 +449,10 @@ mod tests {
     #[derive(Debug, PartialEq, Eq, argx::Parser)]
     #[argx(name = "merged-groups")]
     struct MergedGroupCli {
-        /// Output
+        /// # Output
         #[argx(flatten)]
         color: ColorOutputArgs,
-        /// Output
+        /// # Output
         #[argx(flatten)]
         format: FormatOutputArgs,
     }
@@ -436,7 +466,7 @@ mod tests {
 
     #[derive(Debug, PartialEq, Eq, argx::Args)]
     struct NestedGroupArgs {
-        /// Network
+        /// # Network
         #[argx(flatten)]
         values: NestedGroupValues,
     }
@@ -451,7 +481,7 @@ mod tests {
     #[derive(Debug, PartialEq, Eq, argx::Parser)]
     #[argx(name = "overridden-group")]
     struct OverriddenGroupCli {
-        /// Runtime
+        /// # Runtime
         #[argx(flatten)]
         nested: NestedGroupArgs,
     }
@@ -477,7 +507,7 @@ mod tests {
     #[derive(Debug, PartialEq, Eq, argx::Parser)]
     #[argx(name = "reused-group")]
     struct ReusedGroupedCli {
-        /// Root settings
+        /// # Root settings
         #[argx(flatten)]
         shared: ReusedGroupedArgs,
         #[argx(subcommand)]
@@ -815,28 +845,48 @@ mod tests {
     fn missing_required_values_are_reported_during_finalization() {
         assert_eq!(
             Cli::try_parse_from(["argx-test"]),
-            Err(Error::MissingRequired { name: "input" })
+            Err(Error::MissingRequiredArguments {
+                argument: String::from("<INPUT>"),
+                usage: String::from("cli <INPUT> [REST]..."),
+            })
         );
         assert_eq!(
             RequiredFlag::try_parse_from(["argx-test"]),
-            Err(Error::MissingRequired { name: "--destination" })
+            Err(Error::MissingRequiredArguments {
+                argument: String::from("--destination <OUTPUT>"),
+                usage: String::from("required-flag --destination <OUTPUT>"),
+            })
+        );
+        assert_eq!(
+            RequiredPositionals::try_parse_from(["argx-test"]),
+            Err(Error::MissingRequiredArguments {
+                argument: String::from("<FIRST>\n  <SECOND>"),
+                usage: String::from("required-positionals <FIRST> <SECOND>"),
+            })
+        );
+        assert_eq!(
+            RequiredPositionals::try_parse_from(["argx-test", "first"]),
+            Err(Error::MissingRequiredArguments {
+                argument: String::from("<SECOND>"),
+                usage: String::from("required-positionals <FIRST> <SECOND>"),
+            })
         );
     }
 
     #[test]
     fn scalar_occurrences_are_strict_and_collections_repeat() {
-        assert_eq!(
+        assert!(matches!(
             Cli::try_parse_from(["argx-test", "--port", "1", "--port", "2", "input"]),
-            Err(Error::DuplicateArgument { name: "--port" })
-        );
-        assert_eq!(
+            Err(Error::DuplicateArgument { name: "--port", .. })
+        ));
+        assert!(matches!(
             Cli::try_parse_from(["argx-test", "-v", "--verbose", "input"]),
-            Err(Error::DuplicateArgument { name: "--verbose" })
-        );
-        assert_eq!(
+            Err(Error::DuplicateArgument { name: "--verbose", .. })
+        ));
+        assert!(matches!(
             Cli::try_parse_from(["argx-test", "--port", "not-a-port", "--port", "2", "input"]),
-            Err(Error::DuplicateArgument { name: "--port" })
-        );
+            Err(Error::DuplicateArgument { name: "--port", .. })
+        ));
 
         let parsed =
             Cli::try_parse_from(["argx-test", "--define", "one", "--define", "two", "input"])
@@ -885,10 +935,10 @@ mod tests {
             Cli::try_parse_from(["argx-test", "--verbose=true", "input"]),
             Err(Error::UnexpectedValue { name: "--verbose" })
         );
-        assert_eq!(
+        assert!(matches!(
             Empty::try_parse_from(["argx-test", "extra"]),
-            Err(Error::UnexpectedArgument { token: b"extra".to_vec() })
-        );
+            Err(Error::UnexpectedArgument { token, .. }) if token == b"extra"
+        ));
     }
 
     #[test]
@@ -1067,14 +1117,14 @@ mod tests {
 
     #[test]
     fn flattened_checks_preserve_global_error_precedence() {
-        assert_eq!(
+        assert!(matches!(
             FlattenPrecedence::try_parse_from([
                 "argx-test",
                 "--duplicate=not-a-number",
                 "--duplicate=2",
             ]),
-            Err(Error::DuplicateArgument { name: "--duplicate" })
-        );
+            Err(Error::DuplicateArgument { name: "--duplicate", .. })
+        ));
         assert_eq!(
             FlattenPrecedence::try_parse_from([
                 "argx-test",
@@ -1086,7 +1136,10 @@ mod tests {
         );
         assert_eq!(
             FlattenPrecedence::try_parse_from(["argx-test"]),
-            Err(Error::MissingRequired { name: "--required" })
+            Err(Error::MissingRequiredArguments {
+                argument: String::from("--required <REQUIRED>"),
+                usage: String::from("flatten-precedence --required <REQUIRED>"),
+            })
         );
     }
 
@@ -1130,7 +1183,7 @@ mod tests {
         let raw = OsString::from_vec(vec![b'x', 0xff]);
         assert_eq!(
             TextCli::try_parse_from([OsString::from("argx-test"), raw]),
-            Err(Error::InvalidUtf8 { name: "value", value: vec![b'x', 0xff] })
+            Err(Error::InvalidUtf8 { name: "<VALUE>", value: vec![b'x', 0xff] })
         );
     }
 
@@ -1154,19 +1207,13 @@ Commands:
 Options:
   -v, --verbose               Enable verbose output.
       --destination <OUTPUT>  Output path
-  -h, --help                  Print help
+  -h, --help                  Print help (see more with '--help')
 
 "#]],
         );
 
-        let nested = HelpCli::try_parse_from([
-            "argx-test",
-            "--destination",
-            "out",
-            "acme",
-            "config",
-            "--help",
-        ]);
+        let nested =
+            HelpCli::try_parse_from(["argx-test", "--destination", "out", "acme", "config", "-h"]);
         let Err(Error::DisplayHelp { help }) = nested else {
             panic!("nested help request did not return generated help")
         };
@@ -1182,7 +1229,7 @@ Arguments:
 
 Options:
       --local  Use local configuration.
-  -h, --help   Print help
+  -h, --help   Print help (see more with '--help')
 
 "#]],
         );
@@ -1213,19 +1260,49 @@ Options:
     }
 
     #[test]
+    fn short_and_long_help_use_distinct_detail_levels() {
+        let short = match HelpDetailCli::try_parse_from(["argx-test", "-h"]) {
+            Err(Error::DisplayHelp { help }) => help,
+            result => panic!("unexpected short help result: {result:?}"),
+        };
+        assert!(short.contains(
+            "--format <FORMAT>  Output format. [possible values: human, json] [default: human]"
+        ));
+        assert!(short.contains("Print help (see more with '--help')"));
+        assert!(!short.contains("Controls how records are rendered to stdout."));
+
+        let long = match HelpDetailCli::try_parse_from(["argx-test", "--help"]) {
+            Err(Error::DisplayHelp { help }) => help,
+            result => panic!("unexpected long help result: {result:?}"),
+        };
+        assert!(long.contains("Controls how records are rendered to stdout."));
+        assert!(long.contains("Possible values:\n          - human\n          - json"));
+        assert!(long.contains("[default: human]"));
+        assert!(long.contains("Print help (see a summary with '-h')"));
+
+        let commands = match HelpCli::try_parse_from(["argx-test", "--help"]) {
+            Err(Error::DisplayHelp { help }) => help,
+            result => panic!("unexpected long command help result: {result:?}"),
+        };
+        assert!(
+            commands.contains(
+                "Commands:\n  config  Configure values.\n  status  Show current status.\n"
+            )
+        );
+    }
+
+    #[test]
     fn generated_help_renders_structured_sections_from_rust_docs() {
         snapbox::Assert::new().action_env("SNAPSHOTS").eq(
             root_help::<DocumentedHelpCli>(),
             snapbox::str![[r#"
 Inspect and modify widgets.
 
-Commands operate on the selected workspace.
-
 Usage: documented-help [OPTIONS]
 
 Options:
       --workspace <WORKSPACE>
-  -h, --help                   Print help
+  -h, --help                   Print help (see more with '--help')
 
 Examples:
 documented-help list
@@ -1250,7 +1327,7 @@ Use `documented-help schema` to inspect command contracts.
     }
 
     #[test]
-    fn flatten_field_docs_group_arguments_without_renderer_insertion_metadata() {
+    fn flatten_heading_groups_arguments_without_renderer_insertion_metadata() {
         snapbox::Assert::new().action_env("SNAPSHOTS").eq(
             root_help::<GroupedHelpCli>(),
             snapbox::str![[r#"
@@ -1260,7 +1337,7 @@ Commands:
   status  Show current status.
 
 Options:
-  -h, --help  Print help
+  -h, --help  Print help (see more with '--help')
 
 Output:
       --json           Emit structured output.
@@ -1271,7 +1348,15 @@ Output:
     }
 
     #[test]
-    fn flattened_positional_arguments_move_into_their_documented_group() {
+    fn flatten_field_prose_does_not_create_a_help_section() {
+        let help = root_help::<DocumentedFlattenCli>();
+        assert!(help.contains("\nOptions:\n      --json"));
+        assert!(help.contains("  --field <FIELD>"));
+        assert!(!help.contains("Output settings shared with other commands:"));
+    }
+
+    #[test]
+    fn flattened_positional_arguments_move_into_their_explicit_group() {
         let help = root_help::<GroupedPositionalCli>();
         assert!(help.contains("\nInput:\n  <INPUT>  Input file.\n"));
         assert!(!help.contains("\nArguments:\n"));
@@ -1299,7 +1384,7 @@ Output:
     }
 
     #[test]
-    fn undocumented_flattening_propagates_nested_groups_and_documented_flattening_overrides_them() {
+    fn ungrouped_flattening_propagates_nested_groups_and_explicit_grouping_overrides_them() {
         let propagated = root_help::<PropagatedGroupCli>();
         assert!(propagated.contains("\nNetwork:\n      --interface <INTERFACE>"));
 
@@ -1329,10 +1414,10 @@ Output:
             HelpCli::try_parse_from(["argx-test", "--destination", "--help"]),
             Err(Error::MissingValue { name: "--destination" }),
         );
-        assert_eq!(
+        assert!(matches!(
             Empty::try_parse_from(["argx-test", "--", "--help"]),
-            Err(Error::UnexpectedArgument { token: b"--help".to_vec() }),
-        );
+            Err(Error::UnexpectedArgument { token, .. }) if token == b"--help"
+        ));
     }
 
     #[test]
@@ -1391,10 +1476,10 @@ Output:
             DefaultCli::try_parse_from(["argx-test", "--port", "8080", "--profile", "production"]),
             Ok(DefaultCli { port: 8080, profile: Some(String::from("production")) }),
         );
-        assert_eq!(
+        assert!(matches!(
             DefaultCli::try_parse_from(["argx-test", "--port", "1", "--port", "2"]),
-            Err(Error::DuplicateArgument { name: "--port" }),
-        );
+            Err(Error::DuplicateArgument { name: "--port", .. })
+        ));
         assert_eq!(
             FlattenedDefaults::try_parse_from(["argx-test"]),
             Ok(FlattenedDefaults { shared: DefaultShared { jobs: 4 } }),
@@ -1512,12 +1597,12 @@ Output:
         }
 
         assert_eq!(
-            AliasCli::try_parse_from(["argx-test", "--help"]),
+            AliasCli::try_parse_from(["argx-test", "-h"]),
             Err(Error::DisplayHelp {
                 help: String::from(
                     "Usage: aliases [OPTIONS] <COMMAND>\n\n\
 Commands:\n  remove\n  status\n\n\
-Options:\n      --color <COLOR>\n  -h, --help           Print help\n",
+Options:\n      --color <COLOR>\n  -h, --help           Print help (see more with '--help')\n",
                 ),
             }),
         );
@@ -1677,11 +1762,11 @@ Options:\n      --color <COLOR>\n  -h, --help           Print help\n",
     #[test]
     fn descendant_help_uses_the_same_global_shadowing_as_parsing() {
         assert_eq!(
-            GlobalCli::try_parse_from(["argx-test", "outer", "leaf", "--help"]),
+            GlobalCli::try_parse_from(["argx-test", "outer", "leaf", "-h"]),
             Err(Error::DisplayHelp {
                 help: String::from(
                     "Usage: global-cli outer leaf [OPTIONS]\n\n\
-Options:\n      --verbose\n      --region <REGION>\n      --profile <PROFILE>\n  -h, --help               Print help\n",
+Options:\n      --verbose\n      --region <REGION>\n      --profile <PROFILE>\n  -h, --help               Print help (see more with '--help')\n",
                 ),
             }),
         );
@@ -1755,7 +1840,7 @@ Options:\n      --verbose\n      --region <REGION>\n      --profile <PROFILE>\n 
 
     #[test]
     fn scalar_global_occurrences_share_one_cardinality_across_command_boundaries() {
-        assert_eq!(
+        assert!(matches!(
             GlobalCli::try_parse_from([
                 "argx-test",
                 "--profile",
@@ -1765,8 +1850,8 @@ Options:\n      --verbose\n      --region <REGION>\n      --profile <PROFILE>\n 
                 "--profile",
                 "second",
             ]),
-            Err(Error::DuplicateArgument { name: "--profile" }),
-        );
+            Err(Error::DuplicateArgument { name: "--profile", .. })
+        ));
     }
 
     #[test]
@@ -1810,10 +1895,10 @@ Options:\n      --verbose\n      --region <REGION>\n      --profile <PROFILE>\n 
 
     #[test]
     fn separator_stops_command_selection_in_the_current_scope() {
-        assert_eq!(
+        assert!(matches!(
             SubcommandCli::try_parse_from(["argx-test", "acme", "--", "add"]),
-            Err(Error::UnexpectedArgument { token: b"add".to_vec() }),
-        );
+            Err(Error::UnexpectedArgument { token, .. }) if token == b"add"
+        ));
         assert_eq!(
             SubcommandCli::try_parse_from(["argx-test", "acme", "add", "--", "--force"]),
             Ok(SubcommandCli {

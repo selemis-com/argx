@@ -192,84 +192,37 @@ pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
 
     // Every post-parse validation stage delegates only into the selected payload branch. Unit
     // variants need no generated arm because they have no nested binding state.
-    let occurrence_arms = subcommand
-        .variants
-        .iter()
-        .enumerate()
-        .filter_map(|(index, variant)| {
-            let ty = variant.binding.payload.as_ref()?;
-            let partial_variant = format_ident!("V{index}");
-            Some(quote! {
-                Partial::#partial_variant(selected) => {
-                    <#ty as #facade::__private::CommandArgs>::check_occurrences(selected)
-                }
+    let validation = |method: &syn::Ident| {
+        let arms = subcommand
+            .variants
+            .iter()
+            .enumerate()
+            .filter_map(|(index, variant)| {
+                let ty = variant.binding.payload.as_ref()?;
+                let partial_variant = format_ident!("V{index}");
+                Some(quote! {
+                    Partial::#partial_variant(selected) => {
+                        <#ty as #facade::__private::CommandArgs>::#method(selected)
+                    }
+                })
             })
-        })
-        .collect::<Vec<_>>();
-    let required_arms = subcommand
-        .variants
-        .iter()
-        .enumerate()
-        .filter_map(|(index, variant)| {
-            let ty = variant.binding.payload.as_ref()?;
-            let partial_variant = format_ident!("V{index}");
-            Some(quote! {
-                Partial::#partial_variant(selected) => {
-                    <#ty as #facade::__private::CommandArgs>::check_required(selected)
+            .collect::<Vec<_>>();
+        let partial = if arms.is_empty() { quote!(_partial) } else { quote!(partial) };
+        let body = if arms.is_empty() {
+            quote!(::std::result::Result::Ok(()))
+        } else {
+            quote! {
+                match partial {
+                    #(#arms,)*
+                    _ => ::std::result::Result::Ok(()),
                 }
-            })
-        })
-        .collect::<Vec<_>>();
-    let constraint_arms = subcommand
-        .variants
-        .iter()
-        .enumerate()
-        .filter_map(|(index, variant)| {
-            let ty = variant.binding.payload.as_ref()?;
-            let partial_variant = format_ident!("V{index}");
-            Some(quote! {
-                Partial::#partial_variant(selected) => {
-                    <#ty as #facade::__private::CommandArgs>::check_constraints(selected)
-                }
-            })
-        })
-        .collect::<Vec<_>>();
-    let occurrence_partial =
-        if occurrence_arms.is_empty() { quote!(_partial) } else { quote!(partial) };
-    let required_partial =
-        if required_arms.is_empty() { quote!(_partial) } else { quote!(partial) };
-    let constraint_partial =
-        if constraint_arms.is_empty() { quote!(_partial) } else { quote!(partial) };
-    let occurrence_body = if occurrence_arms.is_empty() {
-        quote!(::std::result::Result::Ok(()))
-    } else {
-        quote! {
-            match partial {
-                #(#occurrence_arms,)*
-                _ => ::std::result::Result::Ok(()),
             }
-        }
+        };
+        (partial, body)
     };
-    let required_body = if required_arms.is_empty() {
-        quote!(::std::result::Result::Ok(()))
-    } else {
-        quote! {
-            match partial {
-                #(#required_arms,)*
-                _ => ::std::result::Result::Ok(()),
-            }
-        }
-    };
-    let constraint_body = if constraint_arms.is_empty() {
-        quote!(::std::result::Result::Ok(()))
-    } else {
-        quote! {
-            match partial {
-                #(#constraint_arms,)*
-                _ => ::std::result::Result::Ok(()),
-            }
-        }
-    };
+    let (occurrence_partial, occurrence_body) = validation(&format_ident!("check_occurrences"));
+    let (required_partial, required_body) = validation(&format_ident!("check_required"));
+    let (constraint_partial, constraint_body) = validation(&format_ident!("check_constraints"));
     let finish_arms = subcommand.variants.iter().enumerate().map(|(index, variant)| {
         let partial_variant = format_ident!("V{index}");
         let variant_ident = &variant.binding.ident;

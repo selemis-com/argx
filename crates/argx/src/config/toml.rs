@@ -411,16 +411,9 @@ fn next_char(input: &str, index: usize) -> (char, usize) {
 mod tests {
     use super::*;
 
-    /// Builds a deterministic environment scope from UTF-8 string pairs.
-    fn environment(values: &[(&str, &str)]) -> Environment {
-        Environment::from_utf8(
-            values.iter().map(|(key, value)| (String::from(*key), String::from(*value))).collect(),
-        )
-    }
-
     #[test]
     fn interpolation_uses_the_visible_environment() {
-        let environment = environment(&[("VALUE", "visible")]);
+        let environment = Environment::from_pairs(&[("VALUE", "visible")]);
         let expansion = expand_toml("value = \"${VALUE}\"\n", &environment)
             .expect("placeholder should resolve");
 
@@ -430,7 +423,7 @@ mod tests {
 
     #[test]
     fn bare_placeholders_are_rejected() {
-        let process = environment(&[("WORKERS", "8")]);
+        let process = Environment::from_pairs(&[("WORKERS", "8")]);
         let error = expand_toml("workers = ${WORKERS}\n", &process)
             .expect_err("placeholders outside TOML strings must be rejected");
 
@@ -440,7 +433,7 @@ mod tests {
 
     #[test]
     fn placeholders_in_keys_tables_and_collection_fragments_are_rejected() {
-        let process = environment(&[("KEY", "name"), ("VALUE", "value")]);
+        let process = Environment::from_pairs(&[("KEY", "name"), ("VALUE", "value")]);
 
         assert!(matches!(
             expand_toml("\"${KEY}\" = 1\n", &process),
@@ -458,7 +451,7 @@ mod tests {
 
     #[test]
     fn basic_string_interpolation_escapes_inserted_values() {
-        let process = environment(&[("VALUE", "quote=\"yes\"\\path\nnext")]);
+        let process = Environment::from_pairs(&[("VALUE", "quote=\"yes\"\\path\nnext")]);
         let expansion = expand_toml("value = \"${VALUE}\"\n", &process)
             .expect("basic-string interpolation should be escaped");
 
@@ -467,7 +460,7 @@ mod tests {
 
     #[test]
     fn comments_and_escaped_placeholders_are_left_literal() {
-        let process = environment(&[]);
+        let process = Environment::from_pairs(&[]);
         let expansion = expand_toml("value = \"$${MISSING}\" # ${ALSO_MISSING}\n", &process)
             .expect("literal placeholders should not require environment values");
 
@@ -489,7 +482,7 @@ mod tests {
 
     #[test]
     fn missing_and_malformed_placeholders_fail_without_values() {
-        let process = environment(&[]);
+        let process = Environment::from_pairs(&[]);
         let missing = expand_toml("value = \"${MISSING}\"\n", &process)
             .expect_err("missing variables must fail");
         assert!(missing.to_string().contains("`MISSING`"));
@@ -501,7 +494,7 @@ mod tests {
 
     #[test]
     fn literal_strings_reject_environment_interpolation() {
-        let process = environment(&[("VALUE", "secret")]);
+        let process = Environment::from_pairs(&[("VALUE", "secret")]);
         let error = expand_toml("value = '${VALUE}'\n", &process)
             .expect_err("literal TOML strings cannot safely escape arbitrary environment values");
 

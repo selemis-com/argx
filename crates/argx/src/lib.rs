@@ -9,11 +9,21 @@
 //! cargo add argx
 //! ```
 //!
-//! Derive support is enabled by default. Enable the optional `toml` feature when using TOML
-//! configuration layers:
+//! # Feature flags
+//!
+//! - `derive` enables the derive macros and is enabled by default.
+//! - `toml` enables TOML configuration layers and implies `derive`.
+//! - `chrono` enables schema integration for Chrono values. `DateTime` and `NaiveDate` receive the
+//!   standard `date-time` and `date` formats. `NaiveTime` and `NaiveDateTime` remain lexical
+//!   strings because JSON Schema has no standard format that faithfully represents their
+//!   timezone-free values.
+//! - `url` preserves the `uri` format for `url` values in invocation and typed schemas.
+//! - `uuid` preserves the `uuid` format for `uuid` values in invocation and typed schemas.
+//!
+//! For example:
 //!
 //! ```text
-//! cargo add argx --features toml
+//! cargo add argx --features chrono,toml,url,uuid
 //! ```
 //!
 //! # Quick start
@@ -146,9 +156,24 @@
 //!
 //! A field with `#[argx(flatten)]` composes one direct `Args` declaration into the current command.
 //! Flattening does not create a new command scope: its arguments participate in the containing
-//! command's parsing, validation, and help. A flatten field's Rust documentation
-//! becomes a help-group heading when present.
+//! command's parsing, validation, and help. To place those arguments in an explicit help section,
+//! start the flatten field's Rust documentation with a level-one heading:
 //!
+//! ```
+//! # #[derive(argx::Args)]
+//! # struct Logging {
+//! #     #[argx(long)]
+//! #     verbose: bool,
+//! # }
+//! # #[derive(argx::Parser)]
+//! # struct Cli {
+//! /// # Logging
+//! #[argx(flatten)]
+//! logging: Logging,
+//! # }
+//! ```
+//!
+//! Ordinary prose documentation on a flattened field does not create a help section.
 //! Named options are local to their declaring command unless marked `#[argx(global)]`. Global
 //! options remain visible in descendant scopes. If an ancestor and descendant use the same
 //! spelling, the nearest active command scope wins.
@@ -269,8 +294,9 @@
 //! also receive `-V` and `--version`. If only one version is supplied, it is used for both forms.
 //!
 //! Rust documentation supplies command and argument descriptions. The first paragraph is used as
-//! the short summary, level-one headings create additional help sections, and documentation on a
-//! flattened field becomes that group's heading.
+//! the short summary, and level-one headings create additional help sections. On a flattened field,
+//! a leading level-one heading explicitly groups that field's composed arguments under the heading.
+//! Ordinary prose on a flattened field remains documentation and does not create a section.
 //!
 //! `about = "..."` explicitly replaces the command's derived descriptive text. `help = "..."`
 //! replaces a field's derived one-line summary. Hidden flag and subcommand aliases are accepted by

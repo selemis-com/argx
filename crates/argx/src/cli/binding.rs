@@ -45,6 +45,7 @@ fn parse_refs_inner<T: CommandArgs>(
     registry: Option<&crate::__private::SchemaRegistry>,
 ) -> Result<T, Error> {
     let mut partial = T::start();
+    let mut supplied = Vec::new();
     let mut parser: crate::cli::argv::ArgvParser<'static, '_, '_> =
         crate::cli::argv::ArgvParser::new_with_schema(T::COMMAND, argv, registry.is_some());
 
@@ -55,7 +56,15 @@ fn parse_refs_inner<T: CommandArgs>(
                     ActionKind::Help => {
                         let command_path = parser.command_path().collect::<Vec<_>>();
                         Err(Error::DisplayHelp {
-                            help: help::render_with_schema(&command_path, registry.is_some()),
+                            help: help::render_with_schema(
+                                &command_path,
+                                registry.is_some(),
+                                if used_long {
+                                    help::HelpStyle::Long
+                                } else {
+                                    help::HelpStyle::Short
+                                },
+                            ),
                         })
                     }
                     ActionKind::Schema => {
@@ -83,26 +92,58 @@ fn parse_refs_inner<T: CommandArgs>(
                 };
             }
             Ok(event) => event,
-            Err(error) => return Err(raw_error(error)),
+            Err(error) => {
+                let command_path = parser.command_path().collect::<Vec<_>>();
+                return Err(raw_error(error, &command_path));
+            }
         };
+        match &event {
+            Event::Flag { flag, .. } => supplied.push(flag.key),
+            Event::Arg { arg, .. } => supplied.push(arg.key),
+            Event::Command { .. } | Event::Action { .. } => {}
+        }
         let applied = T::apply(&mut partial, &event);
         assert!(applied, "generated command metadata and binding diverged");
     }
 
     if let Err(error) = T::check(&mut partial) {
-        if matches!(error, Error::MissingSubcommand { .. }) {
-            let command_path = parser.command_path().collect::<Vec<_>>();
-            return Err(Error::DisplayHelp {
-                help: help::render_with_schema(&command_path, registry.is_some()),
-            });
-        }
-        return Err(error);
+        let command_path = parser.command_path().collect::<Vec<_>>();
+        return match error {
+            Error::MissingSubcommand { .. } => Err(Error::DisplayHelp {
+                help: help::render_with_schema(
+                    &command_path,
+                    registry.is_some(),
+                    help::HelpStyle::Short,
+                ),
+            }),
+            Error::MissingRequired { name } => {
+                let arguments = help::missing_required_labels(&command_path, &supplied);
+                let argument = if arguments.is_empty() {
+                    help::missing_required_label(&command_path, name)
+                        .unwrap_or_else(|| name.to_owned())
+                } else {
+                    arguments.join("\n  ")
+                };
+                Err(Error::MissingRequiredArguments {
+                    argument,
+                    usage: help::render_required_usage(&command_path),
+                })
+            }
+            Error::DuplicateArgument { name, .. } => Err(Error::DuplicateArgument {
+                name,
+                usage: Some(help::render_usage(&command_path)),
+            }),
+            error => Err(error),
+        };
     }
     T::finish(partial)
 }
 
 /// Converts one raw-parser error into the owned public error type.
-fn raw_error(error: RawError<'static, '_>) -> Error {
+fn raw_error(
+    error: RawError<'static, '_>,
+    command_path: &[&crate::cli::command::Command<'_>],
+) -> Error {
     match error {
         RawError::UnexpectedActionValue { action } => {
             Error::UnexpectedValue { name: action.diagnostic }
@@ -110,7 +151,10 @@ fn raw_error(error: RawError<'static, '_>) -> Error {
         RawError::UnknownFlag { token } => Error::UnknownFlag { token: token.to_vec() },
         RawError::MissingFlagValue { flag } => Error::MissingValue { name: flag.diagnostic },
         RawError::UnexpectedFlagValue { flag } => Error::UnexpectedValue { name: flag.diagnostic },
-        RawError::UnexpectedArg { token } => Error::UnexpectedArgument { token: token.to_vec() },
+        RawError::UnexpectedArg { token } => Error::UnexpectedArgument {
+            token: token.to_vec(),
+            usage: Some(help::render_usage(command_path)),
+        },
         RawError::UnknownCommand { token } => Error::UnknownCommand { token: token.to_vec() },
     }
 }

@@ -64,6 +64,34 @@ pub(crate) struct CommandSemantics {
     pub schema: bool,
 }
 
+impl CommandSemantics {
+    /// Combines explicit command attributes with documentation-derived help metadata.
+    fn from_attrs(
+        name: String,
+        attributes: crate::args::attrs::CommandAttrs,
+        docs: crate::args::attrs::DocHelp,
+    ) -> Self {
+        let about = attributes.about.clone().or(docs.summary);
+        let description = attributes.about.or(docs.description);
+        let help_sections = docs
+            .sections
+            .into_iter()
+            .map(|section| HelpSection { heading: section.heading, body: section.body })
+            .collect();
+
+        Self {
+            name,
+            about,
+            description,
+            help_sections,
+            version: attributes.version,
+            long_version: attributes.long_version,
+            aliases: attributes.aliases,
+            schema: attributes.schema,
+        }
+    }
+}
+
 /// One user-authored command help section.
 pub(crate) struct HelpSection {
     /// Section heading.
@@ -140,8 +168,25 @@ pub(crate) struct ValueBinding {
     pub ty: Type,
     /// Conversion strategy selected from the destination type.
     pub conversion: ValueConversion,
+    /// Optional ecosystem type recognized for invocation schema projection.
+    pub schema: ValueSchema,
     /// Whether a repeated field preserves absence with an outer `Option`.
     pub optional_collection: bool,
+}
+
+/// Schema-relevant semantic type recognized from one destination value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ValueSchema {
+    /// Ordinary lexical string value.
+    Lexical,
+    /// `chrono::NaiveDate`.
+    Date,
+    /// `chrono::DateTime<_>`.
+    DateTime,
+    /// `uuid::Uuid`.
+    Uuid,
+    /// `url::Url`.
+    Url,
 }
 
 /// Conversion strategy for one raw CLI value.
@@ -156,6 +201,10 @@ pub(crate) enum ValueConversion {
 }
 
 /// CLI role represented by one Rust field.
+#[expect(
+    clippy::large_enum_variant,
+    reason = "derive-time model; boxing would add indirection without reducing meaningful runtime cost"
+)]
 pub(crate) enum FieldSemantics {
     /// One named or positional CLI argument.
     Argument(Argument),
@@ -169,6 +218,8 @@ pub(crate) enum FieldSemantics {
 pub(crate) struct Argument {
     /// One-line help summary for this argument.
     pub help: Option<String>,
+    /// Full help prose for this argument.
+    pub long_help: Option<String>,
     /// Whether the argument is named or positional on the command line.
     pub kind: ArgumentKind,
     /// Canonical user-facing label used by diagnostics.
@@ -179,6 +230,8 @@ pub(crate) struct Argument {
     pub shape: Shape,
     /// Whether absence is satisfied by a typed Rust default.
     pub has_default: bool,
+    /// Static user-facing spelling of the declared default, when derivable from syntax.
+    pub default_value: Option<String>,
     /// Field names that must be satisfied when this argument is supplied.
     pub requires: Vec<String>,
     /// Field names that cannot be supplied together with this argument.
@@ -219,6 +272,21 @@ enum GenericName {
     Lifetime(syn::Ident),
 }
 
+impl GenericName {
+    /// Collects the generic parameter names declared by one containing type.
+    fn collect(generics: &syn::Generics) -> Vec<Self> {
+        generics
+            .params
+            .iter()
+            .map(|param| match param {
+                syn::GenericParam::Type(param) => Self::Ident(param.ident.clone()),
+                syn::GenericParam::Const(param) => Self::Ident(param.ident.clone()),
+                syn::GenericParam::Lifetime(param) => Self::Lifetime(param.lifetime.ident.clone()),
+            })
+            .collect()
+    }
+}
+
 /// Visitor that detects use of one containing generic parameter inside a flattened type.
 #[derive(Debug)]
 struct GenericUse<'a> {
@@ -228,13 +296,24 @@ struct GenericUse<'a> {
     found: bool,
 }
 
+impl GenericUse<'_> {
+    /// Reports whether a type references any generic parameter from the containing declaration.
+    fn finds(params: &[GenericName], ty: &Type) -> bool {
+        let mut visitor = GenericUse { params, found: false };
+        syn::visit::Visit::visit_type(&mut visitor, ty);
+        visitor.found
+    }
+
+    /// Reports whether an identifier names a containing type or const parameter.
+    fn identifies(&self, ident: &syn::Ident) -> bool {
+        self.params.iter().any(|param| matches!(param, GenericName::Ident(name) if name == ident))
+    }
+}
+
 impl<'ast> syn::visit::Visit<'ast> for GenericUse<'_> {
     fn visit_type_path(&mut self, path: &'ast syn::TypePath) {
         if let Some(first) = path.path.segments.first()
-            && self
-                .params
-                .iter()
-                .any(|param| matches!(param, GenericName::Ident(name) if name == &first.ident))
+            && self.identifies(&first.ident)
         {
             self.found = true;
             return;
@@ -244,10 +323,7 @@ impl<'ast> syn::visit::Visit<'ast> for GenericUse<'_> {
 
     fn visit_expr_path(&mut self, path: &'ast syn::ExprPath) {
         if let Some(first) = path.path.segments.first()
-            && self
-                .params
-                .iter()
-                .any(|param| matches!(param, GenericName::Ident(name) if name == &first.ident))
+            && self.identifies(&first.ident)
         {
             self.found = true;
             return;
@@ -342,6 +418,32 @@ mod tests {
         assert!(command.fields[2].binding.value.is_none());
         assert!(matches!(&command.fields[3].semantics, FieldSemantics::Subcommand));
         assert!(command.fields[3].binding.value.is_none());
+    }
+
+    #[test]
+    fn command_model_recognizes_schema_value_types() {
+        let input: DeriveInput = parse_quote! {
+            struct Cli {
+                at: chrono::DateTime<chrono::Utc>,
+                date: chrono::NaiveDate,
+                time: chrono::NaiveTime,
+                local: chrono::NaiveDateTime,
+                id: Uuid,
+                #[argx(long)]
+                url: Option<url::Url>,
+                value: String,
+            }
+        };
+
+        let command = Command::from_input(&input, true).expect("command model should be valid");
+
+        assert_eq!(command.fields[0].value_binding().schema, ValueSchema::DateTime);
+        assert_eq!(command.fields[1].value_binding().schema, ValueSchema::Date);
+        assert_eq!(command.fields[2].value_binding().schema, ValueSchema::Lexical);
+        assert_eq!(command.fields[3].value_binding().schema, ValueSchema::Lexical);
+        assert_eq!(command.fields[4].value_binding().schema, ValueSchema::Uuid);
+        assert_eq!(command.fields[5].value_binding().schema, ValueSchema::Url);
+        assert_eq!(command.fields[6].value_binding().schema, ValueSchema::Lexical);
     }
 
     #[test]

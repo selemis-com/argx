@@ -2,10 +2,10 @@
 
 use proc_macro2::Span;
 use quote::ToTokens as _;
-use syn::{Data, DeriveInput, Fields, GenericParam, visit::Visit as _};
+use syn::{Data, DeriveInput, Fields};
 
 use super::{
-    CommandSemantics, GenericName, GenericUse, HelpSection, Subcommand, SubcommandBinding, Variant,
+    CommandSemantics, GenericName, GenericUse, Subcommand, SubcommandBinding, Variant,
     VariantBinding,
     shape::{peel_option, peel_vec},
 };
@@ -44,7 +44,7 @@ impl Subcommand {
         let mut spellings = Vec::<String>::new();
         let mut variants = Vec::with_capacity(data.variants.len());
         for variant in &data.variants {
-            let attributes = attrs::variant(&variant.attrs)?;
+            let mut attributes = attrs::variant(&variant.attrs)?;
             if attributes.schema {
                 return Err(syn::Error::new_spanned(
                     &variant.ident,
@@ -52,28 +52,19 @@ impl Subcommand {
                 ));
             }
             let rust_name = support::ident_name(&variant.ident);
-            let name = attributes.name.unwrap_or_else(|| support::to_kebab(&rust_name));
-            let docs = attrs::doc_help(&variant.attrs);
-            let about = attributes.about.clone().or(docs.summary);
-            let description = attributes.about.or(docs.description);
-            let help_sections = docs
-                .sections
-                .into_iter()
-                .map(|section| HelpSection { heading: section.heading, body: section.body })
-                .collect();
-            let version = attributes.version;
-            let long_version = attributes.long_version;
-            validate_subcommand_name(&name, variant.ident.span())?;
-            if spellings.contains(&name) {
+            let name = attributes.name.take().unwrap_or_else(|| support::to_kebab(&rust_name));
+            let semantics =
+                CommandSemantics::from_attrs(name, attributes, attrs::doc_help(&variant.attrs));
+            validate_subcommand_name(&semantics.name, variant.ident.span())?;
+            if spellings.contains(&semantics.name) {
                 return Err(syn::Error::new(
                     variant.ident.span(),
-                    format!("duplicate subcommand `{name}`"),
+                    format!("duplicate subcommand `{}`", semantics.name),
                 ));
             }
-            spellings.push(name.clone());
+            spellings.push(semantics.name.clone());
 
-            let aliases = attributes.aliases;
-            for alias in &aliases {
+            for alias in &semantics.aliases {
                 validate_subcommand_name(alias, variant.ident.span())?;
                 if spellings.contains(alias) {
                     return Err(syn::Error::new(
@@ -113,16 +104,7 @@ impl Subcommand {
 
             variants.push(Variant {
                 binding: VariantBinding { ident: variant.ident.clone(), payload },
-                semantics: CommandSemantics {
-                    name,
-                    about,
-                    description,
-                    help_sections,
-                    version,
-                    long_version,
-                    aliases,
-                    schema: false,
-                },
+                semantics,
             });
         }
 
@@ -152,15 +134,7 @@ impl Subcommand {
 
 /// Rejects subcommand payloads that depend on the enum's generic parameters.
 fn validate_variant_generics(variants: &[Variant], generics: &syn::Generics) -> syn::Result<()> {
-    let params = generics
-        .params
-        .iter()
-        .map(|param| match param {
-            GenericParam::Type(param) => GenericName::Ident(param.ident.clone()),
-            GenericParam::Const(param) => GenericName::Ident(param.ident.clone()),
-            GenericParam::Lifetime(param) => GenericName::Lifetime(param.lifetime.ident.clone()),
-        })
-        .collect::<Vec<_>>();
+    let params = GenericName::collect(generics);
     if params.is_empty() {
         return Ok(());
     }
@@ -169,9 +143,7 @@ fn validate_variant_generics(variants: &[Variant], generics: &syn::Generics) -> 
         let Some(ty) = &variant.binding.payload else {
             continue;
         };
-        let mut visitor = GenericUse { params: &params, found: false };
-        visitor.visit_type(ty);
-        if visitor.found {
+        if GenericUse::finds(&params, ty) {
             return Err(syn::Error::new_spanned(
                 ty,
                 "subcommand payload cannot depend on the enum's generic parameters; use a concrete Args type",

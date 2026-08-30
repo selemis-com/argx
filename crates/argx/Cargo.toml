@@ -26,6 +26,9 @@ workspace = true
 [features]
 default = ["derive"]
 derive = ["dep:argx-derive"]
+chrono = ["schemars/chrono04"]
+url = ["schemars/url2"]
+uuid = ["schemars/uuid1"]
 toml = ["derive", "dep:toml_edit"]
 
 [dependencies]

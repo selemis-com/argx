@@ -133,7 +133,8 @@ Minimal command with no application-defined arguments.
 Usage: cli [OPTIONS]
 
 Options:
-  -h, --help  Print help
+  -h, --help
+          Print help (see a summary with '-h')
 
 "#]])
             .stderr_eq("");
@@ -158,11 +159,14 @@ Commands:
   status  Shows status without additional arguments.
 
 Options:
-  -h, --help     Print help
-  -V, --version  Print version
+  -v, --verbose
+          Enables verbose output.
 
-Common options:
-  -v, --verbose  Enables verbose output.
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
 
 Examples:
     commands add hello
@@ -180,17 +184,36 @@ Adds one value.
 Usage: cli add [OPTIONS] <VALUE>
 
 Arguments:
-  <VALUE>  Value to add or remove.
+  <VALUE>
+          Value to add or remove.
 
 Options:
-      --force  Forces the operation.
-  -h, --help   Print help
+      --force
+          Forces the operation.
 
-Common options:
-  -v, --verbose  Enables verbose output.
+  -v, --verbose
+          Enables verbose output.
+
+  -h, --help
+          Print help (see a summary with '-h')
 
 "#]])
             .stderr_eq("");
+    }
+
+    #[test]
+    fn missing_required_arguments_render_cli_spelling_and_usage() {
+        support::example_command("commands").arg("add").assert().failure().stdout_eq("").stderr_eq(
+            snapbox::str![[r#"
+error: the following required arguments were not provided:
+  <VALUE>
+
+Usage: cli add <VALUE>
+
+For more information, try '--help'.
+
+"#]],
+        );
     }
 
     #[test]
@@ -244,11 +267,14 @@ Shows status without additional arguments.
 Usage: cli status [OPTIONS]
 
 Options:
-  -h, --help     Print help
-  -V, --version  Print version
+  -v, --verbose
+          Enables verbose output.
 
-Common options:
-  -v, --verbose  Enables verbose output.
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
 
 "#]])
             .stderr_eq("");
@@ -262,14 +288,18 @@ Adds one value.
 Usage: cli add [OPTIONS] <VALUE>
 
 Arguments:
-  <VALUE>  Value to add or remove.
+  <VALUE>
+          Value to add or remove.
 
 Options:
-      --force  Forces the operation.
-  -h, --help   Print help
+      --force
+          Forces the operation.
 
-Common options:
-  -v, --verbose  Enables verbose output.
+  -v, --verbose
+          Enables verbose output.
+
+  -h, --help
+          Print help (see a summary with '-h')
 
 "#]])
             .stderr_eq("");
