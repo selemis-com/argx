@@ -224,12 +224,8 @@ fn settings() -> Result<Settings, argx::ConfigError> {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    if Cli::handle_completion() {
-        return Ok(());
-    }
-
-    let settings = settings()?;
     let cli = Cli::parse();
+    let settings = settings()?;
 
     if cli.common.verbose {
         eprintln!("workers: {}", settings.workers);

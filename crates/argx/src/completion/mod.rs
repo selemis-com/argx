@@ -1,13 +1,11 @@
 //! Dynamic shell completion for Bash, Fish, Nushell, and Zsh.
 //!
-//! Generate an adapter with [`crate::Parser::render_completion`] or [`script()`]. The generated
+//! Generate an adapter with [`crate::Parser::render_completion`]. The generated
 //! adapter asks the running application for candidates, so completions stay in sync with the
 //! derived command interface. Fields marked `#[argx(value_enum)]` complete from their declared
 //! finite values.
 //!
-//! [`crate::Parser::parse`] handles completion requests automatically. Applications that use a
-//! different parser entry point for the current process should call
-//! [`crate::Parser::handle_completion`] before normal startup.
+//! [`crate::Parser::parse`] handles completion requests automatically.
 
 mod engine;
 mod script;
@@ -101,15 +99,7 @@ pub enum ScriptError {
     },
 }
 
-/// Generates a dynamic completion adapter for `command` and `shell`.
-///
-/// Use this when the installed executable name differs from the parser's configured root name.
-///
-/// # Errors
-///
-/// Returns [`ScriptError::InvalidCommandName`] when `command` cannot be safely registered and
-/// invoked as one command word by all supported shell adapters.
-pub fn script(command: &str, shell: Shell) -> Result<String, ScriptError> {
+pub(crate) fn script(command: &str, shell: Shell) -> Result<String, ScriptError> {
     script::render(command, shell)
 }
 

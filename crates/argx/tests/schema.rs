@@ -220,7 +220,12 @@ mod tests {
 
     #[test]
     fn schema_enabled_help_advertises_the_virtual_action() {
-        assert!(Cli::render_help().contains("-S, --schema"));
+        let root_help = match Cli::try_parse_from(["argx-test", "--help"]) {
+            Err(argx::Error::DisplayHelp { help }) => help,
+            Ok(_) => panic!("help should be terminal"),
+            Err(error) => panic!("unexpected parser result: {error:?}"),
+        };
+        assert!(root_help.contains("-S, --schema"));
         let error = match Cli::try_parse_from(["argx-test", "get", "--help"]) {
             Err(error) => error,
             Ok(_) => panic!("help should be terminal"),

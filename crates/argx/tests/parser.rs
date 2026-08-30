@@ -12,6 +12,14 @@ mod tests {
 
     use argx::{Error, Parser as _};
 
+    fn root_help<P: argx::Parser>() -> String {
+        match P::try_parse_from(["argx-test", "--help"]) {
+            Err(Error::DisplayHelp { help }) => help,
+            Ok(_) => panic!("help request unexpectedly parsed"),
+            Err(error) => panic!("unexpected help error: {error:?}"),
+        }
+    }
+
     #[derive(Debug, PartialEq, Eq, argx::Parser)]
     struct Cli {
         #[argx(short, long)]
@@ -963,7 +971,7 @@ mod tests {
         assert_eq!(include.accepted_values, expected);
         assert_eq!(fallback.accepted_values, expected);
 
-        let help = ValueEnumCli::render_help();
+        let help = root_help::<ValueEnumCli>();
         assert!(help.contains("Output mode. [possible values: human-readable, json, quiet]"));
         assert!(help.contains("[possible values: human-readable, json, quiet]"));
 
@@ -1128,7 +1136,7 @@ mod tests {
 
     #[test]
     fn generated_help_uses_static_metadata_and_selected_command_scope() {
-        let root = HelpCli::render_help();
+        let root = root_help::<HelpCli>();
         snapbox::Assert::new().action_env("SNAPSHOTS").eq(
             root.as_str(),
             snapbox::str![[r#"
@@ -1149,11 +1157,6 @@ Options:
   -h, --help                  Print help
 
 "#]],
-        );
-
-        assert_eq!(
-            HelpCli::try_parse_from(["argx-test", "--help"]),
-            Err(Error::DisplayHelp { help: root }),
         );
 
         let nested = HelpCli::try_parse_from([
@@ -1212,7 +1215,7 @@ Options:
     #[test]
     fn generated_help_renders_structured_sections_from_rust_docs() {
         snapbox::Assert::new().action_env("SNAPSHOTS").eq(
-            DocumentedHelpCli::render_help(),
+            root_help::<DocumentedHelpCli>(),
             snapbox::str![[r#"
 Inspect and modify widgets.
 
@@ -1249,7 +1252,7 @@ Use `documented-help schema` to inspect command contracts.
     #[test]
     fn flatten_field_docs_group_arguments_without_renderer_insertion_metadata() {
         snapbox::Assert::new().action_env("SNAPSHOTS").eq(
-            GroupedHelpCli::render_help(),
+            root_help::<GroupedHelpCli>(),
             snapbox::str![[r#"
 Usage: grouped-help [OPTIONS] <COMMAND>
 
@@ -1269,14 +1272,14 @@ Output:
 
     #[test]
     fn flattened_positional_arguments_move_into_their_documented_group() {
-        let help = GroupedPositionalCli::render_help();
+        let help = root_help::<GroupedPositionalCli>();
         assert!(help.contains("\nInput:\n  <INPUT>  Input file.\n"));
         assert!(!help.contains("\nArguments:\n"));
     }
 
     #[test]
     fn flattened_groups_with_the_same_heading_merge_into_one_section() {
-        let help = MergedGroupCli::render_help();
+        let help = root_help::<MergedGroupCli>();
         assert_eq!(help.matches("\nOutput:\n").count(), 1);
         assert!(help.contains("  --color"));
         assert!(help.contains("  --format <FORMAT>"));
@@ -1297,10 +1300,10 @@ Output:
 
     #[test]
     fn undocumented_flattening_propagates_nested_groups_and_documented_flattening_overrides_them() {
-        let propagated = PropagatedGroupCli::render_help();
+        let propagated = root_help::<PropagatedGroupCli>();
         assert!(propagated.contains("\nNetwork:\n      --interface <INTERFACE>"));
 
-        let overridden = OverriddenGroupCli::render_help();
+        let overridden = root_help::<OverriddenGroupCli>();
         assert!(overridden.contains("\nRuntime:\n      --interface <INTERFACE>"));
         assert!(!overridden.contains("\nNetwork:\n"));
     }
@@ -1416,7 +1419,7 @@ Output:
 
     #[test]
     fn typed_defaults_make_bare_value_flags_optional_in_help() {
-        let help = DefaultCli::render_help();
+        let help = root_help::<DefaultCli>();
         assert!(help.contains("Usage: defaults [OPTIONS]"));
         assert!(!help.contains("Usage: defaults --port"));
         assert!(help.contains("--port <PORT>"));

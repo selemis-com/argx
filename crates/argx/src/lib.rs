@@ -276,10 +276,10 @@
 //! replaces a field's derived one-line summary. Hidden flag and subcommand aliases are accepted by
 //! parsing but omitted from generated help so help presents one canonical interface.
 //!
-//! [`Parser::render_help`] renders the root scope directly. During parsing, help and version are
-//! represented as [`Error::DisplayHelp`] and [`Error::DisplayVersion`] terminal actions. The
-//! process-oriented parsing methods print those actions to stdout and exit successfully. Other
-//! parse/binding errors go to stderr and exit with status 2.
+//! During parsing, help and version are represented as [`Error::DisplayHelp`] and
+//! [`Error::DisplayVersion`] terminal actions. The process-oriented parsing methods print those
+//! actions to stdout and exit successfully. Other parse/binding errors go to stderr and exit with
+//! status 2.
 //!
 //! # Shell completions
 //!
@@ -297,9 +297,7 @@
 //! # Ok::<(), argx::completion::ScriptError>(())
 //! ```
 //!
-//! [`Parser::parse`] handles completion requests automatically. A binary that uses another parser
-//! entry point for the current process should call [`Parser::handle_completion`] first and return
-//! when it yields `true`.
+//! [`Parser::parse`] handles completion requests automatically.
 //!
 //! Fields marked `#[argx(value_enum)]` complete from the same finite vocabulary used for parsing
 //! and help. Hidden aliases are accepted while reconstructing command scope but are not suggested.
@@ -519,21 +517,7 @@ pub trait Parser: Sized + __private::CommandArgs {
         parse_args::<Self, _, _>(argv)
     }
 
-    /// Handles a dynamic shell-completion request for the current process.
-    ///
-    /// [`Self::parse`] calls this automatically. Binaries that use another parser entry point for
-    /// the current process should call this first and return from `main` when it yields `true`.
-    ///
-    /// Ordinary invocations return `false`.
-    #[must_use]
-    fn handle_completion() -> bool {
-        completion::handle_process::<Self>()
-    }
-
     /// Generates a dynamic completion adapter for this parser's configured root command name.
-    ///
-    /// Use [`completion::script`] instead when the installed executable name intentionally differs
-    /// from the root command name.
     ///
     /// # Errors
     ///
@@ -541,35 +525,6 @@ pub trait Parser: Sized + __private::CommandArgs {
     /// cannot be safely registered by every supported shell adapter.
     fn render_completion(shell: completion::Shell) -> Result<String, completion::ScriptError> {
         completion::script(Self::COMMAND.name, shell)
-    }
-
-    /// Renders generated help for this root command.
-    ///
-    /// This renders only the root scope. Help selected while parsing a child command is returned as
-    /// [`Error::DisplayHelp`] by the `try_parse*` methods.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use argx::Parser as _;
-    ///
-    /// /// Inspect one input file.
-    /// #[derive(argx::Parser)]
-    /// struct Cli {
-    ///     /// Input path.
-    ///     input: String,
-    /// }
-    ///
-    /// let help = Cli::render_help();
-    /// assert!(help.contains("Usage:"));
-    /// assert!(help.contains("<INPUT>"));
-    /// ```
-    #[must_use]
-    fn render_help() -> String {
-        cli::help::render_with_schema(
-            &[Self::COMMAND],
-            <Self as __private::CommandArgs>::SCHEMA_ENABLED,
-        )
     }
 }
 
