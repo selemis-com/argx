@@ -6,7 +6,7 @@
 
 use std::{
     borrow::Cow,
-    io::{self, Write as _},
+    io::{self, IsTerminal as _, Write as _},
     process,
 };
 
@@ -187,20 +187,52 @@ impl Error {
                 text: Cow::Borrowed(text.as_str()),
                 code: self.exit_code(),
             },
-            Self::MissingRequiredArguments { argument, usage } => ExitOutput {
-                stream: ExitStream::Stderr,
-                text: Cow::Owned(format!(
-                    "error: the following required arguments were not provided:\n  {argument}\n\nUsage: {usage}\n\nFor more information, try '--help'.\n"
-                )),
-                code: self.exit_code(),
-            },
-            _ => ExitOutput {
-                stream: ExitStream::Stderr,
-                text: Cow::Owned(format!("error: {self}\n\nFor more information, try '--help'.\n")),
-                code: self.exit_code(),
-            },
+            Self::MissingRequiredArguments { argument, usage } => {
+                let styled = diagnostic_styling_enabled();
+                let error = if styled { "\x1b[1merror:\x1b[0m" } else { "error:" };
+                let usage_label = if styled { "\x1b[1;4mUsage:\x1b[0m" } else { "Usage:" };
+                let usage = if styled { style_usage_command(usage) } else { usage.clone() };
+                let help = if styled { "\x1b[1m--help\x1b[0m" } else { "--help" };
+                ExitOutput {
+                    stream: ExitStream::Stderr,
+                    text: Cow::Owned(format!(
+                        "{error} the following required arguments were not provided:\n  {argument}\n\n{usage_label} {usage}\n\nFor more information, try '{help}'.\n"
+                    )),
+                    code: self.exit_code(),
+                }
+            }
+            _ => {
+                let styled = diagnostic_styling_enabled();
+                let error = if styled { "\x1b[1merror:\x1b[0m" } else { "error:" };
+                let help = if styled { "\x1b[1m--help\x1b[0m" } else { "--help" };
+                ExitOutput {
+                    stream: ExitStream::Stderr,
+                    text: Cow::Owned(format!(
+                        "{error} {self}\n\nFor more information, try '{help}'.\n"
+                    )),
+                    code: self.exit_code(),
+                }
+            }
         }
     }
+}
+
+/// Whether interactive diagnostics should use minimal ANSI emphasis.
+fn diagnostic_styling_enabled() -> bool {
+    io::stderr().is_terminal() && std::env::var_os("NO_COLOR").is_none()
+}
+
+/// Emphasizes the command prefix while leaving usage arguments unstyled.
+fn style_usage_command(usage: &str) -> String {
+    let boundary = usage
+        .find(" --")
+        .into_iter()
+        .chain(usage.find(" <"))
+        .chain(usage.find(" ["))
+        .min()
+        .unwrap_or(usage.len());
+    let (command, arguments) = usage.split_at(boundary);
+    format!("\x1b[1m{command}\x1b[0m{arguments}")
 }
 
 /// Terminal stream selected by the conventional CLI exit policy.
