@@ -9,19 +9,21 @@
 //! cargo add argx
 //! ```
 //!
-//! Derive support is enabled by default. Enable the optional `toml` feature when using TOML
-//! configuration layers:
+//! # Feature flags
+//!
+//! - `derive` enables the derive macros and is enabled by default.
+//! - `toml` enables TOML configuration layers and implies `derive`.
+//! - `chrono` enables schema integration for Chrono values. `DateTime` and `NaiveDate` receive the
+//!   standard `date-time` and `date` formats. `NaiveTime` and `NaiveDateTime` remain lexical
+//!   strings because JSON Schema has no standard format that faithfully represents their
+//!   timezone-free values.
+//! - `url` preserves the `uri` format for `url` values in invocation and typed schemas.
+//! - `uuid` preserves the `uuid` format for `uuid` values in invocation and typed schemas.
+//!
+//! For example:
 //!
 //! ```text
-//! cargo add argx --features toml
-//! ```
-//!
-//! Features prefixed with `schema-` forward schema integrations for common external types. For
-//! example, `schema-url` enables Schemars support for `url` 2.x types and `schema-uuid`
-//! enables support for `uuid` 1.x types used by schema-enabled commands:
-//!
-//! ```text
-//! cargo add argx --features schema-url,schema-uuid
+//! cargo add argx --features chrono,toml,url,uuid
 //! ```
 //!
 //! # Quick start

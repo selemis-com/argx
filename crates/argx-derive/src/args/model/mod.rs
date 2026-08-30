@@ -140,8 +140,25 @@ pub(crate) struct ValueBinding {
     pub ty: Type,
     /// Conversion strategy selected from the destination type.
     pub conversion: ValueConversion,
+    /// Optional ecosystem type recognized for invocation schema projection.
+    pub schema: ValueSchema,
     /// Whether a repeated field preserves absence with an outer `Option`.
     pub optional_collection: bool,
+}
+
+/// Schema-relevant semantic type recognized from one destination value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ValueSchema {
+    /// Ordinary lexical string value.
+    Lexical,
+    /// `chrono::NaiveDate`.
+    Date,
+    /// `chrono::DateTime<_>`.
+    DateTime,
+    /// `uuid::Uuid`.
+    Uuid,
+    /// `url::Url`.
+    Url,
 }
 
 /// Conversion strategy for one raw CLI value.
@@ -350,6 +367,32 @@ mod tests {
         assert!(command.fields[2].binding.value.is_none());
         assert!(matches!(&command.fields[3].semantics, FieldSemantics::Subcommand));
         assert!(command.fields[3].binding.value.is_none());
+    }
+
+    #[test]
+    fn command_model_recognizes_schema_value_types() {
+        let input: DeriveInput = parse_quote! {
+            struct Cli {
+                at: chrono::DateTime<chrono::Utc>,
+                date: chrono::NaiveDate,
+                time: chrono::NaiveTime,
+                local: chrono::NaiveDateTime,
+                id: Uuid,
+                #[argx(long)]
+                url: Option<url::Url>,
+                value: String,
+            }
+        };
+
+        let command = Command::from_input(&input, true).expect("command model should be valid");
+
+        assert_eq!(command.fields[0].value_binding().schema, ValueSchema::DateTime);
+        assert_eq!(command.fields[1].value_binding().schema, ValueSchema::Date);
+        assert_eq!(command.fields[2].value_binding().schema, ValueSchema::Lexical);
+        assert_eq!(command.fields[3].value_binding().schema, ValueSchema::Lexical);
+        assert_eq!(command.fields[4].value_binding().schema, ValueSchema::Uuid);
+        assert_eq!(command.fields[5].value_binding().schema, ValueSchema::Url);
+        assert_eq!(command.fields[6].value_binding().schema, ValueSchema::Lexical);
     }
 
     #[test]

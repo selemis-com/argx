@@ -7,6 +7,7 @@ use syn::{Data, DeriveInput, Fields, GenericParam, Type, visit::Visit as _};
 use super::{
     Argument, ArgumentKind, Command, CommandBinding, CommandSemantics, Field, FieldBinding,
     FieldSemantics, GenericName, GenericUse, HelpSection, Shape, ValueBinding, ValueConversion,
+    ValueSchema,
     shape::{peel_option, peel_vec, rendered_path, validate_value_shape},
 };
 use crate::{args::attrs, support};
@@ -496,6 +497,19 @@ fn value_binding(ty: &Type, shape: Shape) -> ValueBinding {
         }
     };
     let rendered = rendered_path(value_ty);
+    let schema = if ["DateTime<", "chrono::DateTime<", "::chrono::DateTime<"]
+        .iter()
+        .any(|prefix| rendered.starts_with(prefix))
+    {
+        ValueSchema::DateTime
+    } else {
+        match rendered.as_str() {
+            "NaiveDate" | "chrono::NaiveDate" | "::chrono::NaiveDate" => ValueSchema::Date,
+            "Uuid" | "uuid::Uuid" | "::uuid::Uuid" => ValueSchema::Uuid,
+            "Url" | "url::Url" | "::url::Url" => ValueSchema::Url,
+            _ => ValueSchema::Lexical,
+        }
+    };
     let conversion = if matches!(
         rendered.as_str(),
         "String"
@@ -522,6 +536,7 @@ fn value_binding(ty: &Type, shape: Shape) -> ValueBinding {
     ValueBinding {
         ty: value_ty.clone(),
         conversion,
+        schema,
         optional_collection: shape == Shape::Many && peel_option(ty).is_some(),
     }
 }

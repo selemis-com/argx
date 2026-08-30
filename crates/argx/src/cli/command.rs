@@ -164,6 +164,35 @@ impl Command<'static> {
     };
 }
 
+/// Schema-relevant semantic type of one CLI value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ValueSchema {
+    /// Ordinary lexical string value.
+    Lexical,
+    /// Chrono date value recognized when the `chrono` integration is enabled.
+    Date,
+    /// Chrono date-time value recognized when the `chrono` integration is enabled.
+    DateTime,
+    /// UUID value recognized when the `uuid` integration is enabled.
+    Uuid,
+    /// URL value recognized when the `url` integration is enabled.
+    Url,
+}
+
+impl ValueSchema {
+    /// Returns the JSON Schema string format exposed by the enabled integration.
+    #[must_use]
+    pub(crate) const fn format(self) -> Option<&'static str> {
+        match self {
+            Self::Date if cfg!(feature = "chrono") => Some("date"),
+            Self::DateTime if cfg!(feature = "chrono") => Some("date-time"),
+            Self::Uuid if cfg!(feature = "uuid") => Some("uuid"),
+            Self::Url if cfg!(feature = "url") => Some("uri"),
+            Self::Lexical | Self::Date | Self::DateTime | Self::Uuid | Self::Url => None,
+        }
+    }
+}
+
 /// Static semantics for one named argument.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Flag<'a> {
@@ -189,6 +218,8 @@ pub struct Flag<'a> {
     pub takes_value: bool,
     /// Canonical finite values accepted by this option, when declared as a `ValueEnum`.
     pub accepted_values: &'a [&'a str],
+    /// Lazy schema metadata for the destination value type.
+    pub value_schema: ValueSchema,
     /// Whether this named argument may occur more than once.
     pub repeatable: bool,
     /// Whether this flag must occur at least once.
@@ -218,6 +249,7 @@ impl Flag<'static> {
         global: false,
         takes_value: false,
         accepted_values: &[],
+        value_schema: ValueSchema::Lexical,
         repeatable: false,
         required: false,
         has_default: false,
@@ -247,6 +279,8 @@ pub struct Arg<'a> {
     pub variadic: bool,
     /// Canonical finite values accepted by this positional, when declared as a `ValueEnum`.
     pub accepted_values: &'a [&'a str],
+    /// Lazy schema metadata for the destination value type.
+    pub value_schema: ValueSchema,
     /// Whether a negative number may bind here while flag parsing remains enabled.
     pub allow_negative_numbers: bool,
 }
@@ -261,6 +295,7 @@ impl Arg<'static> {
         required: true,
         variadic: false,
         accepted_values: &[],
+        value_schema: ValueSchema::Lexical,
         allow_negative_numbers: false,
     };
 }

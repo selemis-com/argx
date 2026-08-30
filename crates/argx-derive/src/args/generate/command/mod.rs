@@ -23,6 +23,19 @@ use binding::{apply_arm, argument_state_branch, binding_generics, finish_field};
 use metadata::{command_tables, constraint_tables};
 use projection::partial_projection;
 
+/// Projects one normalized value type into runtime schema metadata.
+fn value_schema(field: &model::Field, facade: &TokenStream) -> TokenStream {
+    match field.binding.value.as_ref().map(|binding| binding.schema) {
+        Some(model::ValueSchema::Date) => quote!(#facade::__private::ValueSchema::Date),
+        Some(model::ValueSchema::DateTime) => quote!(#facade::__private::ValueSchema::DateTime),
+        Some(model::ValueSchema::Uuid) => quote!(#facade::__private::ValueSchema::Uuid),
+        Some(model::ValueSchema::Url) => quote!(#facade::__private::ValueSchema::Url),
+        Some(model::ValueSchema::Lexical) | None => {
+            quote!(#facade::__private::ValueSchema::Lexical)
+        }
+    }
+}
+
 /// Generates static parse metadata and typed binding for one command struct.
 pub(crate) fn command(command: &model::Command) -> TokenStream {
     let facade = support::facade_path();
@@ -91,6 +104,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
         } else {
             quote!(&[])
         };
+        let value_schema = value_schema(field, &facade);
         let repeatable = field.is_repeatable();
         let required = argument.shape == model::Shape::Required
             && !argument.has_default
@@ -112,6 +126,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                 global: #global,
                 takes_value: #takes_value,
                 accepted_values: #accepted_values,
+                value_schema: #value_schema,
                 repeatable: #repeatable,
                 required: #required,
                 has_default: #has_default,
@@ -139,6 +154,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
         } else {
             quote!(&[])
         };
+        let value_schema = value_schema(field, &facade);
         let allow_negative_numbers = argument.allow_negative_numbers;
         quote! {
             static #table: #facade::__private::Arg<'static> =
@@ -150,6 +166,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                     required: #required,
                     variadic: #variadic,
                     accepted_values: #accepted_values,
+                    value_schema: #value_schema,
                     allow_negative_numbers: #allow_negative_numbers,
                 };
         }

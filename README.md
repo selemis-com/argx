@@ -33,12 +33,14 @@ The `derive` feature is enabled by default. Enable `toml` when using TOML config
 cargo add argx --features toml
 ```
 
-Features prefixed with `schema-` forward schema integrations for external types. For example,
-`schema-url` enables Schemars support for `url` 2.x types and `schema-uuid` enables support
-for `uuid` 1.x types used by schema-enabled commands:
+Enable `chrono`, `url`, or `uuid` when command values and schema-enabled types use those crates.
+Argx preserves recognized formats in invocation schemas and enables the matching Schemars
+integrations. Chrono `DateTime` and `NaiveDate` values receive standard `date-time` and `date`
+formats. `NaiveTime` and `NaiveDateTime` remain lexical strings because JSON Schema has no standard
+format that faithfully represents their timezone-free values:
 
 ```sh
-cargo add argx --features schema-url,schema-uuid
+cargo add argx --features chrono,url,uuid
 ```
 
 ## Quick start

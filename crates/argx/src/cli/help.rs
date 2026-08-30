@@ -632,16 +632,8 @@ mod tests {
     };
     static INPUT: Arg<'static> =
         Arg { key: 3, name: "input", help: Some("Input file"), ..Arg::REQUIRED };
-    static REST: Arg<'static> = Arg {
-        key: 4,
-        name: "rest",
-        help: None,
-        long_help: None,
-        required: false,
-        variadic: true,
-        accepted_values: &[],
-        allow_negative_numbers: false,
-    };
+    static REST: Arg<'static> =
+        Arg { key: 4, name: "rest", required: false, variadic: true, ..Arg::REQUIRED };
     static GET: Command<'static> =
         Command { name: "get", about: Some("Read one value"), ..Command::EMPTY };
     static CONFIG: Command<'static> = Command {

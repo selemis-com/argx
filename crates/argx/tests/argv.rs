@@ -22,16 +22,8 @@ mod tests {
     static DEFINE: Flag<'static> =
         Flag { key: 4, name: "define", longs: &["define"], shorts: b"D", ..Flag::VALUE };
     static INPUT: Arg<'static> = Arg { key: 5, name: "input", ..Arg::REQUIRED };
-    static REST: Arg<'static> = Arg {
-        key: 6,
-        name: "rest",
-        help: None,
-        long_help: None,
-        required: false,
-        variadic: true,
-        accepted_values: &[],
-        allow_negative_numbers: false,
-    };
+    static REST: Arg<'static> =
+        Arg { key: 6, name: "rest", required: false, variadic: true, ..Arg::REQUIRED };
     static COMMAND: Command<'static> = Command {
         name: "example",
         flags: &[&VERBOSE, &FORCE, &OUTPUT, &DEFINE],
