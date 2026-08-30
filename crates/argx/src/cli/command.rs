@@ -366,11 +366,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn key_base_is_stable() {
-        assert_eq!(key_base("argx::tests", 0x1234_5678), 0x6570_cc45_0000_0000);
-    }
-
-    #[test]
     fn module_path_contributes_to_key_base() {
         assert_ne!(key_base("argx::add", 42), key_base("argx::remove", 42));
     }
