@@ -289,8 +289,8 @@
 //! # Help and version
 //!
 //! Every command scope has built-in `-h` and `--help`. A root command or subcommand variant that
-//! declares `version` or `long_version` also receives `-V` and `--version`. If only one version expression is supplied,
-//! it is used for both forms.
+//! declares `version` or `long_version` also receives `-V` and `--version`. If only one version
+//! expression is supplied, it is used for both forms.
 //!
 //! Rust documentation participates directly in help generation:
 //!
@@ -349,9 +349,9 @@
 //!
 //! Structural [`Args`] and `Subcommand` declarations use the same `#[argx(schema)]` marker.
 //! Associate executable leaves with result and error types using
-//! `#[argx(handler = CommandType)]` on a free function or `#[argx(handler = method)]` on an inherent
-//! impl. For a zero-argument executable command, use an empty `Args` struct rather than a unit
-//! subcommand variant so the leaf has a concrete Rust type.
+//! `#[argx(handler = CommandType)]` on a free function or `#[argx(handler = method)]` on an
+//! inherent impl. For a zero-argument executable command, use an empty `Args` struct rather than a
+//! unit subcommand variant so the leaf has a concrete Rust type.
 //!
 //! `#[argx(schema)]` on result and error data types delegates their JSON Schema generation to
 //! Schemars. See the `schema` example for a complete structural and leaf discovery flow.
