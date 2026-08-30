@@ -349,10 +349,13 @@ pub(crate) fn reject(attributes: &[Attribute], context: &str) -> syn::Result<()>
     Ok(())
 }
 
-/// Returns the first paragraph of Rust doc comments as a one-line help summary.
-pub(crate) fn doc_summary(attributes: &[Attribute]) -> Option<String> {
+/// Returns a leading level-one Markdown heading from Rust doc comments.
+///
+/// Flattened argument groups are explicit: ordinary field prose remains documentation, while a
+/// leading `# Heading` opts the flattened field into a named terminal help section.
+pub(crate) fn doc_heading(attributes: &[Attribute]) -> Option<String> {
     let lines = doc_source_lines(attributes);
-    first_paragraph(trim_blank_lines(&lines))
+    trim_blank_lines(&lines).first().and_then(|line| level_one_heading(line)).map(str::to_owned)
 }
 
 /// Parses command-level Rust docs into prose plus user-authored level-one help sections.
@@ -448,7 +451,30 @@ mod tests {
             /// Detailed text is not part of short help.
             struct Example;
         };
-        assert_eq!(doc_summary(&input.attrs).as_deref(), Some("First line. Second line."));
+        assert_eq!(doc_help(&input.attrs).summary.as_deref(), Some("First line. Second line."));
+    }
+
+    #[test]
+    fn doc_heading_requires_a_leading_level_one_heading() {
+        let prose: DeriveInput = parse_quote! {
+            /// Object containing the comment.
+            struct Prose;
+        };
+        assert_eq!(doc_heading(&prose.attrs), None);
+
+        let heading: DeriveInput = parse_quote! {
+            /// # Object containing the comment
+            struct Heading;
+        };
+        assert_eq!(doc_heading(&heading.attrs).as_deref(), Some("Object containing the comment"));
+
+        let later_heading: DeriveInput = parse_quote! {
+            /// Ordinary field documentation.
+            ///
+            /// # Details
+            struct LaterHeading;
+        };
+        assert_eq!(doc_heading(&later_heading.attrs), None);
     }
 
     #[test]
@@ -461,7 +487,6 @@ mod tests {
             /// ~~~
             struct Example;
         };
-        assert_eq!(doc_summary(&input.attrs).as_deref(), Some("CLI server to host Kival."));
 
         let help = doc_help(&input.attrs);
         assert_eq!(help.summary.as_deref(), Some("CLI server to host Kival."));

@@ -150,7 +150,7 @@ pub(crate) fn render_with_schema(
 
     for (heading, rows) in grouped_rows {
         output.push('\n');
-        output.push_str(help_heading(heading));
+        output.push_str(heading);
         output.push_str(":\n");
         write_rows(&mut output, &rows, style);
     }
@@ -255,11 +255,6 @@ fn style_flag_row(output: &mut String, line: &str) {
     } else {
         output.push_str(&line[start..]);
     }
-}
-
-/// Removes prose punctuation from a doc-derived group heading for terminal help.
-fn help_heading(heading: &str) -> &str {
-    heading.strip_suffix('.').unwrap_or(heading)
 }
 
 /// Recognizes generated and documentation-style section headings.

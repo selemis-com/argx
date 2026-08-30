@@ -397,11 +397,19 @@ mod tests {
     #[derive(Debug, PartialEq, Eq, argx::Parser)]
     #[argx(name = "grouped-help")]
     struct GroupedHelpCli {
-        /// Output.
+        /// # Output
         #[argx(flatten)]
         output: GroupedOutputArgs,
         #[argx(subcommand)]
         command: GroupedHelpCommand,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    #[argx(name = "documented-flatten")]
+    struct DocumentedFlattenCli {
+        /// Output settings shared with other commands.
+        #[argx(flatten)]
+        output: GroupedOutputArgs,
     }
 
     #[derive(Debug, PartialEq, Eq, argx::Args)]
@@ -413,7 +421,7 @@ mod tests {
     #[derive(Debug, PartialEq, Eq, argx::Parser)]
     #[argx(name = "grouped-positional")]
     struct GroupedPositionalCli {
-        /// Input
+        /// # Input
         #[argx(flatten)]
         input: GroupedInputArgs,
     }
@@ -435,10 +443,10 @@ mod tests {
     #[derive(Debug, PartialEq, Eq, argx::Parser)]
     #[argx(name = "merged-groups")]
     struct MergedGroupCli {
-        /// Output
+        /// # Output
         #[argx(flatten)]
         color: ColorOutputArgs,
-        /// Output
+        /// # Output
         #[argx(flatten)]
         format: FormatOutputArgs,
     }
@@ -452,7 +460,7 @@ mod tests {
 
     #[derive(Debug, PartialEq, Eq, argx::Args)]
     struct NestedGroupArgs {
-        /// Network
+        /// # Network
         #[argx(flatten)]
         values: NestedGroupValues,
     }
@@ -467,7 +475,7 @@ mod tests {
     #[derive(Debug, PartialEq, Eq, argx::Parser)]
     #[argx(name = "overridden-group")]
     struct OverriddenGroupCli {
-        /// Runtime
+        /// # Runtime
         #[argx(flatten)]
         nested: NestedGroupArgs,
     }
@@ -493,7 +501,7 @@ mod tests {
     #[derive(Debug, PartialEq, Eq, argx::Parser)]
     #[argx(name = "reused-group")]
     struct ReusedGroupedCli {
-        /// Root settings
+        /// # Root settings
         #[argx(flatten)]
         shared: ReusedGroupedArgs,
         #[argx(subcommand)]
@@ -1290,7 +1298,7 @@ Use `documented-help schema` to inspect command contracts.
     }
 
     #[test]
-    fn flatten_field_docs_group_arguments_without_renderer_insertion_metadata() {
+    fn flatten_heading_groups_arguments_without_renderer_insertion_metadata() {
         snapbox::Assert::new().action_env("SNAPSHOTS").eq(
             root_help::<GroupedHelpCli>(),
             snapbox::str![[r#"
@@ -1311,7 +1319,15 @@ Output:
     }
 
     #[test]
-    fn flattened_positional_arguments_move_into_their_documented_group() {
+    fn flatten_field_prose_does_not_create_a_help_section() {
+        let help = root_help::<DocumentedFlattenCli>();
+        assert!(help.contains("\nOptions:\n      --json"));
+        assert!(help.contains("  --field <FIELD>"));
+        assert!(!help.contains("Output settings shared with other commands:"));
+    }
+
+    #[test]
+    fn flattened_positional_arguments_move_into_their_explicit_group() {
         let help = root_help::<GroupedPositionalCli>();
         assert!(help.contains("\nInput:\n  <INPUT>  Input file.\n"));
         assert!(!help.contains("\nArguments:\n"));
@@ -1339,7 +1355,7 @@ Output:
     }
 
     #[test]
-    fn undocumented_flattening_propagates_nested_groups_and_documented_flattening_overrides_them() {
+    fn ungrouped_flattening_propagates_nested_groups_and_explicit_grouping_overrides_them() {
         let propagated = root_help::<PropagatedGroupCli>();
         assert!(propagated.contains("\nNetwork:\n      --interface <INTERFACE>"));
 

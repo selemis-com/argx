@@ -195,7 +195,7 @@ impl Field {
         Ok(Self {
             binding,
             semantics: FieldSemantics::Flatten,
-            help_heading: attrs::doc_summary(&field.attrs),
+            help_heading: attrs::doc_heading(&field.attrs),
         })
     }
 
