@@ -149,7 +149,9 @@ fn raw_error(
             Error::UnexpectedValue { name: action.diagnostic }
         }
         RawError::UnknownFlag { token } => Error::UnknownFlag { token: token.to_vec() },
-        RawError::MissingFlagValue { flag } => Error::MissingValue { name: flag.diagnostic },
+        RawError::MissingFlagValue { flag } => {
+            Error::MissingValue { name: flag.diagnostic, possible_values: flag.accepted_values }
+        }
         RawError::UnexpectedFlagValue { flag } => Error::UnexpectedValue { name: flag.diagnostic },
         RawError::UnexpectedArg { token } => Error::UnexpectedArgument {
             token: token.to_vec(),
