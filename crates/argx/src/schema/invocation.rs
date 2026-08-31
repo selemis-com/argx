@@ -74,11 +74,7 @@ fn invocation_schema(
 
     let mut root = Map::new();
     root.insert("$schema".to_owned(), Value::String(DRAFT_2020_12.to_owned()));
-    root.insert("title".to_owned(), Value::String(command.name.to_owned()));
-    if let Some(description) = command.about.or(command.description).and_then(doc_summary) {
-        root.insert("description".to_owned(), Value::String(description.to_owned()));
-    }
-    root.insert("type".to_owned(), Value::String("object".to_owned()));
+    add_command_header(&mut root, command);
     if !properties.is_empty() {
         root.insert("properties".to_owned(), Value::Object(properties));
     }
@@ -86,14 +82,23 @@ fn invocation_schema(
         root.insert("required".to_owned(), Value::Array(required));
     }
     root.insert("additionalProperties".to_owned(), Value::Bool(false));
-    add_command_metadata(&mut root, command);
     add_constraints(&mut root, constraint_scopes, &visible);
 
     schemars::Schema::from(root)
 }
 
+/// Adds the common object identity and annotations for one command schema.
+pub(super) fn add_command_header(root: &mut Map<String, Value>, command: &Command<'_>) {
+    root.insert("title".to_owned(), Value::String(command.name.to_owned()));
+    if let Some(description) = command.about.or(command.description).and_then(doc_summary) {
+        root.insert("description".to_owned(), Value::String(description.to_owned()));
+    }
+    root.insert("type".to_owned(), Value::String("object".to_owned()));
+    add_command_metadata(root, command);
+}
+
 /// Adds application-defined command metadata using a JSON Schema extension keyword.
-pub(super) fn add_command_metadata(root: &mut Map<String, Value>, command: &Command<'_>) {
+fn add_command_metadata(root: &mut Map<String, Value>, command: &Command<'_>) {
     if command.metadata.is_empty() {
         return;
     }

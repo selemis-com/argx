@@ -167,25 +167,16 @@ fn concise_command_schema(path: &[&Command<'_>]) -> Value {
     let mut schema = serde_json::to_value(invocation::invocation_schema_for_path(path))
         .expect("invocation schema must serialize");
     let object = schema.as_object_mut().expect("invocation schemas are objects");
+    let mut definitions = Map::new();
 
-    if !command.subcommands.is_empty() {
-        let mut commands = Map::new();
-        for &child in command.subcommands {
-            let mut stub = Map::new();
-            stub.insert("title".to_owned(), Value::String(child.name.to_owned()));
-            if let Some(description) = child.about.or(child.description).and_then(doc_summary) {
-                stub.insert("description".to_owned(), Value::String(description.to_owned()));
-            }
-            stub.insert("type".to_owned(), Value::String("object".to_owned()));
-            invocation::add_command_metadata(&mut stub, child);
-            commands.insert(child.name.to_owned(), Value::Object(stub));
-        }
+    bundle_subcommands(object, &mut definitions, command, &[], |child, _| {
+        let mut stub = Map::new();
+        invocation::add_command_header(&mut stub, child);
+        Value::Object(stub)
+    });
 
-        add_subcommand_properties(object, command, &[]);
-        object.insert(
-            "$defs".to_owned(),
-            Value::Object(Map::from_iter([("commands".to_owned(), definitions_schema(commands))])),
-        );
+    if !definitions.is_empty() {
+        object.insert("$defs".to_owned(), Value::Object(definitions));
     }
 
     schema
@@ -234,21 +225,11 @@ fn complete_command_schema(
         }
     }
 
-    if !command.subcommands.is_empty() {
-        let mut commands = Map::new();
-        for &child in command.subcommands {
-            let child_location = child_location(location, child.name);
-            let child_schema = serde_json::to_value(invocation::local_invocation_schema(child))
-                .expect("invocation schema must serialize");
-            commands.insert(
-                child.name.to_owned(),
-                complete_command_schema(child_schema, child, registry, &child_location),
-            );
-        }
-
-        add_subcommand_properties(object, command, location);
-        definitions.insert("commands".to_owned(), definitions_schema(commands));
-    }
+    bundle_subcommands(object, &mut definitions, command, location, |child, child_location| {
+        let child_schema = serde_json::to_value(invocation::local_invocation_schema(child))
+            .expect("invocation schema must serialize");
+        complete_command_schema(child_schema, child, registry, child_location)
+    });
 
     if !definitions.is_empty() {
         object.insert("$defs".to_owned(), Value::Object(definitions));
@@ -257,12 +238,19 @@ fn complete_command_schema(
     schema
 }
 
-/// Adds canonical subcommand properties and exact-one selection constraints to one command object.
-fn add_subcommand_properties(
+/// Bundles child definitions and applies them through canonical subcommand properties.
+fn bundle_subcommands(
     object: &mut Map<String, Value>,
+    definitions: &mut Map<String, Value>,
     command: &Command<'_>,
     location: &[String],
+    mut project: impl FnMut(&Command<'_>, &[String]) -> Value,
 ) {
+    if command.subcommands.is_empty() {
+        return;
+    }
+
+    let mut commands = Map::new();
     let properties = object
         .entry("properties".to_owned())
         .or_insert_with(|| Value::Object(Map::new()))
@@ -276,11 +264,12 @@ fn add_subcommand_properties(
         );
         let child_location = child_location(location, child.name);
         properties.insert(child.name.to_owned(), reference_schema(&child_location));
+        commands.insert(child.name.to_owned(), project(child, &child_location));
     }
 
     if command.subcommands.len() == 1 {
         append_required(object, command.subcommands[0].name);
-    } else if !command.subcommands.is_empty() {
+    } else {
         object.insert(
             "oneOf".to_owned(),
             Value::Array(
@@ -288,6 +277,8 @@ fn add_subcommand_properties(
             ),
         );
     }
+
+    definitions.insert("commands".to_owned(), definitions_schema(commands));
 }
 
 /// Returns the bundled location of one child command schema.
