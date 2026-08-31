@@ -169,8 +169,8 @@ fn command_like(attributes: &[Attribute], context: &str) -> syn::Result<CommandA
                 let content;
                 parenthesized!(content in meta.input);
                 let source_key = content.parse::<LitStr>()?.value();
-                if source_key.is_empty() {
-                    return Err(meta.error("property key cannot be empty"));
+                if !source_key.chars().next().is_some_and(char::is_alphanumeric) {
+                    return Err(meta.error("property key must begin with an alphanumeric character"));
                 }
                 let key = support::schema_key(&source_key);
                 content.parse::<Token![,]>()?;
@@ -598,6 +598,26 @@ mod tests {
         assert_eq!(attributes.properties.len(), 2);
         assert_eq!(attributes.properties[0].key, "readOnly");
         assert_eq!(attributes.properties[1].key, "requiredScopes");
+    }
+
+    #[test]
+    fn command_properties_reject_leading_separators() {
+        for input in [
+            parse_quote! {
+                #[argx(property("_read_only", true))]
+                struct Example;
+            },
+            parse_quote! {
+                #[argx(property("-read-only", true))]
+                struct Example;
+            },
+        ] {
+            let error = match command(&input.attrs) {
+                Ok(_) => panic!("property key with a leading separator must be rejected"),
+                Err(error) => error,
+            };
+            assert!(error.to_string().contains("must begin with an alphanumeric character"));
+        }
     }
 
     #[test]
