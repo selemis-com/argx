@@ -231,6 +231,28 @@ mod tests {
     }
 
     #[test]
+    fn schema_pseudo_command_supports_help() {
+        for argv in
+            [&["schema", "--help"][..], &["schema", "-h"][..], &["schema", "admin", "--help"][..]]
+        {
+            let error =
+                match Cli::try_parse_from(std::iter::once("argx-test").chain(argv.iter().copied()))
+                {
+                    Err(error) => error,
+                    Ok(_) => panic!("schema help should be terminal"),
+                };
+            let argx::Error::DisplayHelp { help } = error else {
+                panic!("unexpected parser result: {error:?}");
+            };
+            assert!(help.contains("Print machine-readable schema"));
+            assert!(help.contains("Usage: tool schema [COMMAND]... [--full]"));
+            assert!(help.contains("[COMMAND]..."));
+            assert!(help.contains("--full"));
+            assert!(help.contains("-h, --help"));
+        }
+    }
+
+    #[test]
     fn schema_enabled_help_advertises_the_virtual_action() {
         let root_help = match Cli::try_parse_from(["argx-test", "--help"]) {
             Err(argx::Error::DisplayHelp { help }) => help,
