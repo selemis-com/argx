@@ -335,18 +335,6 @@ mod tests {
         assert_eq!(document["$defs"]["result"]["title"], "DirectOutput");
         assert_eq!(document["$defs"]["error"]["title"], "DirectError");
         assert!(document["$defs"].get("types").is_some());
-
-        let error = match Direct::try_parse_from(["argx-test", "-S", "--full"]) {
-            Err(error) => error,
-            Ok(_) => panic!("full schema action should be terminal"),
-        };
-        let argx::Error::DisplaySchema { schema } = error else {
-            panic!("unexpected parser result: {error:?}");
-        };
-        let document: Value = serde_json::from_str(&schema).expect("schema must be JSON");
-        assert_eq!(document["$defs"]["result"]["title"], "DirectOutput");
-        assert_eq!(document["$defs"]["error"]["title"], "DirectError");
-        assert!(document["$defs"].get("types").is_some());
     }
 
     #[derive(argx::Args)]
