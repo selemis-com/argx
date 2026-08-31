@@ -12,6 +12,8 @@
 use proc_macro2::Span;
 use syn::Type;
 
+use crate::args::metadata::MetadataEntry;
+
 mod command;
 mod shape;
 mod subcommand;
@@ -89,23 +91,9 @@ impl CommandSemantics {
             version: attributes.version,
             long_version: attributes.long_version,
             aliases: attributes.aliases,
-            metadata: attributes.metadata.into_iter().map(MetadataEntry::from).collect(),
+            metadata: attributes.metadata,
             schema: attributes.schema,
         }
-    }
-}
-
-/// One application-defined semantic metadata entry attached to a command.
-pub(crate) struct MetadataEntry {
-    /// Metadata key.
-    pub key: String,
-    /// JSON metadata value.
-    pub value: serde_json::Value,
-}
-
-impl From<crate::args::attrs::MetadataEntry> for MetadataEntry {
-    fn from(entry: crate::args::attrs::MetadataEntry) -> Self {
-        Self { key: entry.key, value: entry.value }
     }
 }
 
