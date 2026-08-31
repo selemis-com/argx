@@ -87,6 +87,15 @@ mod tests {
         /// Profile inherited by every child command.
         #[argx(long, global)]
         profile: Option<String>,
+        /// Select compact output.
+        #[argx(long, global, conflicts = "expanded")]
+        compact: bool,
+        /// Select expanded output.
+        #[argx(long, global)]
+        expanded: bool,
+        /// Enable verbose output for one profile.
+        #[argx(long, global, requires = "profile")]
+        verbose: bool,
         #[argx(subcommand)]
         command: Commands,
     }
@@ -173,6 +182,24 @@ mod tests {
     }
 
     #[test]
+    fn selected_paths_preserve_visible_ancestor_constraints() {
+        let get = discovered(["schema", "get"]);
+
+        assert_eq!(get["properties"]["--compact"]["const"], true);
+        assert_eq!(get["properties"]["--expanded"]["const"], true);
+        assert_eq!(get["allOf"].as_array().map(Vec::len), Some(1));
+        assert_eq!(get["dependentRequired"]["--verbose"], serde_json::json!(["--profile"]));
+        assert_eq!(
+            get["allOf"][0]["not"]["required"],
+            serde_json::json!(["--compact", "--expanded"]),
+        );
+
+        let full = discovered(["schema", "--full"]);
+        assert_eq!(full["allOf"].as_array().map(Vec::len), Some(1));
+        assert!(full["$defs"]["commands"]["$defs"]["get"].get("allOf").is_none());
+    }
+
+    #[test]
     fn full_schema_expands_handler_types_from_both_discovery_forms() {
         let by_command = discovered(["schema", "get", "--full"]);
         let by_action = discovered(["get", "example", "-S", "--full"]);
@@ -197,35 +224,54 @@ mod tests {
         assert_eq!(schema_keyword_count(&root), 1);
         assert_eq!(root["title"], "tool");
         assert!(root["$defs"].get("result").is_none());
-        assert_eq!(root["$defs"]["subcommands"]["$defs"].as_object().map(Map::len), Some(2));
+        assert_eq!(root["$defs"]["commands"]["$defs"].as_object().map(Map::len), Some(2));
+        assert_eq!(root["properties"]["get"]["$ref"], "#/$defs/commands/$defs/get");
+        assert_eq!(root["properties"]["admin"]["$ref"], "#/$defs/commands/$defs/admin");
+        assert_eq!(root["oneOf"].as_array().map(Vec::len), Some(2));
 
-        let get = &root["$defs"]["subcommands"]["$defs"]["get"];
+        let get = &root["$defs"]["commands"]["$defs"]["get"];
         assert_eq!(get["title"], "get");
         assert_eq!(get["description"], "Retrieve one object.");
+        assert_eq!(get["type"], "object");
+        assert!(get.get("additionalProperties").is_none());
         assert!(get.get("$defs").is_none());
 
         let admin = discovered(["schema", "admin"]);
         assert_eq!(admin["title"], "admin");
         assert!(admin["$defs"].get("result").is_none());
-        let status = &admin["$defs"]["subcommands"]["$defs"]["status"];
+        assert_eq!(admin["properties"]["status"]["$ref"], "#/$defs/commands/$defs/status",);
+        assert!(
+            admin["required"]
+                .as_array()
+                .is_some_and(|required| { required.iter().any(|property| property == "status") })
+        );
+        let status = &admin["$defs"]["commands"]["$defs"]["status"];
         assert_eq!(status["title"], "status");
-        assert!(status.get("$defs").is_none());
+        assert_eq!(status["type"], "object");
+        assert!(status.get("additionalProperties").is_none());
 
         let status = discovered(["schema", "admin", "status"]);
+        assert_eq!(status["properties"]["--profile"]["type"], "string");
         assert_eq!(
             status["$defs"]["types"]["$defs"]["StatusOutput"]["properties"]["healthy"]["type"],
             "boolean",
         );
 
         let full = discovered(["schema", "--full"]);
-        let get = &full["$defs"]["subcommands"]["$defs"]["get"];
+        assert_eq!(full["properties"]["--profile"]["type"], "string");
+        let get = &full["$defs"]["commands"]["$defs"]["get"];
+        assert!(get["properties"].get("--profile").is_none());
         assert_eq!(
             get["$defs"]["result"]["$ref"],
-            "#/$defs/subcommands/$defs/get/$defs/types/$defs/GetOutput",
+            "#/$defs/commands/$defs/get/$defs/types/$defs/GetOutput",
         );
         assert_eq!(
-            full["$defs"]["subcommands"]["$defs"]["admin"]["$defs"]["subcommands"]["$defs"]["status"]
-                ["$defs"]["types"]["$defs"]["StatusOutput"]["properties"]["healthy"]["type"],
+            full["$defs"]["commands"]["$defs"]["admin"]["properties"]["status"]["$ref"],
+            "#/$defs/commands/$defs/admin/$defs/commands/$defs/status",
+        );
+        assert_eq!(
+            full["$defs"]["commands"]["$defs"]["admin"]["$defs"]["commands"]["$defs"]["status"]["$defs"]
+                ["types"]["$defs"]["StatusOutput"]["properties"]["healthy"]["type"],
             "boolean",
         );
     }

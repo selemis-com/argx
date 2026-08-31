@@ -155,34 +155,37 @@ pub(crate) fn display_schema(path: &[&Command<'_>], registry: &Registry, full: b
     Error::DisplaySchema { schema: rendered }
 }
 
-/// Builds the compact discovery document shown by default.
+/// Builds the compact schema document shown by default.
 ///
-/// Structural commands expose only immediate child names and descriptions. Leaf commands bypass
-/// this representation and use the full schema automatically. `--full` opts into recursively
-/// expanded result, error, type, and subcommand schemas for structural commands.
+/// The selected command is fully described. Immediate child commands are real referenced object
+/// properties, but their definitions remain deliberately open projection boundaries. This keeps
+/// ordinary schema discovery self-contained and standards-validating without pretending to know
+/// descendant invocation details that were not projected. `--full` recursively closes those
+/// boundaries.
 fn concise_command_schema(path: &[&Command<'_>]) -> Value {
     let command = path.last().copied().expect("schema discovery always has a root command");
     let mut schema = serde_json::to_value(invocation::invocation_schema_for_path(path))
         .expect("invocation schema must serialize");
     let object = schema.as_object_mut().expect("invocation schemas are objects");
-    let mut definitions = Map::new();
 
     if !command.subcommands.is_empty() {
-        let mut subcommands = Map::new();
+        let mut commands = Map::new();
         for &child in command.subcommands {
-            let mut summary = Map::new();
-            summary.insert("title".to_owned(), Value::String(child.name.to_owned()));
+            let mut stub = Map::new();
+            stub.insert("title".to_owned(), Value::String(child.name.to_owned()));
             if let Some(description) = child.about.or(child.description).and_then(doc_summary) {
-                summary.insert("description".to_owned(), Value::String(description.to_owned()));
+                stub.insert("description".to_owned(), Value::String(description.to_owned()));
             }
-            invocation::add_command_metadata(&mut summary, child);
-            subcommands.insert(child.name.to_owned(), Value::Object(summary));
+            stub.insert("type".to_owned(), Value::String("object".to_owned()));
+            invocation::add_command_metadata(&mut stub, child);
+            commands.insert(child.name.to_owned(), Value::Object(stub));
         }
-        definitions.insert("subcommands".to_owned(), definitions_schema(subcommands));
-    }
 
-    if !definitions.is_empty() {
-        object.insert("$defs".to_owned(), Value::Object(definitions));
+        add_subcommand_properties(object, command, &[]);
+        object.insert(
+            "$defs".to_owned(),
+            Value::Object(Map::from_iter([("commands".to_owned(), definitions_schema(commands))])),
+        );
     }
 
     schema
@@ -193,17 +196,27 @@ pub(super) fn doc_summary(documentation: &str) -> Option<&str> {
     documentation.split("\n\n").map(str::trim).find(|paragraph| !paragraph.is_empty())
 }
 
-/// Builds one schema-compliant command document.
+/// Builds a complete validating command document.
 ///
-/// The selected command's explicit invocation values form the root schema. Handler result and error
-/// schemas are bundled under `$defs`, along with any Schemars-generated type definitions.
-/// Structural commands bundle child command schemas under `$defs.subcommands.$defs`.
+/// The selected command root includes globals inherited from its command path. Descendants contain
+/// only fields owned by that command, so one semantic option is represented at exactly one object
+/// level. Child command selection is expressed through ordinary `properties`, local `$ref`s, and
+/// `required`/`oneOf`; `$defs` is used only to bundle referenced command and handler schemas.
 fn full_command_schema(path: &[&Command<'_>], registry: &Registry, location: &[String]) -> Value {
     let command = path.last().copied().expect("schema discovery always has a root command");
-    let mut schema = serde_json::to_value(invocation::invocation_schema_for_path(path))
+    let schema = serde_json::to_value(invocation::invocation_schema_for_path(path))
         .expect("invocation schema must serialize");
-    let object = schema.as_object_mut().expect("invocation schemas are objects");
+    complete_command_schema(schema, command, registry, location)
+}
 
+/// Recursively completes one command schema whose invocation fields are already projected.
+fn complete_command_schema(
+    mut schema: Value,
+    command: &Command<'_>,
+    registry: &Registry,
+    location: &[String],
+) -> Value {
+    let object = schema.as_object_mut().expect("invocation schemas are objects");
     if !location.is_empty() {
         object.remove("$schema");
     }
@@ -222,25 +235,19 @@ fn full_command_schema(path: &[&Command<'_>], registry: &Registry, location: &[S
     }
 
     if !command.subcommands.is_empty() {
-        let mut subcommands = Map::new();
+        let mut commands = Map::new();
         for &child in command.subcommands {
-            let mut child_path = path.to_vec();
-            child_path.push(child);
-
-            let mut child_location = location.to_vec();
-            child_location.extend([
-                "$defs".to_owned(),
-                "subcommands".to_owned(),
-                "$defs".to_owned(),
+            let child_location = child_location(location, child.name);
+            let child_schema = serde_json::to_value(invocation::local_invocation_schema(child))
+                .expect("invocation schema must serialize");
+            commands.insert(
                 child.name.to_owned(),
-            ]);
-
-            subcommands.insert(
-                child.name.to_owned(),
-                full_command_schema(&child_path, registry, &child_location),
+                complete_command_schema(child_schema, child, registry, &child_location),
             );
         }
-        definitions.insert("subcommands".to_owned(), definitions_schema(subcommands));
+
+        add_subcommand_properties(object, command, location);
+        definitions.insert("commands".to_owned(), definitions_schema(commands));
     }
 
     if !definitions.is_empty() {
@@ -248,6 +255,77 @@ fn full_command_schema(path: &[&Command<'_>], registry: &Registry, location: &[S
     }
 
     schema
+}
+
+/// Adds canonical subcommand properties and exact-one selection constraints to one command object.
+fn add_subcommand_properties(
+    object: &mut Map<String, Value>,
+    command: &Command<'_>,
+    location: &[String],
+) {
+    let properties = object
+        .entry("properties".to_owned())
+        .or_insert_with(|| Value::Object(Map::new()))
+        .as_object_mut()
+        .expect("invocation properties must be an object");
+
+    for &child in command.subcommands {
+        assert!(
+            !properties.contains_key(child.name),
+            "schema subcommand name must not collide with an invocation property",
+        );
+        let child_location = child_location(location, child.name);
+        properties.insert(child.name.to_owned(), reference_schema(&child_location));
+    }
+
+    if command.subcommands.len() == 1 {
+        append_required(object, command.subcommands[0].name);
+    } else if !command.subcommands.is_empty() {
+        object.insert(
+            "oneOf".to_owned(),
+            Value::Array(
+                command.subcommands.iter().map(|child| required_schema(child.name)).collect(),
+            ),
+        );
+    }
+}
+
+/// Returns the bundled location of one child command schema.
+fn child_location(location: &[String], child: &str) -> Vec<String> {
+    let mut child_location = location.to_vec();
+    child_location.extend([
+        "$defs".to_owned(),
+        "commands".to_owned(),
+        "$defs".to_owned(),
+        child.to_owned(),
+    ]);
+    child_location
+}
+
+/// Builds a local `$ref` to one bundled command schema.
+fn reference_schema(location: &[String]) -> Value {
+    let pointer =
+        location.iter().map(|segment| pointer_token(segment)).collect::<Vec<_>>().join("/");
+    let mut schema = Map::new();
+    schema.insert("$ref".to_owned(), Value::String(format!("#/{pointer}")));
+    Value::Object(schema)
+}
+
+/// Appends one required property while preserving existing invocation requirements.
+fn append_required(object: &mut Map<String, Value>, property: &str) {
+    let required = object
+        .entry("required".to_owned())
+        .or_insert_with(|| Value::Array(Vec::new()))
+        .as_array_mut()
+        .expect("invocation required must be an array");
+    required.push(Value::String(property.to_owned()));
+}
+
+/// Builds one branch requiring a selected subcommand property.
+fn required_schema(property: &str) -> Value {
+    let mut schema = Map::new();
+    schema.insert("required".to_owned(), Value::Array(vec![Value::String(property.to_owned())]));
+    Value::Object(schema)
 }
 
 /// Creates a Draft 2020-12 generator whose references target this command's bundled type schemas.

@@ -19,7 +19,7 @@ pub use crate::cli::{
     compose::{
         action_flag_spellings_disjoint, argument_key_by_name, command_keys_unique, concat_args,
         concat_constraints, concat_flags, concat_help_groups, flag_spellings_unique,
-        positional_layout_valid, table_len,
+        positional_layout_valid, schema_property_names_disjoint, table_len,
     },
     protocol::{
         Args, CommandArgs, HandlerResult, HandlerSchemaSource, HandlerSchemas,

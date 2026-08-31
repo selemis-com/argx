@@ -1,7 +1,9 @@
 //! Machine-readable command schemas.
 //!
-//! Structural commands expose their immediate children, while leaf commands expose invocation,
-//! result, and error schemas. Commands may also attach application-defined semantic metadata;
+//! Structural commands expose canonical children as referenced properties. Default projections
+//! leave that immediate boundary open for incremental discovery; `--full` recursively bundles a
+//! validating canonical invocation tree. Leaf commands expose invocation, result, and error
+//! schemas. Commands may also attach application-defined semantic metadata;
 //! metadata keys are preserved exactly as authored and emitted under the `x-argx-metadata`
 //! namespace in generated schemas. For example, `metadata({ "readOnly": true })` is emitted as
 //! `"x-argx-metadata": { "readOnly": true }`. Use `--full` to recursively expand a

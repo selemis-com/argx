@@ -464,6 +464,17 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
             );
         }
     });
+    let schema_property_check = (command.semantics.schema && subcommand.is_some()).then(|| {
+        quote! {
+            const _: () = ::core::assert!(
+                #facade::__private::schema_property_names_disjoint(
+                    ARGX_COMMAND.args,
+                    ARGX_COMMAND.subcommands,
+                ),
+                "schema-enabled command contains a positional argument matching a subcommand name",
+            );
+        }
+    });
 
     let name = &command.semantics.name;
     let about = option_str(command.semantics.about.as_deref());
@@ -595,6 +606,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                 "command contains a flag spelling reserved by a built-in action",
             );
             #flattened_checks
+            #schema_property_check
 
             #invocable_handler_impl
             #schema_command_impl
