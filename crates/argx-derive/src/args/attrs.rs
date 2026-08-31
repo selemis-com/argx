@@ -602,7 +602,7 @@ mod tests {
 
     #[test]
     fn command_properties_reject_leading_separators() {
-        for input in [
+        let inputs: [DeriveInput; 2] = [
             parse_quote! {
                 #[argx(property("_read_only", true))]
                 struct Example;
@@ -611,7 +611,9 @@ mod tests {
                 #[argx(property("-read-only", true))]
                 struct Example;
             },
-        ] {
+        ];
+
+        for input in inputs {
             let error = match command(&input.attrs) {
                 Ok(_) => panic!("property key with a leading separator must be rejected"),
                 Err(error) => error,
