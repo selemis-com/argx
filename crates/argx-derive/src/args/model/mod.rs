@@ -60,8 +60,8 @@ pub(crate) struct CommandSemantics {
     pub long_version: Option<syn::Expr>,
     /// Hidden command spellings accepted in addition to the canonical name.
     pub aliases: Vec<String>,
-    /// Application-defined semantic properties exposed to machine-readable consumers.
-    pub properties: Vec<Property>,
+    /// Application-defined semantic metadata exposed to machine-readable consumers.
+    pub metadata: Vec<MetadataEntry>,
     /// Whether this command declaration participates in machine-readable schema discovery.
     pub schema: bool,
 }
@@ -89,28 +89,28 @@ impl CommandSemantics {
             version: attributes.version,
             long_version: attributes.long_version,
             aliases: attributes.aliases,
-            properties: attributes.properties.into_iter().map(Property::from).collect(),
+            metadata: attributes.metadata.into_iter().map(MetadataEntry::from).collect(),
             schema: attributes.schema,
         }
     }
 }
 
-/// One application-defined semantic property attached to a command.
-pub(crate) struct Property {
-    /// Property key.
+/// One application-defined semantic metadata entry attached to a command.
+pub(crate) struct MetadataEntry {
+    /// Metadata key.
     pub key: String,
-    /// JSON-like property value.
-    pub value: PropertyValue,
+    /// JSON-like metadata value.
+    pub value: MetadataValue,
 }
 
-impl From<crate::args::attrs::Property> for Property {
-    fn from(property: crate::args::attrs::Property) -> Self {
-        Self { key: property.key, value: PropertyValue::from(property.value) }
+impl From<crate::args::attrs::MetadataEntry> for MetadataEntry {
+    fn from(entry: crate::args::attrs::MetadataEntry) -> Self {
+        Self { key: entry.key, value: MetadataValue::from(entry.value) }
     }
 }
 
 /// JSON-like value preserved in the normalized command model.
-pub(crate) enum PropertyValue {
+pub(crate) enum MetadataValue {
     /// Explicit null value.
     Null,
     /// Boolean value.
@@ -121,13 +121,15 @@ pub(crate) enum PropertyValue {
     Float(f64),
     /// UTF-8 string value.
     String(String),
-    /// Ordered collection of property values.
+    /// Ordered collection of metadata values.
     Array(Vec<Self>),
+    /// JSON object.
+    Object(Vec<MetadataEntry>),
 }
 
-impl From<crate::args::attrs::PropertyValue> for PropertyValue {
-    fn from(value: crate::args::attrs::PropertyValue) -> Self {
-        use crate::args::attrs::PropertyValue as Parsed;
+impl From<crate::args::attrs::MetadataValue> for MetadataValue {
+    fn from(value: crate::args::attrs::MetadataValue) -> Self {
+        use crate::args::attrs::MetadataValue as Parsed;
 
         match value {
             Parsed::Null => Self::Null,
@@ -136,6 +138,9 @@ impl From<crate::args::attrs::PropertyValue> for PropertyValue {
             Parsed::Float(value) => Self::Float(value),
             Parsed::String(value) => Self::String(value),
             Parsed::Array(values) => Self::Array(values.into_iter().map(Self::from).collect()),
+            Parsed::Object(entries) => {
+                Self::Object(entries.into_iter().map(MetadataEntry::from).collect())
+            }
         }
     }
 }

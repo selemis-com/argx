@@ -80,11 +80,11 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
         .find(|(_, field)| matches!(&field.semantics, model::FieldSemantics::Subcommand));
     let keys = key::constants(&facade, &command.binding.fingerprint, flags.len(), args.len());
     let command_key = key::ident("COMMAND", None);
-    let properties = command
+    let metadata = command
         .semantics
-        .properties
+        .metadata
         .iter()
-        .map(|property| property_tokens(property, &facade))
+        .map(|entry| metadata_entry_tokens(entry, &facade))
         .collect::<Vec<_>>();
 
     // Static command metadata is generated once from the normalized argument model and is shared
@@ -578,7 +578,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                     help_sections: &[#(#help_sections),*],
                     help_groups: #command_help_groups,
                     aliases: &[#(#aliases),*],
-                    properties: &[#(#properties),*],
+                    metadata: &[#(#metadata),*],
                     actions: #command_actions,
                     flags: #command_flags,
                     args: #command_args,
@@ -717,30 +717,37 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
     }
 }
 
-/// Projects one normalized property into the runtime static command vocabulary.
-pub(super) fn property_tokens(property: &model::Property, facade: &TokenStream) -> TokenStream {
-    let key = &property.key;
-    let value = property_value_tokens(&property.value, facade);
+/// Projects one normalized metadata entry into the runtime static command vocabulary.
+pub(super) fn metadata_entry_tokens(
+    entry: &model::MetadataEntry,
+    facade: &TokenStream,
+) -> TokenStream {
+    let key = &entry.key;
+    let value = metadata_value_tokens(&entry.value, facade);
     quote! {
-        #facade::__private::Property { key: #key, value: #value }
+        #facade::__private::MetadataEntry { key: #key, value: #value }
     }
 }
 
-/// Projects one normalized property value into a static runtime expression.
-fn property_value_tokens(value: &model::PropertyValue, facade: &TokenStream) -> TokenStream {
-    use model::PropertyValue;
+/// Projects one normalized metadata value into a static runtime expression.
+fn metadata_value_tokens(value: &model::MetadataValue, facade: &TokenStream) -> TokenStream {
+    use model::MetadataValue;
 
     match value {
-        PropertyValue::Null => quote!(#facade::__private::PropertyValue::Null),
-        PropertyValue::Bool(value) => quote!(#facade::__private::PropertyValue::Bool(#value)),
-        PropertyValue::Integer(value) => {
-            quote!(#facade::__private::PropertyValue::Integer(#value))
+        MetadataValue::Null => quote!(#facade::__private::MetadataValue::Null),
+        MetadataValue::Bool(value) => quote!(#facade::__private::MetadataValue::Bool(#value)),
+        MetadataValue::Integer(value) => {
+            quote!(#facade::__private::MetadataValue::Integer(#value))
         }
-        PropertyValue::Float(value) => quote!(#facade::__private::PropertyValue::Float(#value)),
-        PropertyValue::String(value) => quote!(#facade::__private::PropertyValue::String(#value)),
-        PropertyValue::Array(values) => {
-            let values = values.iter().map(|value| property_value_tokens(value, facade));
-            quote!(#facade::__private::PropertyValue::Array(&[#(#values),*]))
+        MetadataValue::Float(value) => quote!(#facade::__private::MetadataValue::Float(#value)),
+        MetadataValue::String(value) => quote!(#facade::__private::MetadataValue::String(#value)),
+        MetadataValue::Array(values) => {
+            let values = values.iter().map(|value| metadata_value_tokens(value, facade));
+            quote!(#facade::__private::MetadataValue::Array(&[#(#values),*]))
+        }
+        MetadataValue::Object(entries) => {
+            let entries = entries.iter().map(|entry| metadata_entry_tokens(entry, facade));
+            quote!(#facade::__private::MetadataValue::Object(&[#(#entries),*]))
         }
     }
 }

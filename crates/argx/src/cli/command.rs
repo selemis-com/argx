@@ -8,18 +8,18 @@
 /// Stable semantic identity assigned to one command or argument declaration.
 pub type Key = u64;
 
-/// One application-defined semantic property attached to a command.
+/// One application-defined semantic metadata entry attached to a command.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Property<'a> {
-    /// Application-defined property name.
+pub struct MetadataEntry<'a> {
+    /// Application-defined metadata key.
     pub key: &'a str,
-    /// Structured property value preserved for machine-readable projections.
-    pub value: PropertyValue<'a>,
+    /// Structured metadata value preserved for machine-readable projections.
+    pub value: MetadataValue<'a>,
 }
 
-/// Static JSON-like value supported by command properties.
+/// Static JSON-like value supported by command metadata.
 #[derive(Debug, Clone, Copy)]
-pub enum PropertyValue<'a> {
+pub enum MetadataValue<'a> {
     /// Explicit null value.
     Null,
     /// Boolean value.
@@ -30,11 +30,13 @@ pub enum PropertyValue<'a> {
     Float(f64),
     /// UTF-8 string value.
     String(&'a str),
-    /// Ordered collection of property values.
+    /// Ordered collection of metadata values.
     Array(&'a [Self]),
+    /// JSON object.
+    Object(&'a [MetadataEntry<'a>]),
 }
 
-impl PartialEq for PropertyValue<'_> {
+impl PartialEq for MetadataValue<'_> {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Null, Self::Null) => true,
@@ -43,12 +45,13 @@ impl PartialEq for PropertyValue<'_> {
             (Self::Float(left), Self::Float(right)) => left.to_bits() == right.to_bits(),
             (Self::String(left), Self::String(right)) => left == right,
             (Self::Array(left), Self::Array(right)) => left == right,
+            (Self::Object(left), Self::Object(right)) => left == right,
             _ => false,
         }
     }
 }
 
-impl Eq for PropertyValue<'_> {}
+impl Eq for MetadataValue<'_> {}
 
 /// One normalized relationship between semantic argument identities.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -175,7 +178,7 @@ pub struct Command<'a> {
     /// Hidden spellings accepted in addition to the canonical command name.
     pub aliases: &'a [&'a str],
     /// Application-defined semantic metadata preserved for machine-readable consumers.
-    pub properties: &'a [Property<'a>],
+    pub metadata: &'a [MetadataEntry<'a>],
     /// Built-in parser actions available in this command scope.
     pub actions: &'a [&'a Action<'a>],
     /// Flags accepted by this command.
@@ -199,7 +202,7 @@ impl Command<'static> {
         help_sections: &[],
         help_groups: &[],
         aliases: &[],
-        properties: &[],
+        metadata: &[],
         actions: &[&HELP_ACTION],
         flags: &[],
         args: &[],

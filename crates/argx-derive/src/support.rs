@@ -31,25 +31,6 @@ pub(crate) fn to_kebab(value: &str) -> String {
     output
 }
 
-/// Normalizes an Argx-owned schema key to lower camel case.
-///
-/// This reuses the same word boundaries as Argx's CLI naming so schema-facing names do not grow a
-/// separate casing convention. Standard JSON Schema keywords and application-owned schema fields
-/// are not passed through this helper.
-pub(crate) fn schema_key(value: &str) -> String {
-    let kebab = to_kebab(value);
-    let mut segments = kebab.split('-');
-    let mut output = segments.next().unwrap_or_default().to_owned();
-    for segment in segments {
-        let mut characters = segment.chars();
-        if let Some(first) = characters.next() {
-            output.extend(first.to_uppercase());
-            output.extend(characters);
-        }
-    }
-    output
-}
-
 /// Derives a stable user-facing spelling for simple defaults without evaluating application code.
 pub(crate) fn default_help(expression: &Expr, value_enum: bool) -> Option<String> {
     match expression {

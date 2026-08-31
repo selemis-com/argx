@@ -5,9 +5,7 @@
 //! after Rust documentation and inferred spellings have been normalized. Keeping parsing and
 //! semantic validation separate avoids making code generation depend on raw attribute syntax.
 
-use syn::{Attribute, Expr, Lit, LitChar, LitStr, Meta, Token, parenthesized};
-
-use crate::support;
+use syn::{Attribute, Expr, Lit, LitChar, LitStr, Meta, Token, braced, bracketed, parenthesized};
 
 /// Structured help extracted from Rust doc comments on a command declaration.
 ///
@@ -52,22 +50,22 @@ pub(crate) struct CommandAttrs {
     pub long_version: Option<Expr>,
     /// Additional hidden spellings accepted for a selectable subcommand.
     pub aliases: Vec<String>,
-    /// Application-defined semantic properties exposed to machine-readable consumers.
-    pub properties: Vec<Property>,
+    /// Application-defined semantic metadata exposed to machine-readable consumers.
+    pub metadata: Vec<MetadataEntry>,
     /// Whether this command declaration participates in schema discovery.
     pub schema: bool,
 }
 
-/// One application-defined command property parsed from derive syntax.
-pub(crate) struct Property {
-    /// Property key.
+/// One application-defined command metadata entry parsed from derive syntax.
+pub(crate) struct MetadataEntry {
+    /// Metadata key, preserved exactly as authored.
     pub key: String,
-    /// JSON-like literal property value.
-    pub value: PropertyValue,
+    /// JSON-like metadata value.
+    pub value: MetadataValue,
 }
 
-/// JSON-like literal accepted by `property(...)`.
-pub(crate) enum PropertyValue {
+/// JSON-like literal accepted by `metadata({ ... })`.
+pub(crate) enum MetadataValue {
     /// Explicit null value.
     Null,
     /// Boolean value.
@@ -78,8 +76,10 @@ pub(crate) enum PropertyValue {
     Float(f64),
     /// UTF-8 string value.
     String(String),
-    /// Ordered collection of property values.
+    /// Ordered collection of metadata values.
     Array(Vec<Self>),
+    /// JSON object with keys preserved exactly as authored.
+    Object(Vec<MetadataEntry>),
 }
 
 /// Attributes accepted on a command field.
@@ -132,6 +132,7 @@ pub(crate) fn variant(attributes: &[Attribute]) -> syn::Result<CommandAttrs> {
 /// Parses metadata shared by root commands and selectable subcommands.
 fn command_like(attributes: &[Attribute], context: &str) -> syn::Result<CommandAttrs> {
     let mut parsed = CommandAttrs::default();
+    let mut metadata_seen = false;
     for attribute in attributes.iter().filter(|attribute| attribute.path().is_ident("argx")) {
         attribute.parse_nested_meta(|meta| {
             if meta.path.is_ident("name") {
@@ -165,25 +166,19 @@ fn command_like(attributes: &[Attribute], context: &str) -> syn::Result<CommandA
             } else if meta.path.is_ident("aliases") {
                 parsed.aliases.extend(string_array(&meta)?);
                 Ok(())
-            } else if meta.path.is_ident("property") {
+            } else if meta.path.is_ident("metadata") {
+                if metadata_seen {
+                    return Err(meta.error("duplicate `metadata` attribute"));
+                }
+                metadata_seen = true;
                 let content;
                 parenthesized!(content in meta.input);
-                let source_key = content.parse::<LitStr>()?.value();
-                if !source_key.chars().next().is_some_and(char::is_alphanumeric) {
-                    return Err(meta.error("property key must begin with an alphanumeric character"));
-                }
-                let key = support::schema_key(&source_key);
-                content.parse::<Token![,]>()?;
-                let value = property_value(content.parse::<Expr>()?)?;
+                let object;
+                braced!(object in content);
+                parsed.metadata = metadata_entries(&object)?;
                 if !content.is_empty() {
-                    return Err(content.error("property expects exactly a key and value"));
+                    return Err(content.error("metadata expects exactly one object"));
                 }
-                if parsed.properties.iter().any(|property| property.key == key) {
-                    return Err(meta.error(format!(
-                        "duplicate property `{source_key}` after lower camel case normalization to `{key}`"
-                    )));
-                }
-                parsed.properties.push(Property { key, value });
                 Ok(())
             } else if meta.path.is_ident("schema") {
                 if parsed.schema {
@@ -202,72 +197,105 @@ fn command_like(attributes: &[Attribute], context: &str) -> syn::Result<CommandA
     Ok(parsed)
 }
 
-/// Normalizes one Rust literal expression into the static JSON-like property vocabulary.
-fn property_value(expression: Expr) -> syn::Result<PropertyValue> {
+/// Parses one JSON-like metadata object while preserving keys exactly as authored.
+fn metadata_entries(input: syn::parse::ParseStream<'_>) -> syn::Result<Vec<MetadataEntry>> {
+    let mut entries = Vec::new();
+    while !input.is_empty() {
+        let key = input.parse::<LitStr>()?.value();
+        input.parse::<Token![:]>()?;
+        let value = metadata_value(input)?;
+        if entries.iter().any(|entry: &MetadataEntry| entry.key == key) {
+            return Err(input.error(format!("duplicate metadata key `{key}`")));
+        }
+        entries.push(MetadataEntry { key, value });
+        if input.is_empty() {
+            break;
+        }
+        input.parse::<Token![,]>()?;
+    }
+    Ok(entries)
+}
+
+/// Parses one JSON-like metadata value.
+fn metadata_value(input: syn::parse::ParseStream<'_>) -> syn::Result<MetadataValue> {
+    if input.peek(syn::token::Brace) {
+        let object;
+        braced!(object in input);
+        return metadata_entries(&object).map(MetadataValue::Object);
+    }
+    if input.peek(syn::token::Bracket) {
+        let array;
+        bracketed!(array in input);
+        let mut values = Vec::new();
+        while !array.is_empty() {
+            values.push(metadata_value(&array)?);
+            if array.is_empty() {
+                break;
+            }
+            array.parse::<Token![,]>()?;
+        }
+        return Ok(MetadataValue::Array(values));
+    }
+
+    let expression = input.parse::<Expr>()?;
     match expression {
         Expr::Lit(expression) => match expression.lit {
-            Lit::Bool(value) => Ok(PropertyValue::Bool(value.value)),
+            Lit::Bool(value) => Ok(MetadataValue::Bool(value.value)),
             Lit::Int(value) => value
                 .base10_parse::<i64>()
-                .map(PropertyValue::Integer)
-                .map_err(|_| syn::Error::new_spanned(value, "property integer must fit in i64")),
+                .map(MetadataValue::Integer)
+                .map_err(|_| syn::Error::new_spanned(value, "metadata integer must fit in i64")),
             Lit::Float(value) => {
                 let parsed = value
                     .base10_parse::<f64>()
-                    .map_err(|_| syn::Error::new_spanned(&value, "invalid property float"))?;
+                    .map_err(|_| syn::Error::new_spanned(&value, "invalid metadata float"))?;
                 if !parsed.is_finite() {
-                    return Err(syn::Error::new_spanned(value, "property float must be finite"));
+                    return Err(syn::Error::new_spanned(value, "metadata float must be finite"));
                 }
-                Ok(PropertyValue::Float(parsed))
+                Ok(MetadataValue::Float(parsed))
             }
-            Lit::Str(value) => Ok(PropertyValue::String(value.value())),
+            Lit::Str(value) => Ok(MetadataValue::String(value.value())),
             other => Err(syn::Error::new_spanned(
                 other,
-                "property values must be null, booleans, numbers, strings, or arrays",
+                "metadata values must be null, booleans, numbers, strings, arrays, or objects",
             )),
         },
-        Expr::Array(array) => array
-            .elems
-            .into_iter()
-            .map(property_value)
-            .collect::<syn::Result<Vec<_>>>()
-            .map(PropertyValue::Array),
-        Expr::Path(path) if path.path.is_ident("null") => Ok(PropertyValue::Null),
+        Expr::Path(path) if path.path.is_ident("null") => Ok(MetadataValue::Null),
         Expr::Unary(unary) if matches!(unary.op, syn::UnOp::Neg(_)) => match *unary.expr {
             Expr::Lit(expression) => match expression.lit {
                 Lit::Int(value) => value
                     .base10_parse::<i64>()
                     .ok()
                     .and_then(i64::checked_neg)
-                    .map(PropertyValue::Integer)
+                    .map(MetadataValue::Integer)
                     .ok_or_else(|| {
-                        syn::Error::new_spanned(value, "property integer must fit in i64")
+                        syn::Error::new_spanned(value, "metadata integer must fit in i64")
                     }),
                 Lit::Float(value) => {
                     let parsed = value
                         .base10_parse::<f64>()
-                        .map_err(|_| syn::Error::new_spanned(&value, "invalid property float"))?;
+                        .map_err(|_| syn::Error::new_spanned(&value, "invalid metadata float"))?;
                     if !parsed.is_finite() {
                         return Err(syn::Error::new_spanned(
                             value,
-                            "property float must be finite",
+                            "metadata float must be finite",
                         ));
                     }
-                    Ok(PropertyValue::Float(-parsed))
+                    Ok(MetadataValue::Float(-parsed))
                 }
                 other => Err(syn::Error::new_spanned(
                     other,
-                    "property values must be null, booleans, numbers, strings, or arrays",
+                    "metadata values must be null, booleans, numbers, strings, arrays, or objects",
                 )),
             },
             other => Err(syn::Error::new_spanned(
                 other,
-                "property values must be null, booleans, numbers, strings, or arrays",
+                "metadata values must be null, booleans, numbers, strings, arrays, or objects",
             )),
         },
         other => Err(syn::Error::new_spanned(
             other,
-            "property values must be null, booleans, numbers, strings, or arrays",
+            "metadata values must be null, booleans, numbers, strings, arrays, or objects",
         )),
     }
 }
@@ -589,55 +617,36 @@ mod tests {
     use super::*;
 
     #[test]
-    fn command_properties_normalize_keys_to_lower_camel_case() {
+    fn command_metadata_preserves_keys_and_nested_values() {
         let input: DeriveInput = parse_quote! {
-            #[argx(
-                property("read_only", true),
-                property("requiredScopes", ["objects:read"])
-            )]
+            #[argx(metadata({
+                "readOnly": true,
+                "requiredScopes": ["objects:read"],
+                "policy": { "owner": "knowledge", "level": 2 },
+            }))]
             struct Example;
         };
 
         let attributes = command(&input.attrs).expect("command attributes should parse");
-        assert_eq!(attributes.properties.len(), 2);
-        assert_eq!(attributes.properties[0].key, "readOnly");
-        assert_eq!(attributes.properties[1].key, "requiredScopes");
+        assert_eq!(attributes.metadata.len(), 3);
+        assert_eq!(attributes.metadata[0].key, "readOnly");
+        assert_eq!(attributes.metadata[1].key, "requiredScopes");
+        assert_eq!(attributes.metadata[2].key, "policy");
+        assert!(matches!(attributes.metadata[2].value, MetadataValue::Object(_)));
     }
 
     #[test]
-    fn command_properties_reject_leading_separators() {
-        let inputs: [DeriveInput; 2] = [
-            parse_quote! {
-                #[argx(property("_read_only", true))]
-                struct Example;
-            },
-            parse_quote! {
-                #[argx(property("-read-only", true))]
-                struct Example;
-            },
-        ];
-
-        for input in inputs {
-            let error = match command(&input.attrs) {
-                Ok(_) => panic!("property key with a leading separator must be rejected"),
-                Err(error) => error,
-            };
-            assert!(error.to_string().contains("must begin with an alphanumeric character"));
-        }
-    }
-
-    #[test]
-    fn command_properties_reject_duplicates_after_normalization() {
+    fn command_metadata_rejects_duplicate_keys() {
         let input: DeriveInput = parse_quote! {
-            #[argx(property("read_only", true), property("readOnly", false))]
+            #[argx(metadata({ "readOnly": true, "readOnly": false }))]
             struct Example;
         };
 
         let error = match command(&input.attrs) {
-            Ok(_) => panic!("normalized duplicate must be rejected"),
+            Ok(_) => panic!("duplicate metadata key must be rejected"),
             Err(error) => error,
         };
-        assert!(error.to_string().contains("normalization to `readOnly`"));
+        assert!(error.to_string().contains("duplicate metadata key `readOnly`"));
     }
 
     #[test]

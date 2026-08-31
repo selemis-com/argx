@@ -1,10 +1,10 @@
 //! Machine-readable command schemas.
 //!
 //! Structural commands expose their immediate children, while leaf commands expose invocation,
-//! result, and error schemas. Commands may also attach application-defined semantic properties;
-//! property keys are normalized to lower camel case and emitted under the `x-argx-properties`
-//! namespace in generated schemas. For example, `property("read_only", true)` is emitted as
-//! `"x-argx-properties": { "readOnly": true }`. Use `--full` to recursively expand a
+//! result, and error schemas. Commands may also attach application-defined semantic metadata;
+//! metadata keys are preserved exactly as authored and emitted under the `x-argx-metadata`
+//! namespace in generated schemas. For example, `metadata({ "readOnly": true })` is emitted as
+//! `"x-argx-metadata": { "readOnly": true }`. Use `--full` to recursively expand a
 //! structural command.
 //!
 //! ```text
@@ -75,14 +75,14 @@ fn list(_: List) -> Result<ListOutput, ListError> {
 #[argx(schema)]
 enum ObjectCommand {
     /// Retrieve one object.
-    #[argx(
-        property("read_only", true),
-        property("required_scopes", ["objects:read"])
-    )]
+    #[argx(metadata({
+        "readOnly": true,
+        "requiredScopes": ["objects:read"],
+    }))]
     Get(Get),
 
     /// List objects.
-    #[argx(property("read_only", true))]
+    #[argx(metadata({ "readOnly": true }))]
     List(List),
 }
 

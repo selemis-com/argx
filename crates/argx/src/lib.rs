@@ -369,12 +369,12 @@
 //! Version metadata remains root-only.
 //!
 //! Argx-owned schema keys use lower camel case consistently. Commands may also attach
-//! application-defined machine-readable metadata with `property("key", value)`. Values may be
-//! `null`, booleans, finite numbers, strings, or arrays of those values. Property keys may be
-//! written in Rust-friendly snake case and are normalized to the same schema convention. Argx
-//! preserves property values without assigning semantics to individual keys and exposes the
-//! metadata under `x-argx-properties` in generated JSON Schema documents. Standard JSON Schema
-//! keywords and application-owned schema fields retain their own spellings.
+//! application-defined machine-readable metadata with `metadata({ "key": value })`. Values may be
+//! `null`, booleans, finite numbers, strings, arrays, or nested objects. Metadata keys are
+//! preserved exactly as authored. Argx preserves metadata values without assigning semantics to
+//! individual keys and exposes the metadata under `x-argx-metadata` in generated JSON Schema
+//! documents. Standard JSON Schema keywords and application-owned schema fields retain their own
+//! spellings.
 //!
 //! Aliases belong to selectable `Subcommand` variants. An `Args` declaration has no standalone
 //! command name: flattening composes it into the current command, while a subcommand payload uses
@@ -391,7 +391,7 @@
 //! - `aliases = ["...", "..."]` for multiple hidden accepted spellings.
 //! - `version = expression` and `long_version = expression` for version actions local to that
 //!   command scope.
-//! - `property("key", value)` for application-defined machine-readable command metadata.
+//! - `metadata({ "key": value })` for application-defined machine-readable command metadata.
 //!
 //! Canonical names and aliases share one sibling namespace. Aliases are accepted by parsing and
 //! dynamic lookup but omitted from human help.

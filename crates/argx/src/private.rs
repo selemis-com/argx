@@ -13,7 +13,7 @@ pub use crate::cli::{
     argv::{ArgvParser, Error, Event},
     command::{
         Action, ActionKind, Arg, ArgumentState, Command, Constraint, ConstraintKind, Flag,
-        HELP_ACTION, HelpGroup, HelpSection, Key, Property, PropertyValue, SCHEMA_ACTION,
+        HELP_ACTION, HelpGroup, HelpSection, Key, MetadataEntry, MetadataValue, SCHEMA_ACTION,
         ValueSchema, key_base,
     },
     compose::{

@@ -167,7 +167,7 @@ fn concise_command_schema(path: &[&Command<'_>]) -> Value {
             if let Some(description) = child.about.or(child.description).and_then(doc_summary) {
                 summary.insert("description".to_owned(), Value::String(description.to_owned()));
             }
-            invocation::add_command_properties(&mut summary, child);
+            invocation::add_command_metadata(&mut summary, child);
             subcommands.insert(child.name.to_owned(), Value::Object(summary));
         }
         definitions.insert("subcommands".to_owned(), definitions_schema(subcommands));

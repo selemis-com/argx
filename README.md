@@ -146,16 +146,16 @@ See the [configuration example](crates/argx/examples/configuration.rs) for envir
 
 Mark each command that participates in schema discovery with `#[argx(schema)]`.
 
-Argx-owned schema keys use lower camel case consistently. Commands can also expose application-defined semantic metadata without teaching Argx what the keys mean. Property keys therefore use Rust-friendly spelling in derive attributes and are normalized to the same schema convention. For example, `#[argx(property("read_only", true), property("required_scopes", ["objects:read"]))]` produces:
+Argx-owned schema keys use lower camel case consistently. Commands can also expose application-defined semantic metadata without teaching Argx what the keys mean. Metadata keys are preserved exactly as authored. For example, `#[argx(metadata({ "readOnly": true, "requiredScopes": ["objects:read"] }))]` produces:
 
 ```json
-"x-argx-properties": {
+"x-argx-metadata": {
   "readOnly": true,
   "requiredScopes": ["objects:read"]
 }
 ```
 
-Property values may be `null`, booleans, finite numbers, strings, or arrays. This keeps effects, scopes, safety hints, and other application semantics available to machine consumers while leaving their interpretation to the application.
+Metadata values may be `null`, booleans, finite numbers, strings, arrays, or nested objects. This keeps effects, scopes, safety hints, and other application semantics available to machine consumers while leaving their interpretation to the application.
 
 At the root, Argx exposes the immediate command structure:
 
