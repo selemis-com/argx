@@ -678,7 +678,7 @@ mod tests {
     #[test]
     fn doc_summary_stops_before_a_stripped_text_fence() {
         let input: DeriveInput = parse_quote! {
-            /// CLI server to host Kival.
+            /// Some description.
             ///
             /// ~~~text
             ///     __ __ __
@@ -688,17 +688,17 @@ mod tests {
         };
 
         let help = doc_help(&input.attrs);
-        assert_eq!(help.summary.as_deref(), Some("CLI server to host Kival."));
+        assert_eq!(help.summary.as_deref(), Some("Some description."));
         assert_eq!(
             help.description.as_deref(),
-            Some("CLI server to host Kival.\n    __ __ __\n   / //_//_/")
+            Some("Some description.\n    __ __ __\n   / //_//_/")
         );
     }
 
     #[test]
     fn doc_help_strips_backtick_text_fences() {
         let input: DeriveInput = parse_quote! {
-            /// CLI server to host Kival.
+            /// Some description.
             ///
             /// ```text
             ///     __ __ __
@@ -708,10 +708,10 @@ mod tests {
         };
 
         let help = doc_help(&input.attrs);
-        assert_eq!(help.summary.as_deref(), Some("CLI server to host Kival."));
+        assert_eq!(help.summary.as_deref(), Some("Some description."));
         assert_eq!(
             help.description.as_deref(),
-            Some("CLI server to host Kival.\n    __ __ __\n   / //_//_/")
+            Some("Some description.\n    __ __ __\n   / //_//_/")
         );
     }
 
