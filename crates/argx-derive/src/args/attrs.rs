@@ -5,7 +5,9 @@
 //! after Rust documentation and inferred spellings have been normalized. Keeping parsing and
 //! semantic validation separate avoids making code generation depend on raw attribute syntax.
 
-use syn::{Attribute, Expr, Lit, LitChar, LitStr, Meta, Token};
+use syn::{Attribute, Expr, Lit, LitChar, LitStr, Meta, Token, braced, bracketed, parenthesized};
+
+use crate::args::metadata::MetadataEntry;
 
 /// Structured help extracted from Rust doc comments on a command declaration.
 ///
@@ -50,6 +52,8 @@ pub(crate) struct CommandAttrs {
     pub long_version: Option<Expr>,
     /// Additional hidden spellings accepted for a selectable subcommand.
     pub aliases: Vec<String>,
+    /// Application-defined semantic metadata exposed to machine-readable consumers.
+    pub metadata: Vec<MetadataEntry>,
     /// Whether this command declaration participates in schema discovery.
     pub schema: bool,
 }
@@ -104,6 +108,7 @@ pub(crate) fn variant(attributes: &[Attribute]) -> syn::Result<CommandAttrs> {
 /// Parses metadata shared by root commands and selectable subcommands.
 fn command_like(attributes: &[Attribute], context: &str) -> syn::Result<CommandAttrs> {
     let mut parsed = CommandAttrs::default();
+    let mut metadata_seen = false;
     for attribute in attributes.iter().filter(|attribute| attribute.path().is_ident("argx")) {
         attribute.parse_nested_meta(|meta| {
             if meta.path.is_ident("name") {
@@ -137,6 +142,20 @@ fn command_like(attributes: &[Attribute], context: &str) -> syn::Result<CommandA
             } else if meta.path.is_ident("aliases") {
                 parsed.aliases.extend(string_array(&meta)?);
                 Ok(())
+            } else if meta.path.is_ident("metadata") {
+                if metadata_seen {
+                    return Err(meta.error("duplicate `metadata` attribute"));
+                }
+                metadata_seen = true;
+                let content;
+                parenthesized!(content in meta.input);
+                let object;
+                braced!(object in content);
+                parsed.metadata = metadata_entries(&object)?;
+                if !content.is_empty() {
+                    return Err(content.error("metadata expects exactly one object"));
+                }
+                Ok(())
             } else if meta.path.is_ident("schema") {
                 if parsed.schema {
                     return Err(meta.error("duplicate `schema` attribute"));
@@ -152,6 +171,115 @@ fn command_like(attributes: &[Attribute], context: &str) -> syn::Result<CommandA
         })?;
     }
     Ok(parsed)
+}
+
+/// Parses one JSON-like metadata object while preserving keys exactly as authored.
+fn metadata_entries(input: syn::parse::ParseStream<'_>) -> syn::Result<Vec<MetadataEntry>> {
+    let mut entries = Vec::new();
+    while !input.is_empty() {
+        let key = input.parse::<LitStr>()?.value();
+        input.parse::<Token![:]>()?;
+        let value = metadata_value(input)?;
+        if entries.iter().any(|entry: &MetadataEntry| entry.key == key) {
+            return Err(input.error(format!("duplicate metadata key `{key}`")));
+        }
+        entries.push(MetadataEntry { key, value });
+        if input.is_empty() {
+            break;
+        }
+        input.parse::<Token![,]>()?;
+    }
+    Ok(entries)
+}
+
+/// Parses one JSON-like metadata object.
+fn metadata_object(input: syn::parse::ParseStream<'_>) -> syn::Result<serde_json::Value> {
+    let entries = metadata_entries(input)?;
+    Ok(serde_json::Value::Object(
+        entries.into_iter().map(|entry| (entry.key, entry.value)).collect(),
+    ))
+}
+
+/// Parses one JSON-like metadata value.
+fn metadata_value(input: syn::parse::ParseStream<'_>) -> syn::Result<serde_json::Value> {
+    use serde_json::{Number, Value};
+    if input.peek(syn::token::Brace) {
+        let object;
+        braced!(object in input);
+        return metadata_object(&object);
+    }
+    if input.peek(syn::token::Bracket) {
+        let array;
+        bracketed!(array in input);
+        let mut values = Vec::new();
+        while !array.is_empty() {
+            values.push(metadata_value(&array)?);
+            if array.is_empty() {
+                break;
+            }
+            array.parse::<Token![,]>()?;
+        }
+        return Ok(Value::Array(values));
+    }
+
+    let expression = input.parse::<Expr>()?;
+    match expression {
+        Expr::Lit(expression) => match expression.lit {
+            Lit::Bool(value) => Ok(Value::Bool(value.value)),
+            Lit::Int(value) => value
+                .base10_parse::<i64>()
+                .map(|value| Value::Number(value.into()))
+                .map_err(|_| syn::Error::new_spanned(value, "metadata integer must fit in i64")),
+            Lit::Float(value) => {
+                let parsed = value
+                    .base10_parse::<f64>()
+                    .map_err(|_| syn::Error::new_spanned(&value, "invalid metadata float"))?;
+                let number = Number::from_f64(parsed).ok_or_else(|| {
+                    syn::Error::new_spanned(value, "metadata float must be finite")
+                })?;
+                Ok(Value::Number(number))
+            }
+            Lit::Str(value) => Ok(Value::String(value.value())),
+            other => Err(syn::Error::new_spanned(
+                other,
+                "metadata values must be null, booleans, numbers, strings, arrays, or objects",
+            )),
+        },
+        Expr::Path(path) if path.path.is_ident("null") => Ok(Value::Null),
+        Expr::Unary(unary) if matches!(unary.op, syn::UnOp::Neg(_)) => match *unary.expr {
+            Expr::Lit(expression) => match expression.lit {
+                Lit::Int(value) => value
+                    .base10_parse::<i64>()
+                    .ok()
+                    .and_then(i64::checked_neg)
+                    .map(|value| Value::Number(value.into()))
+                    .ok_or_else(|| {
+                        syn::Error::new_spanned(value, "metadata integer must fit in i64")
+                    }),
+                Lit::Float(value) => {
+                    let parsed = value
+                        .base10_parse::<f64>()
+                        .map_err(|_| syn::Error::new_spanned(&value, "invalid metadata float"))?;
+                    let number = Number::from_f64(-parsed).ok_or_else(|| {
+                        syn::Error::new_spanned(value, "metadata float must be finite")
+                    })?;
+                    Ok(Value::Number(number))
+                }
+                other => Err(syn::Error::new_spanned(
+                    other,
+                    "metadata values must be null, booleans, numbers, strings, arrays, or objects",
+                )),
+            },
+            other => Err(syn::Error::new_spanned(
+                other,
+                "metadata values must be null, booleans, numbers, strings, arrays, or objects",
+            )),
+        },
+        other => Err(syn::Error::new_spanned(
+            other,
+            "metadata values must be null, booleans, numbers, strings, arrays, or objects",
+        )),
+    }
 }
 
 /// Parses every `#[argx(...)]` attribute on a field declaration.
@@ -433,22 +561,26 @@ fn first_paragraph(lines: &[String]) -> Option<String> {
 
 /// Removes explicit `text` fences while retaining their contents as rendered help text.
 fn strip_text_fences(lines: Vec<String>) -> Vec<String> {
+    let mut output = Vec::with_capacity(lines.len());
     let mut fence = None;
-    lines
-        .into_iter()
-        .filter(|line| {
-            if let Some(active) = fence {
-                if line.trim() == active {
-                    fence = None;
-                    return false;
-                }
-            } else if let Some(opening) = text_fence(line) {
-                fence = Some(opening);
-                return false;
+
+    for line in lines {
+        if let Some(active) = fence {
+            if line.trim() == active {
+                fence = None;
+                continue;
             }
-            true
-        })
-        .collect()
+        } else if let Some(opening) = text_fence(&line) {
+            if output.last().is_some_and(|line: &String| line.trim().is_empty()) {
+                output.pop();
+            }
+            fence = Some(opening);
+            continue;
+        }
+        output.push(line);
+    }
+
+    output
 }
 
 /// Returns the closing delimiter for an explicit text Markdown fence.
@@ -465,6 +597,39 @@ mod tests {
     use syn::{DeriveInput, parse_quote};
 
     use super::*;
+
+    #[test]
+    fn command_metadata_preserves_keys_and_nested_values() {
+        let input: DeriveInput = parse_quote! {
+            #[argx(metadata({
+                "readOnly": true,
+                "requiredScopes": ["objects:read"],
+                "policy": { "owner": "knowledge", "level": 2 },
+            }))]
+            struct Example;
+        };
+
+        let attributes = command(&input.attrs).expect("command attributes should parse");
+        assert_eq!(attributes.metadata.len(), 3);
+        assert_eq!(attributes.metadata[0].key, "readOnly");
+        assert_eq!(attributes.metadata[1].key, "requiredScopes");
+        assert_eq!(attributes.metadata[2].key, "policy");
+        assert!(attributes.metadata[2].value.is_object());
+    }
+
+    #[test]
+    fn command_metadata_rejects_duplicate_keys() {
+        let input: DeriveInput = parse_quote! {
+            #[argx(metadata({ "readOnly": true, "readOnly": false }))]
+            struct Example;
+        };
+
+        let error = match command(&input.attrs) {
+            Ok(_) => panic!("duplicate metadata key must be rejected"),
+            Err(error) => error,
+        };
+        assert!(error.to_string().contains("duplicate metadata key `readOnly`"));
+    }
 
     #[test]
     fn doc_summary_uses_only_the_first_paragraph() {
@@ -504,7 +669,8 @@ mod tests {
     #[test]
     fn doc_summary_stops_before_a_stripped_text_fence() {
         let input: DeriveInput = parse_quote! {
-            /// CLI server to host Kival.
+            /// Some description.
+            ///
             /// ~~~text
             ///     __ __ __
             ///    / //_//_/
@@ -513,17 +679,18 @@ mod tests {
         };
 
         let help = doc_help(&input.attrs);
-        assert_eq!(help.summary.as_deref(), Some("CLI server to host Kival."));
+        assert_eq!(help.summary.as_deref(), Some("Some description."));
         assert_eq!(
             help.description.as_deref(),
-            Some("CLI server to host Kival.\n    __ __ __\n   / //_//_/")
+            Some("Some description.\n    __ __ __\n   / //_//_/")
         );
     }
 
     #[test]
     fn doc_help_strips_backtick_text_fences() {
         let input: DeriveInput = parse_quote! {
-            /// CLI server to host Kival.
+            /// Some description.
+            ///
             /// ```text
             ///     __ __ __
             ///    / //_//_/
@@ -532,10 +699,10 @@ mod tests {
         };
 
         let help = doc_help(&input.attrs);
-        assert_eq!(help.summary.as_deref(), Some("CLI server to host Kival."));
+        assert_eq!(help.summary.as_deref(), Some("Some description."));
         assert_eq!(
             help.description.as_deref(),
-            Some("CLI server to host Kival.\n    __ __ __\n   / //_//_/")
+            Some("Some description.\n    __ __ __\n   / //_//_/")
         );
     }
 

@@ -11,7 +11,8 @@ use serde_json::{Map, Value};
 
 use super::doc_summary;
 use crate::cli::command::{
-    Command, ConstraintKind, Flag, Key, Named, long as resolve_long, short as resolve_short,
+    Command, ConstraintKind, Flag, Key, MetadataValue, Named, long as resolve_long,
+    short as resolve_short,
 };
 
 /// JSON Schema dialect used by Argx invocation schemas.
@@ -52,7 +53,7 @@ pub(crate) fn invocation_schema_for_path(path: &[&Command<'_>]) -> schemars::Sch
     let mut root = Map::new();
     root.insert("$schema".to_owned(), Value::String(DRAFT_2020_12.to_owned()));
     root.insert("title".to_owned(), Value::String(command.name.to_owned()));
-    if let Some(description) = command.description.or(command.about).and_then(doc_summary) {
+    if let Some(description) = command.about.or(command.description).and_then(doc_summary) {
         root.insert("description".to_owned(), Value::String(description.to_owned()));
     }
     root.insert("type".to_owned(), Value::String("object".to_owned()));
@@ -63,9 +64,50 @@ pub(crate) fn invocation_schema_for_path(path: &[&Command<'_>]) -> schemars::Sch
         root.insert("required".to_owned(), Value::Array(required));
     }
     root.insert("additionalProperties".to_owned(), Value::Bool(false));
+    add_command_metadata(&mut root, command);
     add_constraints(&mut root, command);
 
     schemars::Schema::from(root)
+}
+
+/// Adds application-defined command metadata using a JSON Schema extension keyword.
+pub(super) fn add_command_metadata(root: &mut Map<String, Value>, command: &Command<'_>) {
+    if command.metadata.is_empty() {
+        return;
+    }
+
+    root.insert(
+        "x-argx-metadata".to_owned(),
+        Value::Object(
+            command
+                .metadata
+                .iter()
+                .map(|entry| (entry.key.to_owned(), metadata_value(entry.value)))
+                .collect(),
+        ),
+    );
+}
+
+/// Projects one static metadata value into its JSON representation.
+fn metadata_value(value: MetadataValue<'_>) -> Value {
+    match value {
+        MetadataValue::Null => Value::Null,
+        MetadataValue::Bool(value) => Value::Bool(value),
+        MetadataValue::Integer(value) => Value::Number(value.into()),
+        MetadataValue::Float(value) => {
+            serde_json::Number::from_f64(value).map(Value::Number).unwrap_or(Value::Null)
+        }
+        MetadataValue::String(value) => Value::String(value.to_owned()),
+        MetadataValue::Array(values) => {
+            Value::Array(values.iter().copied().map(metadata_value).collect())
+        }
+        MetadataValue::Object(entries) => Value::Object(
+            entries
+                .iter()
+                .map(|entry| (entry.key.to_owned(), metadata_value(entry.value)))
+                .collect(),
+        ),
+    }
 }
 
 /// Collects canonical flag spellings accepted in the selected command scope.
@@ -229,6 +271,39 @@ fn conflict_schema(source: &str, target: &str) -> Value {
 mod tests {
     use super::*;
     use crate::cli::command::{Arg, Constraint};
+
+    #[test]
+    fn projects_command_metadata_verbatim() {
+        let nested = [crate::cli::command::MetadataEntry {
+            key: "owner",
+            value: MetadataValue::String("knowledge"),
+        }];
+        let metadata = [
+            crate::cli::command::MetadataEntry {
+                key: "readOnly",
+                value: MetadataValue::Bool(true),
+            },
+            crate::cli::command::MetadataEntry {
+                key: "required_scopes",
+                value: MetadataValue::Array(&[MetadataValue::String("objects:read")]),
+            },
+            crate::cli::command::MetadataEntry {
+                key: "policy",
+                value: MetadataValue::Object(&nested),
+            },
+        ];
+        let command = Command { name: "get", metadata: &metadata, ..Command::EMPTY };
+
+        let schema = serde_json::to_value(invocation_schema_for_path(&[&command]))
+            .expect("schema should serialize");
+
+        assert_eq!(schema["x-argx-metadata"]["readOnly"], true);
+        assert_eq!(
+            schema["x-argx-metadata"]["required_scopes"],
+            serde_json::json!(["objects:read"])
+        );
+        assert_eq!(schema["x-argx-metadata"]["policy"]["owner"], "knowledge");
+    }
 
     #[test]
     fn projects_normalized_argv_semantics_into_json_schema() {

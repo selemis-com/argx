@@ -12,6 +12,8 @@
 use proc_macro2::Span;
 use syn::Type;
 
+use crate::args::metadata::MetadataEntry;
+
 mod command;
 mod shape;
 mod subcommand;
@@ -60,6 +62,8 @@ pub(crate) struct CommandSemantics {
     pub long_version: Option<syn::Expr>,
     /// Hidden command spellings accepted in addition to the canonical name.
     pub aliases: Vec<String>,
+    /// Application-defined semantic metadata exposed to machine-readable consumers.
+    pub metadata: Vec<MetadataEntry>,
     /// Whether this command declaration participates in machine-readable schema discovery.
     pub schema: bool,
 }
@@ -87,6 +91,7 @@ impl CommandSemantics {
             version: attributes.version,
             long_version: attributes.long_version,
             aliases: attributes.aliases,
+            metadata: attributes.metadata,
             schema: attributes.schema,
         }
     }

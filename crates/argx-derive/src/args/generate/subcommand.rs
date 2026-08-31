@@ -52,6 +52,12 @@ pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
             })
             .collect::<Vec<_>>();
         let aliases = &variant.semantics.aliases;
+        let metadata = variant
+            .semantics
+            .metadata
+            .iter()
+            .map(|entry| super::command::metadata_entry_tokens(entry, &facade))
+            .collect::<Vec<_>>();
         let short_version =
             variant.semantics.version.as_ref().or(variant.semantics.long_version.as_ref());
         let long_version =
@@ -88,6 +94,7 @@ pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
                         help_sections: &[#(#own_help_sections),*],
                         help_groups: &[],
                         aliases: &[#(#aliases),*],
+                        metadata: &[#(#metadata),*],
                         actions: #actions,
                         flags: &[],
                         args: &[],
@@ -115,6 +122,7 @@ pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
                         help_sections: #help_sections,
                         help_groups: <#ty as #facade::__private::CommandArgs>::COMMAND.help_groups,
                         aliases: &[#(#aliases),*],
+                        metadata: &[#(#metadata),*],
                         actions: #actions,
                         flags: <#ty as #facade::__private::CommandArgs>::COMMAND.flags,
                         args: <#ty as #facade::__private::CommandArgs>::COMMAND.args,

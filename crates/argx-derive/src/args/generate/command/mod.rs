@@ -80,6 +80,12 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
         .find(|(_, field)| matches!(&field.semantics, model::FieldSemantics::Subcommand));
     let keys = key::constants(&facade, &command.binding.fingerprint, flags.len(), args.len());
     let command_key = key::ident("COMMAND", None);
+    let metadata = command
+        .semantics
+        .metadata
+        .iter()
+        .map(|entry| metadata_entry_tokens(entry, &facade))
+        .collect::<Vec<_>>();
 
     // Static command metadata is generated once from the normalized argument model and is shared
     // by parsing and help generation.
@@ -572,6 +578,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                     help_sections: &[#(#help_sections),*],
                     help_groups: #command_help_groups,
                     aliases: &[#(#aliases),*],
+                    metadata: &[#(#metadata),*],
                     actions: #command_actions,
                     flags: #command_flags,
                     args: #command_args,
@@ -707,5 +714,54 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
             #parser_impl
             #args_impl
         };
+    }
+}
+
+/// Projects one normalized metadata entry into the runtime static command vocabulary.
+pub(super) fn metadata_entry_tokens(
+    entry: &crate::args::metadata::MetadataEntry,
+    facade: &TokenStream,
+) -> TokenStream {
+    metadata_pair_tokens(&entry.key, &entry.value, facade)
+}
+
+/// Projects one metadata key/value pair into the runtime static command vocabulary.
+fn metadata_pair_tokens(key: &str, value: &serde_json::Value, facade: &TokenStream) -> TokenStream {
+    let value = metadata_value_tokens(value, facade);
+    quote! {
+        #facade::__private::MetadataEntry { key: #key, value: #value }
+    }
+}
+
+/// Projects one normalized JSON metadata value into a static runtime expression.
+fn metadata_value_tokens(value: &serde_json::Value, facade: &TokenStream) -> TokenStream {
+    use serde_json::Value;
+
+    match value {
+        Value::Null => quote!(#facade::__private::MetadataValue::Null),
+        Value::Bool(value) => quote!(#facade::__private::MetadataValue::Bool(#value)),
+        Value::Number(value) => value.as_i64().map_or_else(
+            || {
+                value.as_f64().map_or_else(
+                    || {
+                        unreachable!(
+                            "metadata parser only accepts i64 integers and finite f64 values"
+                        )
+                    },
+                    |value| quote!(#facade::__private::MetadataValue::Float(#value)),
+                )
+            },
+            |value| quote!(#facade::__private::MetadataValue::Integer(#value)),
+        ),
+        Value::String(value) => quote!(#facade::__private::MetadataValue::String(#value)),
+        Value::Array(values) => {
+            let values = values.iter().map(|value| metadata_value_tokens(value, facade));
+            quote!(#facade::__private::MetadataValue::Array(&[#(#values),*]))
+        }
+        Value::Object(entries) => {
+            let entries =
+                entries.iter().map(|(key, value)| metadata_pair_tokens(key, value, facade));
+            quote!(#facade::__private::MetadataValue::Object(&[#(#entries),*]))
+        }
     }
 }
