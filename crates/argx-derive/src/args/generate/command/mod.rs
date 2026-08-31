@@ -726,11 +726,7 @@ pub(super) fn metadata_entry_tokens(
 }
 
 /// Projects one metadata key/value pair into the runtime static command vocabulary.
-fn metadata_pair_tokens(
-    key: &str,
-    value: &crate::args::metadata::MetadataValue,
-    facade: &TokenStream,
-) -> TokenStream {
+fn metadata_pair_tokens(key: &str, value: &serde_json::Value, facade: &TokenStream) -> TokenStream {
     let value = metadata_value_tokens(value, facade);
     quote! {
         #facade::__private::MetadataEntry { key: #key, value: #value }
@@ -738,26 +734,33 @@ fn metadata_pair_tokens(
 }
 
 /// Projects one normalized JSON metadata value into a static runtime expression.
-fn metadata_value_tokens(
-    value: &crate::args::metadata::MetadataValue,
-    facade: &TokenStream,
-) -> TokenStream {
-    use crate::args::metadata::MetadataValue;
+fn metadata_value_tokens(value: &serde_json::Value, facade: &TokenStream) -> TokenStream {
+    use serde_json::Value;
 
     match value {
-        MetadataValue::Null => quote!(#facade::__private::MetadataValue::Null),
-        MetadataValue::Bool(value) => quote!(#facade::__private::MetadataValue::Bool(#value)),
-        MetadataValue::Integer(value) => {
-            quote!(#facade::__private::MetadataValue::Integer(#value))
-        }
-        MetadataValue::Float(value) => quote!(#facade::__private::MetadataValue::Float(#value)),
-        MetadataValue::String(value) => quote!(#facade::__private::MetadataValue::String(#value)),
-        MetadataValue::Array(values) => {
+        Value::Null => quote!(#facade::__private::MetadataValue::Null),
+        Value::Bool(value) => quote!(#facade::__private::MetadataValue::Bool(#value)),
+        Value::Number(value) => value.as_i64().map_or_else(
+            || {
+                value.as_f64().map_or_else(
+                    || {
+                        unreachable!(
+                            "metadata parser only accepts i64 integers and finite f64 values"
+                        )
+                    },
+                    |value| quote!(#facade::__private::MetadataValue::Float(#value)),
+                )
+            },
+            |value| quote!(#facade::__private::MetadataValue::Integer(#value)),
+        ),
+        Value::String(value) => quote!(#facade::__private::MetadataValue::String(#value)),
+        Value::Array(values) => {
             let values = values.iter().map(|value| metadata_value_tokens(value, facade));
             quote!(#facade::__private::MetadataValue::Array(&[#(#values),*]))
         }
-        MetadataValue::Object(entries) => {
-            let entries = entries.iter().map(|entry| metadata_entry_tokens(entry, facade));
+        Value::Object(entries) => {
+            let entries =
+                entries.iter().map(|(key, value)| metadata_pair_tokens(key, value, facade));
             quote!(#facade::__private::MetadataValue::Object(&[#(#entries),*]))
         }
     }
