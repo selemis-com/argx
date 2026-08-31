@@ -99,49 +99,13 @@ impl CommandSemantics {
 pub(crate) struct MetadataEntry {
     /// Metadata key.
     pub key: String,
-    /// JSON-like metadata value.
-    pub value: MetadataValue,
+    /// JSON metadata value.
+    pub value: serde_json::Value,
 }
 
 impl From<crate::args::attrs::MetadataEntry> for MetadataEntry {
     fn from(entry: crate::args::attrs::MetadataEntry) -> Self {
-        Self { key: entry.key, value: MetadataValue::from(entry.value) }
-    }
-}
-
-/// JSON-like value preserved in the normalized command model.
-pub(crate) enum MetadataValue {
-    /// Explicit null value.
-    Null,
-    /// Boolean value.
-    Bool(bool),
-    /// Signed integer value.
-    Integer(i64),
-    /// Finite floating-point value.
-    Float(f64),
-    /// UTF-8 string value.
-    String(String),
-    /// Ordered collection of metadata values.
-    Array(Vec<Self>),
-    /// JSON object.
-    Object(Vec<MetadataEntry>),
-}
-
-impl From<crate::args::attrs::MetadataValue> for MetadataValue {
-    fn from(value: crate::args::attrs::MetadataValue) -> Self {
-        use crate::args::attrs::MetadataValue as Parsed;
-
-        match value {
-            Parsed::Null => Self::Null,
-            Parsed::Bool(value) => Self::Bool(value),
-            Parsed::Integer(value) => Self::Integer(value),
-            Parsed::Float(value) => Self::Float(value),
-            Parsed::String(value) => Self::String(value),
-            Parsed::Array(values) => Self::Array(values.into_iter().map(Self::from).collect()),
-            Parsed::Object(entries) => {
-                Self::Object(entries.into_iter().map(MetadataEntry::from).collect())
-            }
-        }
+        Self { key: entry.key, value: entry.value }
     }
 }
 
