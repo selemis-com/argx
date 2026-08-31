@@ -164,7 +164,7 @@ fn concise_command_schema(path: &[&Command<'_>]) -> Value {
         for &child in command.subcommands {
             let mut summary = Map::new();
             summary.insert("title".to_owned(), Value::String(child.name.to_owned()));
-            if let Some(description) = child.description.or(child.about).and_then(doc_summary) {
+            if let Some(description) = child.about.or(child.description).and_then(doc_summary) {
                 summary.insert("description".to_owned(), Value::String(description.to_owned()));
             }
             invocation::add_command_properties(&mut summary, child);

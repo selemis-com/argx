@@ -53,7 +53,7 @@ pub(crate) fn invocation_schema_for_path(path: &[&Command<'_>]) -> schemars::Sch
     let mut root = Map::new();
     root.insert("$schema".to_owned(), Value::String(DRAFT_2020_12.to_owned()));
     root.insert("title".to_owned(), Value::String(command.name.to_owned()));
-    if let Some(description) = command.description.or(command.about).and_then(doc_summary) {
+    if let Some(description) = command.about.or(command.description).and_then(doc_summary) {
         root.insert("description".to_owned(), Value::String(description.to_owned()));
     }
     root.insert("type".to_owned(), Value::String("object".to_owned()));

@@ -551,22 +551,26 @@ fn first_paragraph(lines: &[String]) -> Option<String> {
 
 /// Removes explicit `text` fences while retaining their contents as rendered help text.
 fn strip_text_fences(lines: Vec<String>) -> Vec<String> {
+    let mut output = Vec::with_capacity(lines.len());
     let mut fence = None;
-    lines
-        .into_iter()
-        .filter(|line| {
-            if let Some(active) = fence {
-                if line.trim() == active {
-                    fence = None;
-                    return false;
-                }
-            } else if let Some(opening) = text_fence(line) {
-                fence = Some(opening);
-                return false;
+
+    for line in lines {
+        if let Some(active) = fence {
+            if line.trim() == active {
+                fence = None;
+                continue;
             }
-            true
-        })
-        .collect()
+        } else if let Some(opening) = text_fence(&line) {
+            if output.last().is_some_and(|line: &String| line.trim().is_empty()) {
+                output.pop();
+            }
+            fence = Some(opening);
+            continue;
+        }
+        output.push(line);
+    }
+
+    output
 }
 
 /// Returns the closing delimiter for an explicit text Markdown fence.
@@ -675,6 +679,7 @@ mod tests {
     fn doc_summary_stops_before_a_stripped_text_fence() {
         let input: DeriveInput = parse_quote! {
             /// CLI server to host Kival.
+            ///
             /// ~~~text
             ///     __ __ __
             ///    / //_//_/
@@ -694,6 +699,7 @@ mod tests {
     fn doc_help_strips_backtick_text_fences() {
         let input: DeriveInput = parse_quote! {
             /// CLI server to host Kival.
+            ///
             /// ```text
             ///     __ __ __
             ///    / //_//_/
