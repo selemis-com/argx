@@ -300,10 +300,11 @@ fn requires_explicit_value(scopes: &[&Command<'_>], key: Key) -> bool {
 
 /// Builds a schema fragment that rejects simultaneous presence of two invocation properties.
 fn conflict_schema(source: &str, target: &str) -> Value {
+    let (first, second) = if source <= target { (source, target) } else { (target, source) };
     let mut required = Map::new();
     required.insert(
         "required".to_owned(),
-        Value::Array(vec![Value::String(source.to_owned()), Value::String(target.to_owned())]),
+        Value::Array(vec![Value::String(first.to_owned()), Value::String(second.to_owned())]),
     );
 
     let mut schema = Map::new();
@@ -437,7 +438,7 @@ mod tests {
         assert_eq!(schema["dependentRequired"]["--target"], serde_json::json!(["--config"]));
         assert_eq!(
             schema["allOf"][0]["not"]["required"],
-            serde_json::json!(["--force", "--dry-run"]),
+            serde_json::json!(["--dry-run", "--force"]),
         );
     }
 
@@ -463,6 +464,7 @@ mod tests {
         let constraints = [
             Constraint { kind: ConstraintKind::Requires, source: 30, target: 31 },
             Constraint { kind: ConstraintKind::Conflicts, source: 30, target: 31 },
+            Constraint { kind: ConstraintKind::Conflicts, source: 31, target: 30 },
         ];
         let root = Command { flags: &flags, constraints: &constraints, ..Command::EMPTY };
         let child = Command { flags: &flags, constraints: &constraints, ..Command::EMPTY };
