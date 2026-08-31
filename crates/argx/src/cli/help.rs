@@ -10,8 +10,8 @@ use std::{fmt::Write as _, io::IsTerminal as _};
 
 use crate::{
     __private::{
-        Action, Arg, Command, Flag, HelpGroup, Key, Named, SCHEMA_ACTION, resolve_long,
-        resolve_short,
+        Action, Arg, Command, Flag, HELP_ACTION, HelpGroup, Key, Named, SCHEMA_ACTION,
+        resolve_long, resolve_short,
     },
     error::display_bytes,
 };
@@ -148,6 +148,35 @@ impl HelpStyle {
             ),
         )
     }
+}
+
+/// Renders help for the virtual root `schema` pseudo-command.
+pub(crate) fn render_schema(root: &Command<'_>) -> String {
+    let mut output = String::new();
+    output.push_str("Print machine-readable schema\n\n");
+    output.push_str("Usage: ");
+    output.push_str(root.name);
+    output.push_str(" schema [COMMAND]... [--full]\n\n");
+    output.push_str("Arguments:\n");
+    write_rows(
+        &mut output,
+        &[("[COMMAND]...".to_owned(), "Command path to inspect".to_owned())],
+        HelpStyle::Short,
+    );
+    output.push_str("\nOptions:\n");
+    write_rows(
+        &mut output,
+        &[
+            ("--full".to_owned(), "Recursively expand structural commands".to_owned()),
+            (
+                spellings_label(HELP_ACTION.shorts, HELP_ACTION.longs, None),
+                HELP_ACTION.help.to_owned(),
+            ),
+        ],
+        HelpStyle::Short,
+    );
+
+    if styling_enabled() { style_headings(&output) } else { output }
 }
 
 /// Renders help for one selected command path.
@@ -838,7 +867,7 @@ Options:
         };
         static LEAF: Command<'static> = Command {
             name: "leaf",
-            actions: &[&crate::__private::HELP_ACTION, &VERSION],
+            actions: &[&HELP_ACTION, &VERSION],
             flags: &[&LOCAL_SCOPE],
             ..Command::EMPTY
         };

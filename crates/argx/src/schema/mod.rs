@@ -17,6 +17,7 @@ use crate::{
     Error,
     cli::{
         command::{Command, Key},
+        help,
         protocol::{HandlerSchemaSource, HandlerSchemas},
     },
 };
@@ -108,6 +109,13 @@ pub(crate) fn pseudo_command(
     let (first, segments) = argv.split_first()?;
     if first.as_encoded_bytes() != b"schema" {
         return None;
+    }
+
+    if segments
+        .iter()
+        .any(|segment| *segment == OsStr::new("-h") || *segment == OsStr::new("--help"))
+    {
+        return Some(Error::DisplayHelp { help: help::render_schema(root) });
     }
 
     let (segments, full) = match segments.split_last() {
