@@ -77,19 +77,13 @@ pub(super) fn add_command_properties(root: &mut Map<String, Value>, command: &Co
     }
 
     root.insert(
-        "x-argx".to_owned(),
+        "x-argx-properties".to_owned(),
         Value::Object(
-            std::iter::once((
-                "properties".to_owned(),
-                Value::Object(
-                    command
-                        .properties
-                        .iter()
-                        .map(|property| (property.key.to_owned(), property_value(property.value)))
-                        .collect(),
-                ),
-            ))
-            .collect(),
+            command
+                .properties
+                .iter()
+                .map(|property| (property.key.to_owned(), property_value(property.value)))
+                .collect(),
         ),
     );
 }

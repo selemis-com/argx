@@ -2,9 +2,9 @@
 //!
 //! Structural commands expose their immediate children, while leaf commands expose invocation,
 //! result, and error schemas. Commands may also attach application-defined semantic properties;
-//! property keys are normalized to lower camel case and emitted under the `x-argx.properties`
+//! property keys are normalized to lower camel case and emitted under the `x-argx-properties`
 //! namespace in generated schemas. For example, `property("read_only", true)` is emitted as
-//! `"x-argx": { "properties": { "readOnly": true } }`. Use `--full` to recursively expand a
+//! `"x-argx-properties": { "readOnly": true }`. Use `--full` to recursively expand a
 //! structural command.
 //!
 //! ```text

@@ -373,7 +373,7 @@
 //! `null`, booleans, finite numbers, strings, or arrays of those values. Property keys may be
 //! written in Rust-friendly snake case and are normalized to the same schema convention. Argx
 //! preserves property values without assigning semantics to individual keys and exposes the
-//! metadata under `x-argx.properties` in generated JSON Schema documents. Standard JSON Schema
+//! metadata under `x-argx-properties` in generated JSON Schema documents. Standard JSON Schema
 //! keywords and application-owned schema fields retain their own spellings.
 //!
 //! Aliases belong to selectable `Subcommand` variants. An `Args` declaration has no standalone
