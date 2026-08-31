@@ -7,6 +7,8 @@
 
 use syn::{Attribute, Expr, Lit, LitChar, LitStr, Meta, Token, parenthesized};
 
+use crate::support;
+
 /// Structured help extracted from Rust doc comments on a command declaration.
 ///
 /// Rustdoc attributes are normalized into one summary, one pre-heading description, and ordered
@@ -166,17 +168,20 @@ fn command_like(attributes: &[Attribute], context: &str) -> syn::Result<CommandA
             } else if meta.path.is_ident("property") {
                 let content;
                 parenthesized!(content in meta.input);
-                let key = content.parse::<LitStr>()?.value();
-                if key.is_empty() {
+                let source_key = content.parse::<LitStr>()?.value();
+                if source_key.is_empty() {
                     return Err(meta.error("property key cannot be empty"));
                 }
+                let key = support::schema_key(&source_key);
                 content.parse::<Token![,]>()?;
                 let value = property_value(content.parse::<Expr>()?)?;
                 if !content.is_empty() {
                     return Err(content.error("property expects exactly a key and value"));
                 }
                 if parsed.properties.iter().any(|property| property.key == key) {
-                    return Err(meta.error(format!("duplicate property `{key}`")));
+                    return Err(meta.error(format!(
+                        "duplicate property `{source_key}` after lower camel case normalization to `{key}`"
+                    )));
                 }
                 parsed.properties.push(Property { key, value });
                 Ok(())
@@ -578,6 +583,36 @@ mod tests {
     use syn::{DeriveInput, parse_quote};
 
     use super::*;
+
+    #[test]
+    fn command_properties_normalize_keys_to_lower_camel_case() {
+        let input: DeriveInput = parse_quote! {
+            #[argx(
+                property("read_only", true),
+                property("requiredScopes", ["objects:read"])
+            )]
+            struct Example;
+        };
+
+        let attributes = command(&input.attrs).expect("command attributes should parse");
+        assert_eq!(attributes.properties.len(), 2);
+        assert_eq!(attributes.properties[0].key, "readOnly");
+        assert_eq!(attributes.properties[1].key, "requiredScopes");
+    }
+
+    #[test]
+    fn command_properties_reject_duplicates_after_normalization() {
+        let input: DeriveInput = parse_quote! {
+            #[argx(property("read_only", true), property("readOnly", false))]
+            struct Example;
+        };
+
+        let error = match command(&input.attrs) {
+            Ok(_) => panic!("normalized duplicate must be rejected"),
+            Err(error) => error,
+        };
+        assert!(error.to_string().contains("normalization to `readOnly`"));
+    }
 
     #[test]
     fn doc_summary_uses_only_the_first_paragraph() {
