@@ -60,6 +60,8 @@ pub(crate) struct CommandSemantics {
     pub long_version: Option<syn::Expr>,
     /// Hidden command spellings accepted in addition to the canonical name.
     pub aliases: Vec<String>,
+    /// Application-defined semantic properties exposed to machine-readable consumers.
+    pub properties: Vec<Property>,
     /// Whether this command declaration participates in machine-readable schema discovery.
     pub schema: bool,
 }
@@ -87,7 +89,53 @@ impl CommandSemantics {
             version: attributes.version,
             long_version: attributes.long_version,
             aliases: attributes.aliases,
+            properties: attributes.properties.into_iter().map(Property::from).collect(),
             schema: attributes.schema,
+        }
+    }
+}
+
+/// One application-defined semantic property attached to a command.
+pub(crate) struct Property {
+    /// Property key.
+    pub key: String,
+    /// JSON-like property value.
+    pub value: PropertyValue,
+}
+
+impl From<crate::args::attrs::Property> for Property {
+    fn from(property: crate::args::attrs::Property) -> Self {
+        Self { key: property.key, value: PropertyValue::from(property.value) }
+    }
+}
+
+/// JSON-like value preserved in the normalized command model.
+pub(crate) enum PropertyValue {
+    /// Explicit null value.
+    Null,
+    /// Boolean value.
+    Bool(bool),
+    /// Signed integer value.
+    Integer(i64),
+    /// Finite floating-point value.
+    Float(f64),
+    /// UTF-8 string value.
+    String(String),
+    /// Ordered collection of property values.
+    Array(Vec<Self>),
+}
+
+impl From<crate::args::attrs::PropertyValue> for PropertyValue {
+    fn from(value: crate::args::attrs::PropertyValue) -> Self {
+        use crate::args::attrs::PropertyValue as Parsed;
+
+        match value {
+            Parsed::Null => Self::Null,
+            Parsed::Bool(value) => Self::Bool(value),
+            Parsed::Integer(value) => Self::Integer(value),
+            Parsed::Float(value) => Self::Float(value),
+            Parsed::String(value) => Self::String(value),
+            Parsed::Array(values) => Self::Array(values.into_iter().map(Self::from).collect()),
         }
     }
 }

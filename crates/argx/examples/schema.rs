@@ -1,7 +1,9 @@
 //! Machine-readable command schemas.
 //!
 //! Structural commands expose their immediate children, while leaf commands expose invocation,
-//! result, and error schemas. Use `--full` to recursively expand a structural command.
+//! result, and error schemas. Commands may also attach application-defined semantic properties;
+//! these are emitted under the `argx.properties` namespace in generated schemas. Use `--full` to
+//! recursively expand a structural command.
 //!
 //! ```text
 //! cargo run --example schema -- schema
@@ -11,7 +13,6 @@
 //! cargo run --example schema -- objects get object-7 --schema
 //! cargo run --example schema -- objects get object-7
 //! ```
-
 use argx::{Parser as _, argx};
 
 /// Retrieve one object.
@@ -63,6 +64,7 @@ enum ListError {
 #[argx(handler = List)]
 fn list(_: List) -> Result<ListOutput, ListError> {
     let ids = vec!["object-7".to_owned()];
+
     if ids.is_empty() { Err(ListError::Unavailable) } else { Ok(ListOutput { ids }) }
 }
 
@@ -71,9 +73,14 @@ fn list(_: List) -> Result<ListOutput, ListError> {
 #[argx(schema)]
 enum ObjectCommand {
     /// Retrieve one object.
+    #[argx(
+        property("read_only", true),
+        property("required_scopes", ["objects:read"])
+    )]
     Get(Get),
 
     /// List objects.
+    #[argx(property("read_only", true))]
     List(List),
 }
 

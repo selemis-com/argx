@@ -5,7 +5,7 @@
 //! after Rust documentation and inferred spellings have been normalized. Keeping parsing and
 //! semantic validation separate avoids making code generation depend on raw attribute syntax.
 
-use syn::{Attribute, Expr, Lit, LitChar, LitStr, Meta, Token};
+use syn::{Attribute, Expr, Lit, LitChar, LitStr, Meta, Token, parenthesized};
 
 /// Structured help extracted from Rust doc comments on a command declaration.
 ///
@@ -50,8 +50,34 @@ pub(crate) struct CommandAttrs {
     pub long_version: Option<Expr>,
     /// Additional hidden spellings accepted for a selectable subcommand.
     pub aliases: Vec<String>,
+    /// Application-defined semantic properties exposed to machine-readable consumers.
+    pub properties: Vec<Property>,
     /// Whether this command declaration participates in schema discovery.
     pub schema: bool,
+}
+
+/// One application-defined command property parsed from derive syntax.
+pub(crate) struct Property {
+    /// Property key.
+    pub key: String,
+    /// JSON-like literal property value.
+    pub value: PropertyValue,
+}
+
+/// JSON-like literal accepted by `property(...)`.
+pub(crate) enum PropertyValue {
+    /// Explicit null value.
+    Null,
+    /// Boolean value.
+    Bool(bool),
+    /// Signed integer value.
+    Integer(i64),
+    /// Finite floating-point value.
+    Float(f64),
+    /// UTF-8 string value.
+    String(String),
+    /// Ordered collection of property values.
+    Array(Vec<Self>),
 }
 
 /// Attributes accepted on a command field.
@@ -137,6 +163,23 @@ fn command_like(attributes: &[Attribute], context: &str) -> syn::Result<CommandA
             } else if meta.path.is_ident("aliases") {
                 parsed.aliases.extend(string_array(&meta)?);
                 Ok(())
+            } else if meta.path.is_ident("property") {
+                let content;
+                parenthesized!(content in meta.input);
+                let key = content.parse::<LitStr>()?.value();
+                if key.is_empty() {
+                    return Err(meta.error("property key cannot be empty"));
+                }
+                content.parse::<Token![,]>()?;
+                let value = property_value(content.parse::<Expr>()?)?;
+                if !content.is_empty() {
+                    return Err(content.error("property expects exactly a key and value"));
+                }
+                if parsed.properties.iter().any(|property| property.key == key) {
+                    return Err(meta.error(format!("duplicate property `{key}`")));
+                }
+                parsed.properties.push(Property { key, value });
+                Ok(())
             } else if meta.path.is_ident("schema") {
                 if parsed.schema {
                     return Err(meta.error("duplicate `schema` attribute"));
@@ -152,6 +195,76 @@ fn command_like(attributes: &[Attribute], context: &str) -> syn::Result<CommandA
         })?;
     }
     Ok(parsed)
+}
+
+/// Normalizes one Rust literal expression into the static JSON-like property vocabulary.
+fn property_value(expression: Expr) -> syn::Result<PropertyValue> {
+    match expression {
+        Expr::Lit(expression) => match expression.lit {
+            Lit::Bool(value) => Ok(PropertyValue::Bool(value.value)),
+            Lit::Int(value) => value
+                .base10_parse::<i64>()
+                .map(PropertyValue::Integer)
+                .map_err(|_| syn::Error::new_spanned(value, "property integer must fit in i64")),
+            Lit::Float(value) => {
+                let parsed = value
+                    .base10_parse::<f64>()
+                    .map_err(|_| syn::Error::new_spanned(&value, "invalid property float"))?;
+                if !parsed.is_finite() {
+                    return Err(syn::Error::new_spanned(value, "property float must be finite"));
+                }
+                Ok(PropertyValue::Float(parsed))
+            }
+            Lit::Str(value) => Ok(PropertyValue::String(value.value())),
+            other => Err(syn::Error::new_spanned(
+                other,
+                "property values must be null, booleans, numbers, strings, or arrays",
+            )),
+        },
+        Expr::Array(array) => array
+            .elems
+            .into_iter()
+            .map(property_value)
+            .collect::<syn::Result<Vec<_>>>()
+            .map(PropertyValue::Array),
+        Expr::Path(path) if path.path.is_ident("null") => Ok(PropertyValue::Null),
+        Expr::Unary(unary) if matches!(unary.op, syn::UnOp::Neg(_)) => match *unary.expr {
+            Expr::Lit(expression) => match expression.lit {
+                Lit::Int(value) => value
+                    .base10_parse::<i64>()
+                    .ok()
+                    .and_then(i64::checked_neg)
+                    .map(PropertyValue::Integer)
+                    .ok_or_else(|| {
+                        syn::Error::new_spanned(value, "property integer must fit in i64")
+                    }),
+                Lit::Float(value) => {
+                    let parsed = value
+                        .base10_parse::<f64>()
+                        .map_err(|_| syn::Error::new_spanned(&value, "invalid property float"))?;
+                    if !parsed.is_finite() {
+                        return Err(syn::Error::new_spanned(
+                            value,
+                            "property float must be finite",
+                        ));
+                    }
+                    Ok(PropertyValue::Float(-parsed))
+                }
+                other => Err(syn::Error::new_spanned(
+                    other,
+                    "property values must be null, booleans, numbers, strings, or arrays",
+                )),
+            },
+            other => Err(syn::Error::new_spanned(
+                other,
+                "property values must be null, booleans, numbers, strings, or arrays",
+            )),
+        },
+        other => Err(syn::Error::new_spanned(
+            other,
+            "property values must be null, booleans, numbers, strings, or arrays",
+        )),
+    }
 }
 
 /// Parses every `#[argx(...)]` attribute on a field declaration.

@@ -13,7 +13,8 @@ pub use crate::cli::{
     argv::{ArgvParser, Error, Event},
     command::{
         Action, ActionKind, Arg, ArgumentState, Command, Constraint, ConstraintKind, Flag,
-        HELP_ACTION, HelpGroup, HelpSection, Key, SCHEMA_ACTION, ValueSchema, key_base,
+        HELP_ACTION, HelpGroup, HelpSection, Key, Property, PropertyValue, SCHEMA_ACTION,
+        ValueSchema, key_base,
     },
     compose::{
         action_flag_spellings_disjoint, argument_key_by_name, command_keys_unique, concat_args,

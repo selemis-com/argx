@@ -368,6 +368,11 @@
 //! contain a subcommand field may also use `schema` to participate in that command topology.
 //! Version metadata remains root-only.
 //!
+//! Commands may also attach application-defined machine-readable metadata with
+//! `property("key", value)`. Values may be `null`, booleans, finite numbers, strings, or arrays of
+//! those values. Argx preserves this metadata without assigning semantics to individual keys and
+//! exposes it in JSON Schema documents through the `x-argx-properties` extension keyword.
+//!
 //! Aliases belong to selectable `Subcommand` variants. An `Args` declaration has no standalone
 //! command name: flattening composes it into the current command, while a subcommand payload uses
 //! the variant as the visible command.
@@ -383,6 +388,7 @@
 //! - `aliases = ["...", "..."]` for multiple hidden accepted spellings.
 //! - `version = expression` and `long_version = expression` for version actions local to that
 //!   command scope.
+//! - `property("key", value)` for application-defined machine-readable command metadata.
 //!
 //! Canonical names and aliases share one sibling namespace. Aliases are accepted by parsing and
 //! dynamic lookup but omitted from human help.

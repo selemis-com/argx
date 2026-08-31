@@ -11,7 +11,8 @@ use serde_json::{Map, Value};
 
 use super::doc_summary;
 use crate::cli::command::{
-    Command, ConstraintKind, Flag, Key, Named, long as resolve_long, short as resolve_short,
+    Command, ConstraintKind, Flag, Key, Named, PropertyValue, long as resolve_long,
+    short as resolve_short,
 };
 
 /// JSON Schema dialect used by Argx invocation schemas.
@@ -63,9 +64,50 @@ pub(crate) fn invocation_schema_for_path(path: &[&Command<'_>]) -> schemars::Sch
         root.insert("required".to_owned(), Value::Array(required));
     }
     root.insert("additionalProperties".to_owned(), Value::Bool(false));
+    add_command_properties(&mut root, command);
     add_constraints(&mut root, command);
 
     schemars::Schema::from(root)
+}
+
+/// Adds application-defined command metadata using a JSON Schema extension keyword.
+pub(super) fn add_command_properties(root: &mut Map<String, Value>, command: &Command<'_>) {
+    if command.properties.is_empty() {
+        return;
+    }
+
+    root.insert(
+        "x-argx".to_owned(),
+        Value::Object(
+            std::iter::once((
+                "properties".to_owned(),
+                Value::Object(
+                    command
+                        .properties
+                        .iter()
+                        .map(|property| (property.key.to_owned(), property_value(property.value)))
+                        .collect(),
+                ),
+            ))
+            .collect(),
+        ),
+    );
+}
+
+/// Projects one static property value into its JSON representation.
+fn property_value(value: PropertyValue<'_>) -> Value {
+    match value {
+        PropertyValue::Null => Value::Null,
+        PropertyValue::Bool(value) => Value::Bool(value),
+        PropertyValue::Integer(value) => Value::Number(value.into()),
+        PropertyValue::Float(value) => {
+            serde_json::Number::from_f64(value).map(Value::Number).unwrap_or(Value::Null)
+        }
+        PropertyValue::String(value) => Value::String(value.to_owned()),
+        PropertyValue::Array(values) => {
+            Value::Array(values.iter().copied().map(property_value).collect())
+        }
+    }
 }
 
 /// Collects canonical flag spellings accepted in the selected command scope.

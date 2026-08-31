@@ -146,6 +146,10 @@ See the [configuration example](crates/argx/examples/configuration.rs) for envir
 
 Mark each command that participates in schema discovery with `#[argx(schema)]`.
 
+Commands can also expose application-defined semantic metadata without teaching Argx what the keys mean. For example, `#[argx(property("read_only", true))]` is emitted under the `x-argx.properties` namespace in the generated schema.
+
+Property values may be `null`, booleans, finite numbers, strings, or arrays. This keeps effects, scopes, safety hints, and other application semantics available to machine consumers while leaving their interpretation to the application.
+
 At the root, Argx exposes the immediate command structure:
 
 ```text

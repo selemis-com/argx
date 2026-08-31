@@ -80,6 +80,12 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
         .find(|(_, field)| matches!(&field.semantics, model::FieldSemantics::Subcommand));
     let keys = key::constants(&facade, &command.binding.fingerprint, flags.len(), args.len());
     let command_key = key::ident("COMMAND", None);
+    let properties = command
+        .semantics
+        .properties
+        .iter()
+        .map(|property| property_tokens(property, &facade))
+        .collect::<Vec<_>>();
 
     // Static command metadata is generated once from the normalized argument model and is shared
     // by parsing and help generation.
@@ -572,6 +578,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                     help_sections: &[#(#help_sections),*],
                     help_groups: #command_help_groups,
                     aliases: &[#(#aliases),*],
+                    properties: &[#(#properties),*],
                     actions: #command_actions,
                     flags: #command_flags,
                     args: #command_args,
@@ -707,5 +714,33 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
             #parser_impl
             #args_impl
         };
+    }
+}
+
+/// Projects one normalized property into the runtime static command vocabulary.
+pub(super) fn property_tokens(property: &model::Property, facade: &TokenStream) -> TokenStream {
+    let key = &property.key;
+    let value = property_value_tokens(&property.value, facade);
+    quote! {
+        #facade::__private::Property { key: #key, value: #value }
+    }
+}
+
+/// Projects one normalized property value into a static runtime expression.
+fn property_value_tokens(value: &model::PropertyValue, facade: &TokenStream) -> TokenStream {
+    use model::PropertyValue;
+
+    match value {
+        PropertyValue::Null => quote!(#facade::__private::PropertyValue::Null),
+        PropertyValue::Bool(value) => quote!(#facade::__private::PropertyValue::Bool(#value)),
+        PropertyValue::Integer(value) => {
+            quote!(#facade::__private::PropertyValue::Integer(#value))
+        }
+        PropertyValue::Float(value) => quote!(#facade::__private::PropertyValue::Float(#value)),
+        PropertyValue::String(value) => quote!(#facade::__private::PropertyValue::String(#value)),
+        PropertyValue::Array(values) => {
+            let values = values.iter().map(|value| property_value_tokens(value, facade));
+            quote!(#facade::__private::PropertyValue::Array(&[#(#values),*]))
+        }
     }
 }

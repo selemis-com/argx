@@ -8,6 +8,48 @@
 /// Stable semantic identity assigned to one command or argument declaration.
 pub type Key = u64;
 
+/// One application-defined semantic property attached to a command.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Property<'a> {
+    /// Application-defined property name.
+    pub key: &'a str,
+    /// Structured property value preserved for machine-readable projections.
+    pub value: PropertyValue<'a>,
+}
+
+/// Static JSON-like value supported by command properties.
+#[derive(Debug, Clone, Copy)]
+pub enum PropertyValue<'a> {
+    /// Explicit null value.
+    Null,
+    /// Boolean value.
+    Bool(bool),
+    /// Signed integer value.
+    Integer(i64),
+    /// Floating-point value.
+    Float(f64),
+    /// UTF-8 string value.
+    String(&'a str),
+    /// Ordered collection of property values.
+    Array(&'a [Self]),
+}
+
+impl PartialEq for PropertyValue<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Null, Self::Null) => true,
+            (Self::Bool(left), Self::Bool(right)) => left == right,
+            (Self::Integer(left), Self::Integer(right)) => left == right,
+            (Self::Float(left), Self::Float(right)) => left.to_bits() == right.to_bits(),
+            (Self::String(left), Self::String(right)) => left == right,
+            (Self::Array(left), Self::Array(right)) => left == right,
+            _ => false,
+        }
+    }
+}
+
+impl Eq for PropertyValue<'_> {}
+
 /// One normalized relationship between semantic argument identities.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Constraint {
@@ -132,6 +174,8 @@ pub struct Command<'a> {
     pub help_groups: &'a [&'a HelpGroup<'a>],
     /// Hidden spellings accepted in addition to the canonical command name.
     pub aliases: &'a [&'a str],
+    /// Application-defined semantic metadata preserved for machine-readable consumers.
+    pub properties: &'a [Property<'a>],
     /// Built-in parser actions available in this command scope.
     pub actions: &'a [&'a Action<'a>],
     /// Flags accepted by this command.
@@ -155,6 +199,7 @@ impl Command<'static> {
         help_sections: &[],
         help_groups: &[],
         aliases: &[],
+        properties: &[],
         actions: &[&HELP_ACTION],
         flags: &[],
         args: &[],
