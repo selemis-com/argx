@@ -111,6 +111,14 @@ mod tests {
     struct TypedValues {
         count: i64,
         #[argx(long)]
+        small: Option<i8>,
+        #[argx(long)]
+        offset: Option<u16>,
+        #[argx(long)]
+        wide: Option<u128>,
+        #[argx(long)]
+        pointer: Option<usize>,
+        #[argx(long)]
         ratio: Option<f64>,
         #[argx(long)]
         enabled: Option<bool>,
@@ -184,6 +192,16 @@ mod tests {
         let schema: Value = serde_json::from_str(&schema).expect("schema must be JSON");
 
         assert_eq!(schema["properties"]["count"]["type"], "integer");
+        assert_eq!(schema["properties"]["count"]["minimum"], i64::MIN);
+        assert_eq!(schema["properties"]["count"]["maximum"], i64::MAX);
+        assert_eq!(schema["properties"]["--small"]["minimum"], i8::MIN);
+        assert_eq!(schema["properties"]["--small"]["maximum"], i8::MAX);
+        assert_eq!(schema["properties"]["--offset"]["minimum"], 0);
+        assert_eq!(schema["properties"]["--offset"]["maximum"], u16::MAX);
+        assert_eq!(schema["properties"]["--wide"]["minimum"], 0);
+        assert!(schema["properties"]["--wide"].get("maximum").is_none());
+        assert_eq!(schema["properties"]["--pointer"]["minimum"], 0);
+        assert_eq!(schema["properties"]["--pointer"]["maximum"], usize::MAX);
         assert_eq!(schema["properties"]["--ratio"]["type"], "number");
         assert_eq!(schema["properties"]["--enabled"]["type"], "boolean");
     }

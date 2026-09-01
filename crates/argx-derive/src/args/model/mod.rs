@@ -192,8 +192,30 @@ pub(crate) enum ValueSchema {
     Lexical,
     /// Rust `bool` value.
     Boolean,
-    /// Rust integer primitive.
-    Integer,
+    /// Rust `i8` primitive.
+    I8,
+    /// Rust `i16` primitive.
+    I16,
+    /// Rust `i32` primitive.
+    I32,
+    /// Rust `i64` primitive.
+    I64,
+    /// Rust `i128` primitive.
+    I128,
+    /// Rust `isize` primitive.
+    Isize,
+    /// Rust `u8` primitive.
+    U8,
+    /// Rust `u16` primitive.
+    U16,
+    /// Rust `u32` primitive.
+    U32,
+    /// Rust `u64` primitive.
+    U64,
+    /// Rust `u128` primitive.
+    U128,
+    /// Rust `usize` primitive.
+    Usize,
     /// Rust floating-point primitive.
     Number,
     /// `chrono::NaiveDate`.
@@ -443,6 +465,7 @@ mod tests {
             struct Cli {
                 enabled: bool,
                 count: i64,
+                offset: u16,
                 ratio: f64,
                 at: chrono::DateTime<chrono::Utc>,
                 date: chrono::NaiveDate,
@@ -458,15 +481,16 @@ mod tests {
         let command = Command::from_input(&input, true).expect("command model should be valid");
 
         assert_eq!(command.fields[0].value_binding().schema, ValueSchema::Boolean);
-        assert_eq!(command.fields[1].value_binding().schema, ValueSchema::Integer);
-        assert_eq!(command.fields[2].value_binding().schema, ValueSchema::Number);
-        assert_eq!(command.fields[3].value_binding().schema, ValueSchema::DateTime);
-        assert_eq!(command.fields[4].value_binding().schema, ValueSchema::Date);
-        assert_eq!(command.fields[5].value_binding().schema, ValueSchema::Lexical);
+        assert_eq!(command.fields[1].value_binding().schema, ValueSchema::I64);
+        assert_eq!(command.fields[2].value_binding().schema, ValueSchema::U16);
+        assert_eq!(command.fields[3].value_binding().schema, ValueSchema::Number);
+        assert_eq!(command.fields[4].value_binding().schema, ValueSchema::DateTime);
+        assert_eq!(command.fields[5].value_binding().schema, ValueSchema::Date);
         assert_eq!(command.fields[6].value_binding().schema, ValueSchema::Lexical);
-        assert_eq!(command.fields[7].value_binding().schema, ValueSchema::Uuid);
-        assert_eq!(command.fields[8].value_binding().schema, ValueSchema::Url);
-        assert_eq!(command.fields[9].value_binding().schema, ValueSchema::Lexical);
+        assert_eq!(command.fields[7].value_binding().schema, ValueSchema::Lexical);
+        assert_eq!(command.fields[8].value_binding().schema, ValueSchema::Uuid);
+        assert_eq!(command.fields[9].value_binding().schema, ValueSchema::Url);
+        assert_eq!(command.fields[10].value_binding().schema, ValueSchema::Lexical);
     }
 
     #[test]

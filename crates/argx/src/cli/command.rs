@@ -239,8 +239,30 @@ pub enum ValueSchema {
     Lexical,
     /// Boolean value.
     Boolean,
-    /// Integer value.
-    Integer,
+    /// Rust `i8` value.
+    I8,
+    /// Rust `i16` value.
+    I16,
+    /// Rust `i32` value.
+    I32,
+    /// Rust `i64` value.
+    I64,
+    /// Rust `i128` value.
+    I128,
+    /// Rust `isize` value.
+    Isize,
+    /// Rust `u8` value.
+    U8,
+    /// Rust `u16` value.
+    U16,
+    /// Rust `u32` value.
+    U32,
+    /// Rust `u64` value.
+    U64,
+    /// Rust `u128` value.
+    U128,
+    /// Rust `usize` value.
+    Usize,
     /// Numeric value.
     Number,
     /// Chrono date value recognized when the `chrono` integration is enabled.
@@ -259,7 +281,18 @@ impl ValueSchema {
     pub(crate) const fn json_type(self) -> &'static str {
         match self {
             Self::Boolean => "boolean",
-            Self::Integer => "integer",
+            Self::I8
+            | Self::I16
+            | Self::I32
+            | Self::I64
+            | Self::I128
+            | Self::Isize
+            | Self::U8
+            | Self::U16
+            | Self::U32
+            | Self::U64
+            | Self::U128
+            | Self::Usize => "integer",
             Self::Number => "number",
             Self::Lexical | Self::Date | Self::DateTime | Self::Uuid | Self::Url => "string",
         }
@@ -275,7 +308,18 @@ impl ValueSchema {
             Self::Url if cfg!(feature = "url") => Some("uri"),
             Self::Lexical
             | Self::Boolean
-            | Self::Integer
+            | Self::I8
+            | Self::I16
+            | Self::I32
+            | Self::I64
+            | Self::I128
+            | Self::Isize
+            | Self::U8
+            | Self::U16
+            | Self::U32
+            | Self::U64
+            | Self::U128
+            | Self::Usize
             | Self::Number
             | Self::Date
             | Self::DateTime
