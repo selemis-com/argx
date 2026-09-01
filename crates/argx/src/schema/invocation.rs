@@ -220,12 +220,9 @@ fn integer_bounds(
 ) -> Option<(Option<serde_json::Number>, Option<serde_json::Number>)> {
     use serde_json::Number;
 
-    let signed = |minimum: i128, maximum: i128| {
-        (Number::from_i128(minimum), Number::from_i128(maximum))
-    };
-    let unsigned = |maximum: u128| {
-        (Some(Number::from(0)), Number::from_u128(maximum))
-    };
+    let signed =
+        |minimum: i128, maximum: i128| (Number::from_i128(minimum), Number::from_i128(maximum));
+    let unsigned = |maximum: u128| (Some(Number::from(0)), Number::from_u128(maximum));
 
     Some(match value_schema {
         ValueSchema::I8 => signed(i8::MIN.into(), i8::MAX.into()),
@@ -592,8 +589,10 @@ mod tests {
         };
         let input = Arg { key: 8, name: "input", ..Arg::REQUIRED };
         let rest = Arg { key: 9, name: "rest", required: false, variadic: true, ..Arg::REQUIRED };
-        let flags =
-            [&verbose, &mode, &tag, &limit, &small, &offset, &ratio, &pinned, &config, &output, &force, &dry_run];
+        let flags = [
+            &verbose, &mode, &tag, &limit, &small, &offset, &ratio, &pinned, &config, &output,
+            &force, &dry_run,
+        ];
         let args = [&input, &rest];
         let constraints = [
             Constraint { kind: ConstraintKind::Requires, source: 5, target: 4 },
