@@ -713,6 +713,30 @@ mod tests {
         quiet: bool,
     }
 
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    #[argx(one_of = ["user_id", "group_id"])]
+    struct OneOfCli {
+        #[argx(long)]
+        user_id: Option<String>,
+        #[argx(long)]
+        group_id: Option<String>,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Args)]
+    #[argx(one_of = ["token", "certificate"])]
+    struct OneOfShared {
+        #[argx(long)]
+        token: Option<String>,
+        #[argx(long)]
+        certificate: Option<String>,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    struct FlattenedOneOfCli {
+        #[argx(flatten)]
+        auth: OneOfShared,
+    }
+
     #[derive(Debug, PartialEq, Eq, argx::Subcommand)]
     enum ConstraintCommand {
         Run(ConstraintChildArgs),
@@ -1659,6 +1683,29 @@ Options:\n      --color <COLOR>\n  -h, --help           Print help (see more wit
                 "manual"
             ]),
             Err(Error::ConflictingArguments { name: "--destination", other: "--mode" }),
+        );
+    }
+
+    #[test]
+    fn one_of_requires_exactly_one_explicit_argument() {
+        assert_eq!(
+            OneOfCli::try_parse_from(["argx-test"]),
+            Err(Error::InvalidOneOf { arguments: String::from("--user-id, --group-id") }),
+        );
+        assert_eq!(
+            OneOfCli::try_parse_from(["argx-test", "--user-id", "user"]),
+            Ok(OneOfCli { user_id: Some(String::from("user")), group_id: None }),
+        );
+        assert_eq!(
+            OneOfCli::try_parse_from(["argx-test", "--user-id", "user", "--group-id", "group",]),
+            Err(Error::InvalidOneOf { arguments: String::from("--user-id, --group-id") }),
+        );
+
+        assert_eq!(
+            FlattenedOneOfCli::try_parse_from(["argx-test", "--certificate", "cert.pem"]),
+            Ok(FlattenedOneOfCli {
+                auth: OneOfShared { token: None, certificate: Some(String::from("cert.pem")) },
+            }),
         );
     }
 

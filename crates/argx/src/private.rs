@@ -13,12 +13,12 @@ pub use crate::cli::{
     argv::{ArgvParser, Error, Event},
     command::{
         Action, ActionKind, Arg, ArgumentState, Command, Constraint, ConstraintKind, Flag,
-        HELP_ACTION, HelpGroup, HelpSection, Key, MetadataEntry, MetadataValue, SCHEMA_ACTION,
-        ValueSchema, key_base,
+        HELP_ACTION, HelpGroup, HelpSection, Key, MetadataEntry, MetadataValue, OneOf,
+        SCHEMA_ACTION, ValueSchema, key_base,
     },
     compose::{
         action_flag_spellings_disjoint, argument_key_by_name, command_keys_unique, concat_args,
-        concat_constraints, concat_flags, concat_help_groups, flag_spellings_unique,
+        concat_constraints, concat_flags, concat_help_groups, concat_one_of, flag_spellings_unique,
         positional_layout_valid, schema_property_names_disjoint, table_len,
     },
     protocol::{

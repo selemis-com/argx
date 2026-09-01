@@ -124,6 +124,12 @@ impl<'t> Position<'t> {
                     && ((constraint.source == candidate && self.given.contains(&constraint.target))
                         || (constraint.target == candidate
                             && self.given.contains(&constraint.source)))
+            }) || command.one_of.iter().any(|group| {
+                group.members.contains(&candidate)
+                    && group
+                        .members
+                        .iter()
+                        .any(|member| *member != candidate && self.given.contains(member))
             })
         })
     }

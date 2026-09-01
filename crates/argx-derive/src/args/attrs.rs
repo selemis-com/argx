@@ -54,6 +54,8 @@ pub(crate) struct CommandAttrs {
     pub aliases: Vec<String>,
     /// Application-defined semantic metadata exposed to machine-readable consumers.
     pub metadata: Vec<MetadataEntry>,
+    /// Argument sets from which exactly one member must be supplied.
+    pub one_of: Vec<Vec<String>>,
     /// Whether this command declaration participates in schema discovery.
     pub schema: bool,
 }
@@ -141,6 +143,9 @@ fn command_like(attributes: &[Attribute], context: &str) -> syn::Result<CommandA
                 Ok(())
             } else if meta.path.is_ident("aliases") {
                 parsed.aliases.extend(string_array(&meta)?);
+                Ok(())
+            } else if meta.path.is_ident("one_of") {
+                parsed.one_of.push(named_string_array(&meta, "one_of")?);
                 Ok(())
             } else if meta.path.is_ident("metadata") {
                 if metadata_seen {
@@ -446,6 +451,31 @@ fn string_or_array(
             format!("`{attribute}` expects a string or non-empty string array"),
         )),
     }
+}
+
+/// Parses a non-empty string array for one named command-level relationship.
+fn named_string_array(
+    meta: &syn::meta::ParseNestedMeta<'_>,
+    name: &str,
+) -> syn::Result<Vec<String>> {
+    if !meta.input.peek(Token![=]) {
+        return Err(meta.error(format!("`{name}` requires a string array")));
+    }
+    let array = meta.value()?.parse::<syn::ExprArray>()?;
+    if array.elems.len() < 2 {
+        return Err(meta.error(format!("`{name}` requires at least two argument fields")));
+    }
+    array
+        .elems
+        .iter()
+        .map(|expression| match expression {
+            Expr::Lit(syn::ExprLit { lit: Lit::Str(value), .. }) => Ok(value.value()),
+            _ => Err(syn::Error::new_spanned(
+                expression,
+                format!("`{name}` entries must be string literals"),
+            )),
+        })
+        .collect()
 }
 
 /// Parses a non-empty array of string values from a plural attribute.

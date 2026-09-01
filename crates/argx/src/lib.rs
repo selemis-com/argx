@@ -236,15 +236,18 @@
 //!
 //! ## Argument relationships
 //!
-//! `requires` and `conflicts` express relationships between argument fields in one composed command
-//! context. References use Rust field names and are validated during derivation/composition.
+//! `requires`, `conflicts`, and `one_of` express relationships between argument fields in one
+//! composed command context. References use Rust field names and are validated during
+//! derivation/composition.
 //!
 //! `requires` makes another field mandatory when the source argument is supplied. `conflicts`
-//! rejects combinations that cannot be used together. Typed defaults satisfy requirements without
-//! activating conflicts.
+//! rejects combinations that cannot be used together. Command-level `one_of` requires exactly one
+//! explicitly supplied member from a set. Typed defaults satisfy requirements without activating
+//! conflicts or counting as a picked argument.
 //!
 //! ```
 //! #[derive(argx::Parser)]
+//! #[argx(one_of = ["remote", "offline"])]
 //! struct Cli {
 //!     #[argx(long, requires = "token")]
 //!     remote: bool,
@@ -424,9 +427,9 @@
 //! | `subcommand` | select one direct derived `Subcommand` enum |
 //!
 //! Long and alias spellings are written without leading dashes. `count` uses a `u8` field, and
-//! `delimited` splits collection values on commas. `requires` and `conflicts` refer to Rust field
-//! names, including fields contributed through `flatten`. Incompatible attribute combinations are
-//! rejected during derivation.
+//! `delimited` splits collection values on commas. `requires`, `conflicts`, and command-level
+//! `one_of = ["a", "b"]` refer to Rust field names, including fields contributed through
+//! `flatten`. Incompatible attribute combinations are rejected during derivation.
 //!
 //! # Derive restrictions
 //!

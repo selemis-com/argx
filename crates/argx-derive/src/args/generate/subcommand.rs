@@ -99,6 +99,7 @@ pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
                         flags: &[],
                         args: &[],
                         constraints: &[],
+                        one_of: &[],
                         subcommands: &[],
                         key: #key,
                     };
@@ -127,6 +128,7 @@ pub(crate) fn subcommands(subcommand: &model::Subcommand) -> TokenStream {
                         flags: <#ty as #facade::__private::CommandArgs>::COMMAND.flags,
                         args: <#ty as #facade::__private::CommandArgs>::COMMAND.args,
                         constraints: <#ty as #facade::__private::CommandArgs>::COMMAND.constraints,
+                        one_of: <#ty as #facade::__private::CommandArgs>::COMMAND.one_of,
                         subcommands: <#ty as #facade::__private::CommandArgs>::COMMAND.subcommands,
                         key: #key,
                     };

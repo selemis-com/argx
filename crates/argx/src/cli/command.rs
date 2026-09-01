@@ -73,6 +73,13 @@ pub enum ConstraintKind {
     Conflicts,
 }
 
+/// One set of arguments from which exactly one member must be supplied.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OneOf<'a> {
+    /// Semantic identities of the participating arguments.
+    pub members: &'a [Key],
+}
+
 /// Runtime presence state for one semantic argument identity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ArgumentState {
@@ -187,6 +194,8 @@ pub struct Command<'a> {
     pub args: &'a [&'a Arg<'a>],
     /// Normalized argument relationships in this command scope.
     pub constraints: &'a [Constraint],
+    /// Argument sets requiring exactly one explicitly supplied member.
+    pub one_of: &'a [OneOf<'a>],
     /// Child commands accepted by this command.
     pub subcommands: &'a [&'a Self],
     /// Derive-assigned semantic command identity.
@@ -207,6 +216,7 @@ impl Command<'static> {
         flags: &[],
         args: &[],
         constraints: &[],
+        one_of: &[],
         subcommands: &[],
         key: 0,
     };
