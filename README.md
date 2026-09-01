@@ -252,7 +252,9 @@ acme objects get object-7 --schema
 `--full` recursively bundles child command schemas and closes every projected command object. The
 result validates the complete canonical invocation tree: canonical subcommand names are nested
 object properties, while each option or positional value is represented at the command scope that
-owns it. Inherited globals are hoisted only into the selected schema root.
+owns it. Parsed primitive values use their semantic JSON types, so Rust integers, floats, and
+booleans project as JSON Schema `integer`, `number`, and `boolean` values rather than argv strings.
+Inherited globals are hoisted only into the selected schema root.
 
 See the [schema example](crates/argx/examples/schema.rs) for a complete command tree.
 

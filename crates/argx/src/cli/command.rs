@@ -225,8 +225,14 @@ impl Command<'static> {
 /// Schema-relevant semantic type of one CLI value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ValueSchema {
-    /// Ordinary lexical string value.
+    /// Ordinary string value.
     Lexical,
+    /// Boolean value.
+    Boolean,
+    /// Integer value.
+    Integer,
+    /// Numeric value.
+    Number,
     /// Chrono date value recognized when the `chrono` integration is enabled.
     Date,
     /// Chrono date-time value recognized when the `chrono` integration is enabled.
@@ -238,6 +244,17 @@ pub enum ValueSchema {
 }
 
 impl ValueSchema {
+    /// Returns the JSON value type used by the semantic invocation schema.
+    #[must_use]
+    pub(crate) const fn json_type(self) -> &'static str {
+        match self {
+            Self::Boolean => "boolean",
+            Self::Integer => "integer",
+            Self::Number => "number",
+            Self::Lexical | Self::Date | Self::DateTime | Self::Uuid | Self::Url => "string",
+        }
+    }
+
     /// Returns the JSON Schema string format exposed by the enabled integration.
     #[must_use]
     pub(crate) const fn format(self) -> Option<&'static str> {
@@ -246,7 +263,14 @@ impl ValueSchema {
             Self::DateTime if cfg!(feature = "chrono") => Some("date-time"),
             Self::Uuid if cfg!(feature = "uuid") => Some("uuid"),
             Self::Url if cfg!(feature = "url") => Some("uri"),
-            Self::Lexical | Self::Date | Self::DateTime | Self::Uuid | Self::Url => None,
+            Self::Lexical
+            | Self::Boolean
+            | Self::Integer
+            | Self::Number
+            | Self::Date
+            | Self::DateTime
+            | Self::Uuid
+            | Self::Url => None,
         }
     }
 }

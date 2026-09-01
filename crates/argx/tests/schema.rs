@@ -106,6 +106,29 @@ mod tests {
         value: String,
     }
 
+    #[derive(argx::Parser)]
+    #[argx(name = "typed", schema)]
+    struct TypedValues {
+        count: i64,
+        #[argx(long)]
+        ratio: Option<f64>,
+        #[argx(long)]
+        enabled: Option<bool>,
+    }
+
+    #[argx(schema)]
+    struct TypedOutput;
+
+    #[argx(schema)]
+    enum TypedError {
+        Failed,
+    }
+
+    #[argx(handler = TypedValues)]
+    fn typed(_command: TypedValues) -> Result<TypedOutput, TypedError> {
+        Ok(TypedOutput)
+    }
+
     #[argx(schema)]
     struct DirectOutput {
         value: String,
@@ -147,6 +170,22 @@ mod tests {
             Value::Array(values) => values.iter().map(schema_keyword_count).sum(),
             _ => 0,
         }
+    }
+
+    #[test]
+    fn invocation_schema_uses_semantic_primitive_types() {
+        let error = match TypedValues::try_parse_from(["typed", "--schema"]) {
+            Err(error) => error,
+            Ok(_) => panic!("schema request should be terminal"),
+        };
+        let argx::Error::DisplaySchema { schema } = error else {
+            panic!("unexpected parser result: {error:?}");
+        };
+        let schema: Value = serde_json::from_str(&schema).expect("schema must be JSON");
+
+        assert_eq!(schema["properties"]["count"]["type"], "integer");
+        assert_eq!(schema["properties"]["--ratio"]["type"], "number");
+        assert_eq!(schema["properties"]["--enabled"]["type"], "boolean");
     }
 
     #[test]
