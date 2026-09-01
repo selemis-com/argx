@@ -80,6 +80,13 @@ pub struct OneOf<'a> {
     pub members: &'a [Key],
 }
 
+/// One set of arguments from which at least one member must be supplied.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AnyOf<'a> {
+    /// Semantic identities of the participating arguments.
+    pub members: &'a [Key],
+}
+
 /// Runtime presence state for one semantic argument identity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ArgumentState {
@@ -196,6 +203,8 @@ pub struct Command<'a> {
     pub constraints: &'a [Constraint],
     /// Argument sets requiring exactly one explicitly supplied member.
     pub one_of: &'a [OneOf<'a>],
+    /// Argument sets requiring at least one explicitly supplied member.
+    pub any_of: &'a [AnyOf<'a>],
     /// Child commands accepted by this command.
     pub subcommands: &'a [&'a Self],
     /// Derive-assigned semantic command identity.
@@ -217,6 +226,7 @@ impl Command<'static> {
         args: &[],
         constraints: &[],
         one_of: &[],
+        any_of: &[],
         subcommands: &[],
         key: 0,
     };

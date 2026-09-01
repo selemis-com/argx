@@ -56,6 +56,8 @@ pub(crate) struct CommandAttrs {
     pub metadata: Vec<MetadataEntry>,
     /// Argument sets from which exactly one member must be supplied.
     pub one_of: Vec<Vec<String>>,
+    /// Argument sets from which at least one member must be supplied.
+    pub any_of: Vec<Vec<String>>,
     /// Whether this command declaration participates in schema discovery.
     pub schema: bool,
 }
@@ -146,6 +148,9 @@ fn command_like(attributes: &[Attribute], context: &str) -> syn::Result<CommandA
                 Ok(())
             } else if meta.path.is_ident("one_of") {
                 parsed.one_of.push(named_string_array(&meta, "one_of")?);
+                Ok(())
+            } else if meta.path.is_ident("any_of") {
+                parsed.any_of.push(named_string_array(&meta, "any_of")?);
                 Ok(())
             } else if meta.path.is_ident("metadata") {
                 if metadata_seen {

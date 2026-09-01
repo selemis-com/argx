@@ -27,6 +27,7 @@ impl Subcommand {
             || attributes.long_version.is_some()
             || !attributes.aliases.is_empty()
             || !attributes.one_of.is_empty()
+            || !attributes.any_of.is_empty()
         {
             return Err(syn::Error::new_spanned(
                 &input.ident,
@@ -56,6 +57,12 @@ impl Subcommand {
                 return Err(syn::Error::new_spanned(
                     &variant.ident,
                     "`one_of` is only valid on Parser or Args declarations",
+                ));
+            }
+            if !attributes.any_of.is_empty() {
+                return Err(syn::Error::new_spanned(
+                    &variant.ident,
+                    "`any_of` is only valid on Parser or Args declarations",
                 ));
             }
             let rust_name = support::ident_name(&variant.ident);

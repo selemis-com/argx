@@ -255,7 +255,21 @@ fn add_constraints(
             let Some(members) = members else {
                 continue;
             };
-            let constraint = one_of_schema(&members);
+            let constraint = relationship_schema("oneOf", &members);
+            if !all_of.contains(&constraint) {
+                all_of.push(constraint);
+            }
+        }
+        for group in command.any_of {
+            let members = group
+                .members
+                .iter()
+                .map(|key| visible_name(visible, *key))
+                .collect::<Option<Vec<_>>>();
+            let Some(members) = members else {
+                continue;
+            };
+            let constraint = relationship_schema("anyOf", &members);
             if !all_of.contains(&constraint) {
                 all_of.push(constraint);
             }
@@ -298,8 +312,8 @@ fn add_constraints(
     }
 }
 
-/// Builds a schema fragment requiring exactly one property from one `one_of` set.
-fn one_of_schema(members: &[&str]) -> Value {
+/// Builds a schema fragment requiring members according to one relationship keyword.
+fn relationship_schema(keyword: &str, members: &[&str]) -> Value {
     let branches = members
         .iter()
         .map(|member| {
@@ -312,7 +326,7 @@ fn one_of_schema(members: &[&str]) -> Value {
         })
         .collect();
     let mut schema = Map::new();
-    schema.insert("oneOf".to_owned(), Value::Array(branches));
+    schema.insert(keyword.to_owned(), Value::Array(branches));
     Value::Object(schema)
 }
 
@@ -347,7 +361,7 @@ fn conflict_schema(source: &str, target: &str) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli::command::{Arg, Constraint, OneOf};
+    use crate::cli::command::{AnyOf, Arg, Constraint, OneOf};
 
     #[test]
     fn projects_command_metadata_verbatim() {
@@ -411,6 +425,34 @@ mod tests {
             serde_json::json!([
                 { "required": ["--user-id"] },
                 { "required": ["--group-id"] },
+            ]),
+        );
+    }
+
+    #[test]
+    fn projects_any_of_relationships() {
+        let name =
+            Flag { key: 20, name: "name", diagnostic: "--name", longs: &["name"], ..Flag::VALUE };
+        let description = Flag {
+            key: 21,
+            name: "description",
+            diagnostic: "--description",
+            longs: &["description"],
+            ..Flag::VALUE
+        };
+        let flags = [&name, &description];
+        let members = [20, 21];
+        let any_of = [AnyOf { members: &members }];
+        let command = Command { name: "update", flags: &flags, any_of: &any_of, ..Command::EMPTY };
+
+        let schema = serde_json::to_value(invocation_schema_for_path(&[&command]))
+            .expect("schema should serialize");
+
+        assert_eq!(
+            schema["allOf"][0]["anyOf"],
+            serde_json::json!([
+                { "required": ["--name"] },
+                { "required": ["--description"] },
             ]),
         );
     }

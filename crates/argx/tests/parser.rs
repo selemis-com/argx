@@ -737,6 +737,30 @@ mod tests {
         auth: OneOfShared,
     }
 
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    #[argx(any_of = ["name", "description"])]
+    struct AnyOfCli {
+        #[argx(long)]
+        name: Option<String>,
+        #[argx(long)]
+        description: Option<String>,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Args)]
+    #[argx(any_of = ["name", "description"])]
+    struct AnyOfShared {
+        #[argx(long)]
+        name: Option<String>,
+        #[argx(long)]
+        description: Option<String>,
+    }
+
+    #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    struct FlattenedAnyOfCli {
+        #[argx(flatten)]
+        update: AnyOfShared,
+    }
+
     #[derive(Debug, PartialEq, Eq, argx::Subcommand)]
     enum ConstraintCommand {
         Run(ConstraintChildArgs),
@@ -1705,6 +1729,31 @@ Options:\n      --color <COLOR>\n  -h, --help           Print help (see more wit
             FlattenedOneOfCli::try_parse_from(["argx-test", "--certificate", "cert.pem"]),
             Ok(FlattenedOneOfCli {
                 auth: OneOfShared { token: None, certificate: Some(String::from("cert.pem")) },
+            }),
+        );
+    }
+
+    #[test]
+    fn any_of_requires_at_least_one_explicit_argument() {
+        assert_eq!(
+            AnyOfCli::try_parse_from(["argx-test"]),
+            Err(Error::InvalidAnyOf { arguments: String::from("--name, --description") }),
+        );
+        assert_eq!(
+            AnyOfCli::try_parse_from(["argx-test", "--name", "group"]),
+            Ok(AnyOfCli { name: Some(String::from("group")), description: None }),
+        );
+        assert_eq!(
+            AnyOfCli::try_parse_from(["argx-test", "--name", "group", "--description", "updated",]),
+            Ok(AnyOfCli {
+                name: Some(String::from("group")),
+                description: Some(String::from("updated")),
+            }),
+        );
+        assert_eq!(
+            FlattenedAnyOfCli::try_parse_from(["argx-test", "--description", "updated"]),
+            Ok(FlattenedAnyOfCli {
+                update: AnyOfShared { name: None, description: Some(String::from("updated")) },
             }),
         );
     }
