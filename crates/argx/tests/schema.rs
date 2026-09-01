@@ -344,10 +344,7 @@ mod tests {
     fn relationship_projection_survives_flattening_and_full_expansion() {
         let body = discovered_relationship(["schema", "body"]);
         assert_eq!(body["properties"]["--file"]["type"], "string");
-        assert_eq!(
-            body["dependentRequired"]["--force"],
-            serde_json::json!(["--file"]),
-        );
+        assert_eq!(body["dependentRequired"]["--force"], serde_json::json!(["--file"]),);
 
         let update = discovered_relationship(["schema", "update"]);
         assert_eq!(
@@ -364,10 +361,7 @@ mod tests {
 
         let full = discovered_relationship(["schema", "--full"]);
         let body = &full["$defs"]["commands"]["$defs"]["body"];
-        assert_eq!(
-            body["dependentRequired"]["--force"],
-            serde_json::json!(["--file"]),
-        );
+        assert_eq!(body["dependentRequired"]["--force"], serde_json::json!(["--file"]),);
         let update = &full["$defs"]["commands"]["$defs"]["update"];
         assert_eq!(
             update["allOf"][0]["anyOf"],
