@@ -488,6 +488,10 @@ fn value_binding(ty: &Type, shape: Shape) -> ValueBinding {
         ValueSchema::DateTime
     } else {
         match rendered.as_str() {
+            "bool" => ValueSchema::Boolean,
+            "i8" | "i16" | "i32" | "i64" | "i128" | "isize" | "u8" | "u16" | "u32" | "u64"
+            | "u128" | "usize" => ValueSchema::Integer,
+            "f32" | "f64" => ValueSchema::Number,
             "NaiveDate" | "chrono::NaiveDate" | "::chrono::NaiveDate" => ValueSchema::Date,
             "Uuid" | "uuid::Uuid" | "::uuid::Uuid" => ValueSchema::Uuid,
             "Url" | "url::Url" | "::url::Url" => ValueSchema::Url,

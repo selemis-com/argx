@@ -1,17 +1,17 @@
 //! JSON Schema projection for Argx invocation values.
 //!
 //! Invocation schemas describe explicit values a caller can provide to one command context. They
-//! intentionally model the public CLI rather than destination Rust values: named properties use
-//! canonical option spellings, argv values are strings with finite vocabularies and recognized
-//! semantic formats projected where available, and switches are represented by presence with the
-//! value `true`. Environment
+//! model a canonical semantic invocation: named properties use canonical option spellings, parsed
+//! primitive values retain their JSON boolean/number types, finite vocabularies and recognized
+//! semantic formats are projected where available, and switches are represented by presence with
+//! the value `true`. Environment
 //! fallbacks and typed defaults remain outside the explicit invocation value object.
 
 use serde_json::{Map, Value};
 
 use super::doc_summary;
 use crate::cli::command::{
-    Command, ConstraintKind, Flag, Key, MetadataValue, Named, long as resolve_long,
+    Command, ConstraintKind, Flag, Key, MetadataValue, Named, ValueSchema, long as resolve_long,
     short as resolve_short,
 };
 
@@ -49,7 +49,7 @@ fn invocation_schema(
     for (flag, name) in flags {
         visible.push((flag.key, name.clone()));
         let item = if flag.takes_value {
-            lexical_value_schema(flag.accepted_values, flag.value_schema.format())
+            semantic_value_schema(flag.accepted_values, flag.value_schema)
         } else {
             true_switch_schema()
         };
@@ -63,7 +63,7 @@ fn invocation_schema(
 
     for arg in command.args {
         visible.push((arg.key, arg.name.to_owned()));
-        let item = lexical_value_schema(arg.accepted_values, arg.value_schema.format());
+        let item = semantic_value_schema(arg.accepted_values, arg.value_schema);
         let mut schema = if arg.variadic { repeated_schema(item) } else { item };
         set_description(&mut schema, arg.help);
         properties.insert(arg.name.to_owned(), schema);
@@ -188,11 +188,11 @@ fn visible_ancestor_spelling(
     None
 }
 
-/// Builds the schema for one argv value, optionally constrained to a finite vocabulary.
-fn lexical_value_schema(accepted_values: &[&str], format: Option<&str>) -> Value {
+/// Builds the schema for one parsed CLI value, optionally constrained to a finite vocabulary.
+fn semantic_value_schema(accepted_values: &[&str], value_schema: ValueSchema) -> Value {
     let mut schema = Map::new();
-    schema.insert("type".to_owned(), Value::String("string".to_owned()));
-    if let Some(format) = format {
+    schema.insert("type".to_owned(), Value::String(value_schema.json_type().to_owned()));
+    if let Some(format) = value_schema.format() {
         schema.insert("format".to_owned(), Value::String(format.to_owned()));
     }
     if !accepted_values.is_empty() {
@@ -441,6 +441,30 @@ mod tests {
             repeatable: true,
             ..Flag::VALUE
         };
+        let limit = Flag {
+            key: 10,
+            name: "limit",
+            diagnostic: "--limit",
+            longs: &["limit"],
+            value_schema: ValueSchema::Integer,
+            ..Flag::VALUE
+        };
+        let ratio = Flag {
+            key: 11,
+            name: "ratio",
+            diagnostic: "--ratio",
+            longs: &["ratio"],
+            value_schema: ValueSchema::Number,
+            ..Flag::VALUE
+        };
+        let pinned = Flag {
+            key: 12,
+            name: "pinned",
+            diagnostic: "--pinned",
+            longs: &["pinned"],
+            value_schema: ValueSchema::Boolean,
+            ..Flag::VALUE
+        };
         let config = Flag {
             key: 4,
             name: "config",
@@ -466,7 +490,8 @@ mod tests {
         };
         let input = Arg { key: 8, name: "input", ..Arg::REQUIRED };
         let rest = Arg { key: 9, name: "rest", required: false, variadic: true, ..Arg::REQUIRED };
-        let flags = [&verbose, &mode, &tag, &config, &output, &force, &dry_run];
+        let flags =
+            [&verbose, &mode, &tag, &limit, &ratio, &pinned, &config, &output, &force, &dry_run];
         let args = [&input, &rest];
         let constraints = [
             Constraint { kind: ConstraintKind::Requires, source: 5, target: 4 },
@@ -495,6 +520,9 @@ mod tests {
         assert_eq!(schema["properties"]["--tag"]["type"], "array");
         assert_eq!(schema["properties"]["--tag"]["items"]["type"], "string");
         assert_eq!(schema["properties"]["--tag"]["minItems"], 1);
+        assert_eq!(schema["properties"]["--limit"]["type"], "integer");
+        assert_eq!(schema["properties"]["--ratio"]["type"], "number");
+        assert_eq!(schema["properties"]["--pinned"]["type"], "boolean");
         assert_eq!(schema["properties"]["--target"]["type"], "string");
         assert!(schema["properties"].get("destination").is_none());
         assert_eq!(schema["properties"]["input"]["type"], "string");
@@ -600,7 +628,7 @@ mod tests {
             name: "at",
             diagnostic: "--at",
             longs: &["at"],
-            value_schema: crate::cli::command::ValueSchema::DateTime,
+            value_schema: ValueSchema::DateTime,
             ..Flag::VALUE
         };
         let flags = [&at];
@@ -620,7 +648,7 @@ mod tests {
             name: "date",
             diagnostic: "--date",
             longs: &["date"],
-            value_schema: crate::cli::command::ValueSchema::Date,
+            value_schema: ValueSchema::Date,
             ..Flag::VALUE
         };
         let local_time = Flag {
@@ -628,7 +656,7 @@ mod tests {
             name: "local-time",
             diagnostic: "--local-time",
             longs: &["local-time"],
-            value_schema: crate::cli::command::ValueSchema::Lexical,
+            value_schema: ValueSchema::Lexical,
             ..Flag::VALUE
         };
         let local_datetime = Flag {
@@ -636,7 +664,7 @@ mod tests {
             name: "local-datetime",
             diagnostic: "--local-datetime",
             longs: &["local-datetime"],
-            value_schema: crate::cli::command::ValueSchema::Lexical,
+            value_schema: ValueSchema::Lexical,
             ..Flag::VALUE
         };
         let flags = [&date, &local_time, &local_datetime];
@@ -653,12 +681,7 @@ mod tests {
     #[cfg(feature = "uuid")]
     #[test]
     fn uuid_values_expose_the_uuid_format() {
-        let id = Arg {
-            key: 30,
-            name: "id",
-            value_schema: crate::cli::command::ValueSchema::Uuid,
-            ..Arg::REQUIRED
-        };
+        let id = Arg { key: 30, name: "id", value_schema: ValueSchema::Uuid, ..Arg::REQUIRED };
         let args = [&id];
         let command = Command { name: "show", args: &args, ..Command::EMPTY };
 
@@ -676,7 +699,7 @@ mod tests {
             name: "endpoint",
             diagnostic: "--endpoint",
             longs: &["endpoint"],
-            value_schema: crate::cli::command::ValueSchema::Url,
+            value_schema: ValueSchema::Url,
             ..Flag::VALUE
         };
         let flags = [&endpoint];

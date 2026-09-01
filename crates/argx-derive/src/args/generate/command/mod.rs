@@ -26,6 +26,9 @@ use projection::partial_projection;
 /// Projects one normalized value type into runtime schema metadata.
 fn value_schema(field: &model::Field, facade: &TokenStream) -> TokenStream {
     match field.binding.value.as_ref().map(|binding| binding.schema) {
+        Some(model::ValueSchema::Boolean) => quote!(#facade::__private::ValueSchema::Boolean),
+        Some(model::ValueSchema::Integer) => quote!(#facade::__private::ValueSchema::Integer),
+        Some(model::ValueSchema::Number) => quote!(#facade::__private::ValueSchema::Number),
         Some(model::ValueSchema::Date) => quote!(#facade::__private::ValueSchema::Date),
         Some(model::ValueSchema::DateTime) => quote!(#facade::__private::ValueSchema::DateTime),
         Some(model::ValueSchema::Uuid) => quote!(#facade::__private::ValueSchema::Uuid),
