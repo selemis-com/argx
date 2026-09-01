@@ -70,6 +70,7 @@ impl Command {
         let has_version = attributes.version.is_some() || attributes.long_version.is_some();
         validate_fields(&fields, has_version, attributes.schema)?;
         validate_constraints(&fields)?;
+        validate_one_of(&fields, &attributes.one_of, input.ident.span())?;
         validate_composed_generics(&fields, &input.generics)?;
         validate_value_enum_generics(&fields, &input.generics)?;
 
@@ -719,6 +720,48 @@ fn validate_constraints(fields: &[Field]) -> syn::Result<()> {
                             format!("`{kind}` names no argument field `{target}` in this command"),
                         ));
                     }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Validates declaration-local `one_of` references before code generation.
+///
+/// References into flattened `Args` are resolved later against the composed static tables.
+fn validate_one_of(fields: &[Field], groups: &[Vec<String>], span: Span) -> syn::Result<()> {
+    let has_flatten = fields.iter().any(Field::is_flatten);
+
+    for group in groups {
+        let mut seen = Vec::<&str>::new();
+        for target in group {
+            if target.is_empty() {
+                return Err(syn::Error::new(span, "`one_of` must name Rust argument fields"));
+            }
+            if seen.contains(&target.as_str()) {
+                return Err(syn::Error::new(
+                    span,
+                    format!("duplicate `one_of` argument field `{target}`"),
+                ));
+            }
+            seen.push(target.as_str());
+
+            match fields.iter().find(|candidate| candidate.binding.name == *target) {
+                Some(candidate) if candidate.argument().is_some() => {}
+                Some(_) => {
+                    return Err(syn::Error::new(
+                        span,
+                        format!("`one_of` target `{target}` is not an argument field"),
+                    ));
+                }
+                None if has_flatten => {}
+                None => {
+                    return Err(syn::Error::new(
+                        span,
+                        format!("`one_of` names no argument field `{target}` in this command"),
+                    ));
                 }
             }
         }

@@ -64,6 +64,8 @@ pub(crate) struct CommandSemantics {
     pub aliases: Vec<String>,
     /// Application-defined semantic metadata exposed to machine-readable consumers.
     pub metadata: Vec<MetadataEntry>,
+    /// Argument sets from which exactly one member must be supplied.
+    pub one_of: Vec<Vec<String>>,
     /// Whether this command declaration participates in machine-readable schema discovery.
     pub schema: bool,
 }
@@ -92,6 +94,7 @@ impl CommandSemantics {
             long_version: attributes.long_version,
             aliases: attributes.aliases,
             metadata: attributes.metadata,
+            one_of: attributes.one_of,
             schema: attributes.schema,
         }
     }
@@ -957,6 +960,47 @@ mod tests {
             true,
         );
         assert_eq!(error, "a command can contain only one `subcommand` field");
+    }
+
+    #[test]
+    fn one_of_validation_rejects_invalid_local_relationships() {
+        let error = command_error(
+            parse_quote! {
+                #[argx(one_of = ["value", "value"])]
+                struct Cli {
+                    #[argx(long)]
+                    value: Option<String>,
+                }
+            },
+            true,
+        );
+        assert_eq!(error, "duplicate `one_of` argument field `value`");
+
+        let error = command_error(
+            parse_quote! {
+                #[argx(one_of = ["value", "missing"])]
+                struct Cli {
+                    #[argx(long)]
+                    value: Option<String>,
+                }
+            },
+            true,
+        );
+        assert_eq!(error, "`one_of` names no argument field `missing` in this command");
+
+        let error = command_error(
+            parse_quote! {
+                #[argx(one_of = ["value", "command"])]
+                struct Cli {
+                    #[argx(long)]
+                    value: Option<String>,
+                    #[argx(subcommand)]
+                    command: Commands,
+                }
+            },
+            true,
+        );
+        assert_eq!(error, "`one_of` target `command` is not an argument field");
     }
 
     #[test]

@@ -243,9 +243,23 @@ fn add_constraints(
     visible: &[(Key, String)],
 ) {
     let mut dependent_required = Map::new();
-    let mut conflicts = Vec::new();
+    let mut all_of = Vec::new();
 
     for command in scopes {
+        for group in command.one_of {
+            let members = group
+                .members
+                .iter()
+                .map(|key| visible_name(visible, *key))
+                .collect::<Option<Vec<_>>>();
+            let Some(members) = members else {
+                continue;
+            };
+            let constraint = one_of_schema(&members);
+            if !all_of.contains(&constraint) {
+                all_of.push(constraint);
+            }
+        }
         for constraint in command.constraints {
             let Some(source) = visible_name(visible, constraint.source) else {
                 continue;
@@ -268,8 +282,8 @@ fn add_constraints(
                 ConstraintKind::Requires => {}
                 ConstraintKind::Conflicts => {
                     let conflict = conflict_schema(source, target);
-                    if !conflicts.contains(&conflict) {
-                        conflicts.push(conflict);
+                    if !all_of.contains(&conflict) {
+                        all_of.push(conflict);
                     }
                 }
             }
@@ -279,9 +293,27 @@ fn add_constraints(
     if !dependent_required.is_empty() {
         root.insert("dependentRequired".to_owned(), Value::Object(dependent_required));
     }
-    if !conflicts.is_empty() {
-        root.insert("allOf".to_owned(), Value::Array(conflicts));
+    if !all_of.is_empty() {
+        root.insert("allOf".to_owned(), Value::Array(all_of));
     }
+}
+
+/// Builds a schema fragment requiring exactly one property from one `one_of` set.
+fn one_of_schema(members: &[&str]) -> Value {
+    let branches = members
+        .iter()
+        .map(|member| {
+            let mut branch = Map::new();
+            branch.insert(
+                "required".to_owned(),
+                Value::Array(vec![Value::String((*member).to_owned())]),
+            );
+            Value::Object(branch)
+        })
+        .collect();
+    let mut schema = Map::new();
+    schema.insert("oneOf".to_owned(), Value::Array(branches));
+    Value::Object(schema)
 }
 
 /// Resolves one normalized semantic key to its visible invocation property spelling.
@@ -315,7 +347,7 @@ fn conflict_schema(source: &str, target: &str) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli::command::{Arg, Constraint};
+    use crate::cli::command::{Arg, Constraint, OneOf};
 
     #[test]
     fn projects_command_metadata_verbatim() {
@@ -348,6 +380,39 @@ mod tests {
             serde_json::json!(["objects:read"])
         );
         assert_eq!(schema["x-argx-metadata"]["policy"]["owner"], "knowledge");
+    }
+
+    #[test]
+    fn projects_one_of_as_exactly_one_property_constraint() {
+        let user = Flag {
+            key: 10,
+            name: "user_id",
+            diagnostic: "--user-id",
+            longs: &["user-id"],
+            ..Flag::VALUE
+        };
+        let group = Flag {
+            key: 11,
+            name: "group_id",
+            diagnostic: "--group-id",
+            longs: &["group-id"],
+            ..Flag::VALUE
+        };
+        let flags = [&user, &group];
+        let members = [10, 11];
+        let one_of = [OneOf { members: &members }];
+        let command = Command { name: "grant", flags: &flags, one_of: &one_of, ..Command::EMPTY };
+
+        let schema = serde_json::to_value(invocation_schema_for_path(&[&command]))
+            .expect("schema should serialize");
+
+        assert_eq!(
+            schema["allOf"][0]["oneOf"],
+            serde_json::json!([
+                { "required": ["--user-id"] },
+                { "required": ["--group-id"] },
+            ]),
+        );
     }
 
     #[test]

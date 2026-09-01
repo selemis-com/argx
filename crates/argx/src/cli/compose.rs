@@ -7,7 +7,9 @@
 //! target resolution. Invalid
 //! composition becomes a compile-time const-evaluation failure rather than a runtime parser state.
 
-use super::command::{Action, Arg, Command, Constraint, ConstraintKind, Flag, HelpGroup, Key};
+use super::command::{
+    Action, Arg, Command, Constraint, ConstraintKind, Flag, HelpGroup, Key, OneOf,
+};
 
 /// Returns the total number of entries across several static table slices.
 pub const fn table_len<T>(groups: &[&[T]]) -> usize {
@@ -63,6 +65,12 @@ pub const fn concat_args<const N: usize>(
 pub const fn concat_constraints<const N: usize>(groups: &[&[Constraint]]) -> [Constraint; N] {
     const PLACEHOLDER: Constraint =
         Constraint { kind: ConstraintKind::Requires, source: 0, target: 0 };
+    concat(groups, PLACEHOLDER)
+}
+
+/// Concatenates `one_of` groups into one static array while preserving composition order.
+pub const fn concat_one_of<const N: usize>(groups: &[&[OneOf<'static>]]) -> [OneOf<'static>; N] {
+    const PLACEHOLDER: OneOf<'static> = OneOf { members: &[] };
     concat(groups, PLACEHOLDER)
 }
 

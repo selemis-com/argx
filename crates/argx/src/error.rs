@@ -119,6 +119,12 @@ pub enum Error {
         /// Canonical user-facing label of the conflicting argument.
         other: &'static str,
     },
+    /// A `one_of` set had zero or multiple explicitly supplied members.
+    #[error("exactly one of {arguments} must be provided")]
+    InvalidOneOf {
+        /// Comma-separated canonical labels of the participating arguments.
+        arguments: String,
+    },
     /// A text value was not valid UTF-8.
     #[error("value `{}` for `{name}` is not valid UTF-8", display_bytes(.value))]
     InvalidUtf8 {
@@ -306,6 +312,9 @@ fn styled_diagnostic_message(error: &Error) -> String {
             emphasize(name, true, false),
             emphasize(other, true, false)
         ),
+        Error::InvalidOneOf { arguments } => {
+            format!("exactly one of {arguments} must be provided")
+        }
         Error::InvalidUtf8 { name, value } => format!(
             "value `{}` for `{}` is not valid UTF-8",
             emphasize(&display_bytes(value), true, false),

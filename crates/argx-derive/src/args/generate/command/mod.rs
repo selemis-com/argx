@@ -189,6 +189,8 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
     let command_args = &tables.args;
     let command_constraints = &tables.constraints;
     let command_help_groups = &tables.help_groups;
+    let (one_of_decls, command_one_of) =
+        metadata::one_of_tables(command, &facade, command_flags, command_args);
     let constraint_tables = constraint_tables(command, &facade, command_flags, command_args);
     let partial_projection = partial_projection(command, &facade);
     let partial_declarations = &partial_projection.declarations;
@@ -579,6 +581,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
             #(#arg_tables)*
             #table_decls
             #(#constraint_tables)*
+            #one_of_decls
             #version_action
 
             static ARGX_COMMAND: #facade::__private::Command<'static> =
@@ -594,6 +597,7 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                     flags: #command_flags,
                     args: #command_args,
                     constraints: #command_constraints,
+                    one_of: #command_one_of,
                     subcommands: #command_subcommands,
                     key: #command_key,
                 };
@@ -696,6 +700,23 @@ pub(crate) fn command(command: &model::Command) -> TokenStream {
                                 );
                             }
                             _ => {}
+                        }
+                    }
+                    for group in Self::COMMAND.one_of {
+                        let mut supplied = 0_usize;
+                        let mut diagnostics = ::std::vec::Vec::with_capacity(group.members.len());
+                        for &member in group.members {
+                            let state = Self::argument_state(partial, member)
+                                .expect("generated one_of member must belong to this command");
+                            diagnostics.push(state.diagnostic);
+                            if state.given {
+                                supplied += 1;
+                            }
+                        }
+                        if supplied != 1 {
+                            return ::std::result::Result::Err(#facade::Error::InvalidOneOf {
+                                arguments: diagnostics.join(", "),
+                            });
                         }
                     }
                     #subcommand_constraint_check
