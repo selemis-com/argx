@@ -8,7 +8,7 @@
 //! composition becomes a compile-time const-evaluation failure rather than a runtime parser state.
 
 use super::command::{
-    Action, Arg, Command, Constraint, ConstraintKind, Flag, HelpGroup, Key, OneOf,
+    Action, AnyOf, Arg, Command, Constraint, ConstraintKind, Flag, HelpGroup, Key, OneOf,
 };
 
 /// Returns the total number of entries across several static table slices.
@@ -71,6 +71,12 @@ pub const fn concat_constraints<const N: usize>(groups: &[&[Constraint]]) -> [Co
 /// Concatenates `one_of` groups into one static array while preserving composition order.
 pub const fn concat_one_of<const N: usize>(groups: &[&[OneOf<'static>]]) -> [OneOf<'static>; N] {
     const PLACEHOLDER: OneOf<'static> = OneOf { members: &[] };
+    concat(groups, PLACEHOLDER)
+}
+
+/// Concatenates `any_of` groups into one static array while preserving composition order.
+pub const fn concat_any_of<const N: usize>(groups: &[&[AnyOf<'static>]]) -> [AnyOf<'static>; N] {
+    const PLACEHOLDER: AnyOf<'static> = AnyOf { members: &[] };
     concat(groups, PLACEHOLDER)
 }
 

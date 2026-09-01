@@ -236,14 +236,14 @@
 //!
 //! ## Argument relationships
 //!
-//! `requires`, `conflicts`, and `one_of` express relationships between argument fields in one
-//! composed command context. References use Rust field names and are validated during
+//! `requires`, `conflicts`, `one_of`, and `any_of` express relationships between argument fields
+//! in one composed command context. References use Rust field names and are validated during
 //! derivation/composition.
 //!
 //! `requires` makes another field mandatory when the source argument is supplied. `conflicts`
 //! rejects combinations that cannot be used together. Command-level `one_of` requires exactly one
-//! explicitly supplied member from a set. Typed defaults satisfy requirements without activating
-//! conflicts or counting as a picked argument.
+//! explicitly supplied member from a set, while `any_of` requires at least one. Typed defaults
+//! satisfy requirements without activating conflicts or counting as a picked argument.
 //!
 //! ```
 //! #[derive(argx::Parser)]
@@ -370,7 +370,8 @@
 //! marker `schema`. If only one version expression is supplied, Argx uses it for both `-V` and
 //! `--version`. `schema` enables machine-readable discovery. Structural `Args` declarations that
 //! contain a subcommand field may also use `schema` to participate in that command topology.
-//! Version metadata remains root-only.
+//! Command-level `one_of = ["a", "b"]` and `any_of = ["a", "b"]` declare exactly-one and
+//! at-least-one argument relationships respectively. Version metadata remains root-only.
 //!
 //! Argx-owned schema keys use lower camel case consistently. Commands may also attach
 //! application-defined machine-readable metadata with `metadata({ "key": value })`. Values may be
@@ -428,8 +429,9 @@
 //!
 //! Long and alias spellings are written without leading dashes. `count` uses a `u8` field, and
 //! `delimited` splits collection values on commas. `requires`, `conflicts`, and command-level
-//! `one_of = ["a", "b"]` refer to Rust field names, including fields contributed through
-//! `flatten`. Incompatible attribute combinations are rejected during derivation.
+//! `one_of = ["a", "b"]` / `any_of = ["a", "b"]` refer to Rust field names, including fields
+//! contributed through `flatten`. Incompatible attribute combinations are rejected during
+//! derivation.
 //!
 //! # Derive restrictions
 //!

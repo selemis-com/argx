@@ -66,6 +66,8 @@ pub(crate) struct CommandSemantics {
     pub metadata: Vec<MetadataEntry>,
     /// Argument sets from which exactly one member must be supplied.
     pub one_of: Vec<Vec<String>>,
+    /// Argument sets from which at least one member must be supplied.
+    pub any_of: Vec<Vec<String>>,
     /// Whether this command declaration participates in machine-readable schema discovery.
     pub schema: bool,
 }
@@ -95,6 +97,7 @@ impl CommandSemantics {
             aliases: attributes.aliases,
             metadata: attributes.metadata,
             one_of: attributes.one_of,
+            any_of: attributes.any_of,
             schema: attributes.schema,
         }
     }
@@ -972,6 +975,33 @@ mod tests {
             true,
         );
         assert_eq!(error, "a command can contain only one `subcommand` field");
+    }
+
+    #[test]
+    fn any_of_validation_rejects_invalid_local_relationships() {
+        let error = command_error(
+            parse_quote! {
+                #[argx(any_of = ["value", "value"])]
+                struct Cli {
+                    #[argx(long)]
+                    value: Option<String>,
+                }
+            },
+            true,
+        );
+        assert_eq!(error, "duplicate `any_of` argument field `value`");
+
+        let error = command_error(
+            parse_quote! {
+                #[argx(any_of = ["value", "missing"])]
+                struct Cli {
+                    #[argx(long)]
+                    value: Option<String>,
+                }
+            },
+            true,
+        );
+        assert_eq!(error, "`any_of` names no argument field `missing` in this command");
     }
 
     #[test]

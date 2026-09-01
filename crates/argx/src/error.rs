@@ -125,6 +125,12 @@ pub enum Error {
         /// Comma-separated canonical labels of the participating arguments.
         arguments: String,
     },
+    /// An `any_of` set had no explicitly supplied member.
+    #[error("at least one of {arguments} must be provided")]
+    InvalidAnyOf {
+        /// Comma-separated canonical labels of the participating arguments.
+        arguments: String,
+    },
     /// A text value was not valid UTF-8.
     #[error("value `{}` for `{name}` is not valid UTF-8", display_bytes(.value))]
     InvalidUtf8 {
@@ -314,6 +320,9 @@ fn styled_diagnostic_message(error: &Error) -> String {
         ),
         Error::InvalidOneOf { arguments } => {
             format!("exactly one of {arguments} must be provided")
+        }
+        Error::InvalidAnyOf { arguments } => {
+            format!("at least one of {arguments} must be provided")
         }
         Error::InvalidUtf8 { name, value } => format!(
             "value `{}` for `{}` is not valid UTF-8",

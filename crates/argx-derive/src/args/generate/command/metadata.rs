@@ -155,6 +155,51 @@ pub(super) fn one_of_tables(
     (declarations, quote!(&ARGX_ONE_OF))
 }
 
+/// Generates and composes command-level `any_of` groups.
+pub(super) fn any_of_tables(
+    command: &model::Command,
+    facade: &TokenStream,
+    flags: &TokenStream,
+    args: &TokenStream,
+) -> (TokenStream, TokenStream) {
+    let own_members = command.semantics.any_of.iter().enumerate().map(|(index, group)| {
+        let members = format_ident!("ARGX_ANY_OF_MEMBERS_{index}");
+        let keys = group
+            .iter()
+            .map(|target| quote!(#facade::__private::argument_key_by_name(#flags, #args, #target)));
+        let len = group.len();
+        quote! {
+            static #members: [#facade::__private::Key; #len] = [#(#keys),*];
+        }
+    });
+    let own_entries = command.semantics.any_of.iter().enumerate().map(|(index, _)| {
+        let members = format_ident!("ARGX_ANY_OF_MEMBERS_{index}");
+        quote!(#facade::__private::AnyOf { members: &#members })
+    });
+    let own_len = command.semantics.any_of.len();
+
+    let flattened = command.fields.iter().filter_map(|field| {
+        if !field.is_flatten() {
+            return None;
+        }
+        let ty = &field.binding.ty;
+        Some(quote!(<#ty as #facade::__private::CommandArgs>::COMMAND.any_of))
+    });
+
+    let declarations = quote! {
+        #(#own_members)*
+        static ARGX_OWN_ANY_OF: [#facade::__private::AnyOf<'static>; #own_len] =
+            [#(#own_entries),*];
+        const ARGX_ANY_OF_GROUPS: &[&[#facade::__private::AnyOf<'static>]] =
+            &[#(#flattened,)* &ARGX_OWN_ANY_OF];
+        static ARGX_ANY_OF: [#facade::__private::AnyOf<'static>;
+            #facade::__private::table_len(ARGX_ANY_OF_GROUPS)] =
+            #facade::__private::concat_any_of(ARGX_ANY_OF_GROUPS);
+    };
+
+    (declarations, quote!(&ARGX_ANY_OF))
+}
+
 /// Builds one flat parse table from this declaration's own fields and flattened children.
 pub(super) fn command_tables(
     command: &model::Command,
