@@ -100,6 +100,73 @@ mod tests {
         command: Commands,
     }
 
+    #[derive(argx::Args)]
+    struct OutputFileArgs {
+        #[argx(long = "file")]
+        file: Option<std::path::PathBuf>,
+        #[argx(long, requires = "file")]
+        force: bool,
+    }
+
+    #[derive(argx::Args)]
+    struct RelationshipBodyCommand {
+        #[argx(flatten)]
+        output: OutputFileArgs,
+    }
+
+    #[argx(schema)]
+    struct RelationshipOutput;
+
+    #[argx(schema)]
+    enum RelationshipError {
+        Failed,
+    }
+
+    #[argx(handler = RelationshipBodyCommand)]
+    fn relationship_body(
+        _command: RelationshipBodyCommand,
+    ) -> Result<RelationshipOutput, RelationshipError> {
+        Ok(RelationshipOutput)
+    }
+
+    #[derive(argx::Args)]
+    #[argx(any_of = ["name", "description"])]
+    struct PatchFields {
+        #[argx(long)]
+        name: Option<String>,
+        #[argx(long)]
+        description: Option<String>,
+    }
+
+    #[derive(argx::Args)]
+    struct RelationshipUpdateCommand {
+        #[argx(flatten)]
+        patch: PatchFields,
+        #[argx(long, conflicts = "description")]
+        clear_description: bool,
+    }
+
+    #[argx(handler = RelationshipUpdateCommand)]
+    fn relationship_update(
+        _command: RelationshipUpdateCommand,
+    ) -> Result<RelationshipOutput, RelationshipError> {
+        Ok(RelationshipOutput)
+    }
+
+    #[derive(argx::Subcommand)]
+    #[argx(schema)]
+    enum RelationshipCommands {
+        Body(RelationshipBodyCommand),
+        Update(RelationshipUpdateCommand),
+    }
+
+    #[derive(argx::Parser)]
+    #[argx(name = "relationships", schema)]
+    struct RelationshipCli {
+        #[argx(subcommand)]
+        command: RelationshipCommands,
+    }
+
     #[derive(argx::Parser)]
     #[argx(name = "echo", schema)]
     struct Direct {
@@ -160,6 +227,23 @@ mod tests {
         let argv = std::iter::once(std::ffi::OsString::from("argx-test"))
             .chain(argv.into_iter().map(Into::into));
         let error = match Cli::try_parse_from(argv) {
+            Err(error) => error,
+            Ok(_) => panic!("schema request should be terminal"),
+        };
+        let argx::Error::DisplaySchema { schema } = error else {
+            panic!("unexpected parser result: {error:?}");
+        };
+        serde_json::from_str(&schema).expect("schema discovery must emit JSON")
+    }
+
+    fn discovered_relationship<I, T>(argv: I) -> Value
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<std::ffi::OsString>,
+    {
+        let argv = std::iter::once(std::ffi::OsString::from("argx-test"))
+            .chain(argv.into_iter().map(Into::into));
+        let error = match RelationshipCli::try_parse_from(argv) {
             Err(error) => error,
             Ok(_) => panic!("schema request should be terminal"),
         };
@@ -254,6 +338,48 @@ mod tests {
         let full = discovered(["schema", "--full"]);
         assert_eq!(full["allOf"].as_array().map(Vec::len), Some(1));
         assert!(full["$defs"]["commands"]["$defs"]["get"].get("allOf").is_none());
+    }
+
+    #[test]
+    fn relationship_projection_survives_flattening_and_full_expansion() {
+        let body = discovered_relationship(["schema", "body"]);
+        assert_eq!(body["properties"]["--file"]["type"], "string");
+        assert_eq!(
+            body["dependentRequired"]["--force"],
+            serde_json::json!(["--file"]),
+        );
+
+        let update = discovered_relationship(["schema", "update"]);
+        assert_eq!(
+            update["allOf"][0]["anyOf"],
+            serde_json::json!([
+                { "required": ["--name"] },
+                { "required": ["--description"] },
+            ]),
+        );
+        assert_eq!(
+            update["allOf"][1]["not"]["required"],
+            serde_json::json!(["--clear-description", "--description"]),
+        );
+
+        let full = discovered_relationship(["schema", "--full"]);
+        let body = &full["$defs"]["commands"]["$defs"]["body"];
+        assert_eq!(
+            body["dependentRequired"]["--force"],
+            serde_json::json!(["--file"]),
+        );
+        let update = &full["$defs"]["commands"]["$defs"]["update"];
+        assert_eq!(
+            update["allOf"][0]["anyOf"],
+            serde_json::json!([
+                { "required": ["--name"] },
+                { "required": ["--description"] },
+            ]),
+        );
+        assert_eq!(
+            update["allOf"][1]["not"]["required"],
+            serde_json::json!(["--clear-description", "--description"]),
+        );
     }
 
     #[test]
