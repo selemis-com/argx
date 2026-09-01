@@ -100,6 +100,73 @@ mod tests {
         command: Commands,
     }
 
+    #[derive(argx::Args)]
+    struct OutputFileArgs {
+        #[argx(long = "file")]
+        file: Option<std::path::PathBuf>,
+        #[argx(long, requires = "file")]
+        force: bool,
+    }
+
+    #[derive(argx::Args)]
+    struct RelationshipBodyCommand {
+        #[argx(flatten)]
+        output: OutputFileArgs,
+    }
+
+    #[argx(schema)]
+    struct RelationshipOutput;
+
+    #[argx(schema)]
+    enum RelationshipError {
+        Failed,
+    }
+
+    #[argx(handler = RelationshipBodyCommand)]
+    fn relationship_body(
+        _command: RelationshipBodyCommand,
+    ) -> Result<RelationshipOutput, RelationshipError> {
+        Ok(RelationshipOutput)
+    }
+
+    #[derive(argx::Args)]
+    #[argx(any_of = ["name", "description"])]
+    struct PatchFields {
+        #[argx(long)]
+        name: Option<String>,
+        #[argx(long)]
+        description: Option<String>,
+    }
+
+    #[derive(argx::Args)]
+    struct RelationshipUpdateCommand {
+        #[argx(flatten)]
+        patch: PatchFields,
+        #[argx(long, conflicts = "description")]
+        clear_description: bool,
+    }
+
+    #[argx(handler = RelationshipUpdateCommand)]
+    fn relationship_update(
+        _command: RelationshipUpdateCommand,
+    ) -> Result<RelationshipOutput, RelationshipError> {
+        Ok(RelationshipOutput)
+    }
+
+    #[derive(argx::Subcommand)]
+    #[argx(schema)]
+    enum RelationshipCommands {
+        Body(RelationshipBodyCommand),
+        Update(RelationshipUpdateCommand),
+    }
+
+    #[derive(argx::Parser)]
+    #[argx(name = "relationships", schema)]
+    struct RelationshipCli {
+        #[argx(subcommand)]
+        command: RelationshipCommands,
+    }
+
     #[derive(argx::Parser)]
     #[argx(name = "echo", schema)]
     struct Direct {
@@ -110,6 +177,14 @@ mod tests {
     #[argx(name = "typed", schema)]
     struct TypedValues {
         count: i64,
+        #[argx(long)]
+        small: Option<i8>,
+        #[argx(long)]
+        offset: Option<u16>,
+        #[argx(long)]
+        wide: Option<u128>,
+        #[argx(long)]
+        pointer: Option<usize>,
         #[argx(long)]
         ratio: Option<f64>,
         #[argx(long)]
@@ -161,6 +236,23 @@ mod tests {
         serde_json::from_str(&schema).expect("schema discovery must emit JSON")
     }
 
+    fn discovered_relationship<I, T>(argv: I) -> Value
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<std::ffi::OsString>,
+    {
+        let argv = std::iter::once(std::ffi::OsString::from("argx-test"))
+            .chain(argv.into_iter().map(Into::into));
+        let error = match RelationshipCli::try_parse_from(argv) {
+            Err(error) => error,
+            Ok(_) => panic!("schema request should be terminal"),
+        };
+        let argx::Error::DisplaySchema { schema } = error else {
+            panic!("unexpected parser result: {error:?}");
+        };
+        serde_json::from_str(&schema).expect("schema discovery must emit JSON")
+    }
+
     fn schema_keyword_count(value: &Value) -> usize {
         match value {
             Value::Object(object) => {
@@ -184,6 +276,16 @@ mod tests {
         let schema: Value = serde_json::from_str(&schema).expect("schema must be JSON");
 
         assert_eq!(schema["properties"]["count"]["type"], "integer");
+        assert_eq!(schema["properties"]["count"]["minimum"], i64::MIN);
+        assert_eq!(schema["properties"]["count"]["maximum"], i64::MAX);
+        assert_eq!(schema["properties"]["--small"]["minimum"], i8::MIN);
+        assert_eq!(schema["properties"]["--small"]["maximum"], i8::MAX);
+        assert_eq!(schema["properties"]["--offset"]["minimum"], 0);
+        assert_eq!(schema["properties"]["--offset"]["maximum"], u16::MAX);
+        assert_eq!(schema["properties"]["--wide"]["minimum"], 0);
+        assert!(schema["properties"]["--wide"].get("maximum").is_none());
+        assert_eq!(schema["properties"]["--pointer"]["minimum"], 0);
+        assert_eq!(schema["properties"]["--pointer"]["maximum"], usize::MAX);
         assert_eq!(schema["properties"]["--ratio"]["type"], "number");
         assert_eq!(schema["properties"]["--enabled"]["type"], "boolean");
     }
@@ -236,6 +338,42 @@ mod tests {
         let full = discovered(["schema", "--full"]);
         assert_eq!(full["allOf"].as_array().map(Vec::len), Some(1));
         assert!(full["$defs"]["commands"]["$defs"]["get"].get("allOf").is_none());
+    }
+
+    #[test]
+    fn relationship_projection_survives_flattening_and_full_expansion() {
+        let body = discovered_relationship(["schema", "body"]);
+        assert_eq!(body["properties"]["--file"]["type"], "string");
+        assert_eq!(body["dependentRequired"]["--force"], serde_json::json!(["--file"]),);
+
+        let update = discovered_relationship(["schema", "update"]);
+        assert_eq!(
+            update["allOf"][0]["anyOf"],
+            serde_json::json!([
+                { "required": ["--name"] },
+                { "required": ["--description"] },
+            ]),
+        );
+        assert_eq!(
+            update["allOf"][1]["not"]["required"],
+            serde_json::json!(["--clear-description", "--description"]),
+        );
+
+        let full = discovered_relationship(["schema", "--full"]);
+        let body = &full["$defs"]["commands"]["$defs"]["body"];
+        assert_eq!(body["dependentRequired"]["--force"], serde_json::json!(["--file"]),);
+        let update = &full["$defs"]["commands"]["$defs"]["update"];
+        assert_eq!(
+            update["allOf"][0]["anyOf"],
+            serde_json::json!([
+                { "required": ["--name"] },
+                { "required": ["--description"] },
+            ]),
+        );
+        assert_eq!(
+            update["allOf"][1]["not"]["required"],
+            serde_json::json!(["--clear-description", "--description"]),
+        );
     }
 
     #[test]

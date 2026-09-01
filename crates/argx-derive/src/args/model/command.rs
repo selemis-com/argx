@@ -490,8 +490,18 @@ fn value_binding(ty: &Type, shape: Shape) -> ValueBinding {
     } else {
         match rendered.as_str() {
             "bool" => ValueSchema::Boolean,
-            "i8" | "i16" | "i32" | "i64" | "i128" | "isize" | "u8" | "u16" | "u32" | "u64"
-            | "u128" | "usize" => ValueSchema::Integer,
+            "i8" => ValueSchema::I8,
+            "i16" => ValueSchema::I16,
+            "i32" => ValueSchema::I32,
+            "i64" => ValueSchema::I64,
+            "i128" => ValueSchema::I128,
+            "isize" => ValueSchema::Isize,
+            "u8" => ValueSchema::U8,
+            "u16" => ValueSchema::U16,
+            "u32" => ValueSchema::U32,
+            "u64" => ValueSchema::U64,
+            "u128" => ValueSchema::U128,
+            "usize" => ValueSchema::Usize,
             "f32" | "f64" => ValueSchema::Number,
             "NaiveDate" | "chrono::NaiveDate" | "::chrono::NaiveDate" => ValueSchema::Date,
             "Uuid" | "uuid::Uuid" | "::uuid::Uuid" => ValueSchema::Uuid,

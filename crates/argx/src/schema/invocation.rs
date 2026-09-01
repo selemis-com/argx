@@ -195,6 +195,14 @@ fn semantic_value_schema(accepted_values: &[&str], value_schema: ValueSchema) ->
     if let Some(format) = value_schema.format() {
         schema.insert("format".to_owned(), Value::String(format.to_owned()));
     }
+    if let Some((minimum, maximum)) = integer_bounds(value_schema) {
+        if let Some(minimum) = minimum {
+            schema.insert("minimum".to_owned(), Value::Number(minimum));
+        }
+        if let Some(maximum) = maximum {
+            schema.insert("maximum".to_owned(), Value::Number(maximum));
+        }
+    }
     if !accepted_values.is_empty() {
         schema.insert(
             "enum".to_owned(),
@@ -204,6 +212,39 @@ fn semantic_value_schema(accepted_values: &[&str], value_schema: ValueSchema) ->
         );
     }
     Value::Object(schema)
+}
+
+/// Returns exact Rust primitive integer bounds when `serde_json` can represent them losslessly.
+fn integer_bounds(
+    value_schema: ValueSchema,
+) -> Option<(Option<serde_json::Number>, Option<serde_json::Number>)> {
+    use serde_json::Number;
+
+    let signed =
+        |minimum: i128, maximum: i128| (Number::from_i128(minimum), Number::from_i128(maximum));
+    let unsigned = |maximum: u128| (Some(Number::from(0)), Number::from_u128(maximum));
+
+    Some(match value_schema {
+        ValueSchema::I8 => signed(i8::MIN.into(), i8::MAX.into()),
+        ValueSchema::I16 => signed(i16::MIN.into(), i16::MAX.into()),
+        ValueSchema::I32 => signed(i32::MIN.into(), i32::MAX.into()),
+        ValueSchema::I64 => signed(i64::MIN.into(), i64::MAX.into()),
+        ValueSchema::I128 => signed(i128::MIN, i128::MAX),
+        ValueSchema::Isize => signed(isize::MIN as i128, isize::MAX as i128),
+        ValueSchema::U8 => unsigned(u8::MAX.into()),
+        ValueSchema::U16 => unsigned(u16::MAX.into()),
+        ValueSchema::U32 => unsigned(u32::MAX.into()),
+        ValueSchema::U64 => unsigned(u64::MAX.into()),
+        ValueSchema::U128 => unsigned(u128::MAX),
+        ValueSchema::Usize => unsigned(usize::MAX as u128),
+        ValueSchema::Lexical
+        | ValueSchema::Boolean
+        | ValueSchema::Number
+        | ValueSchema::Date
+        | ValueSchema::DateTime
+        | ValueSchema::Uuid
+        | ValueSchema::Url => return None,
+    })
 }
 
 /// Builds the schema for a value-less switch, where presence means `true`.
@@ -488,7 +529,23 @@ mod tests {
             name: "limit",
             diagnostic: "--limit",
             longs: &["limit"],
-            value_schema: ValueSchema::Integer,
+            value_schema: ValueSchema::I64,
+            ..Flag::VALUE
+        };
+        let small = Flag {
+            key: 13,
+            name: "small",
+            diagnostic: "--small",
+            longs: &["small"],
+            value_schema: ValueSchema::I8,
+            ..Flag::VALUE
+        };
+        let offset = Flag {
+            key: 14,
+            name: "offset",
+            diagnostic: "--offset",
+            longs: &["offset"],
+            value_schema: ValueSchema::U16,
             ..Flag::VALUE
         };
         let ratio = Flag {
@@ -532,8 +589,10 @@ mod tests {
         };
         let input = Arg { key: 8, name: "input", ..Arg::REQUIRED };
         let rest = Arg { key: 9, name: "rest", required: false, variadic: true, ..Arg::REQUIRED };
-        let flags =
-            [&verbose, &mode, &tag, &limit, &ratio, &pinned, &config, &output, &force, &dry_run];
+        let flags = [
+            &verbose, &mode, &tag, &limit, &small, &offset, &ratio, &pinned, &config, &output,
+            &force, &dry_run,
+        ];
         let args = [&input, &rest];
         let constraints = [
             Constraint { kind: ConstraintKind::Requires, source: 5, target: 4 },
@@ -563,6 +622,12 @@ mod tests {
         assert_eq!(schema["properties"]["--tag"]["items"]["type"], "string");
         assert_eq!(schema["properties"]["--tag"]["minItems"], 1);
         assert_eq!(schema["properties"]["--limit"]["type"], "integer");
+        assert_eq!(schema["properties"]["--limit"]["minimum"], i64::MIN);
+        assert_eq!(schema["properties"]["--limit"]["maximum"], i64::MAX);
+        assert_eq!(schema["properties"]["--small"]["minimum"], i8::MIN);
+        assert_eq!(schema["properties"]["--small"]["maximum"], i8::MAX);
+        assert_eq!(schema["properties"]["--offset"]["minimum"], 0);
+        assert_eq!(schema["properties"]["--offset"]["maximum"], u16::MAX);
         assert_eq!(schema["properties"]["--ratio"]["type"], "number");
         assert_eq!(schema["properties"]["--pinned"]["type"], "boolean");
         assert_eq!(schema["properties"]["--target"]["type"], "string");
