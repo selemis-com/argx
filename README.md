@@ -157,7 +157,7 @@ Argx-owned schema keys use lower camel case consistently. Commands can also expo
 
 Metadata values may be `null`, booleans, finite numbers, strings, arrays, or nested objects. This keeps effects, scopes, safety hints, and other application semantics available to machine consumers while leaving their interpretation to the application.
 
-At the root, Argx exposes the immediate command structure:
+At the root, Argx exposes immediate subcommands as ordinary referenced properties:
 
 ```text
 acme schema
@@ -168,13 +168,20 @@ acme schema
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "acme",
   "type": "object",
+  "properties": {
+    "objects": {
+      "$ref": "#/$defs/commands/$defs/objects"
+    }
+  },
+  "required": ["objects"],
   "additionalProperties": false,
   "$defs": {
-    "subcommands": {
+    "commands": {
       "$defs": {
         "objects": {
           "title": "objects",
-          "description": "Manage objects."
+          "description": "Manage objects.",
+          "type": "object"
         }
       }
     }
@@ -182,31 +189,9 @@ acme schema
 }
 ```
 
-Nested structural commands work the same way:
-
-```text
-acme schema objects
-```
-
-```json
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "objects",
-  "description": "Manage objects.",
-  "type": "object",
-  "additionalProperties": false,
-  "$defs": {
-    "subcommands": {
-      "$defs": {
-        "get": {
-          "title": "get",
-          "description": "Get an object."
-        }
-      }
-    }
-  }
-}
-```
+Default structural schemas intentionally stop at the immediate command boundary. The referenced
+child is an open object, so the document validates the selected command name without claiming to
+validate descendants that were not projected. Request that command's schema to continue discovery.
 
 Leaf commands expose the concrete invocation contract together with typed result and error schemas:
 
@@ -264,9 +249,10 @@ acme objects get object-7 --schema
 }
 ```
 
-Structural schemas let tools walk the command tree incrementally. Leaf schemas describe the exact arguments a command accepts and, when associated with a handler, the result and error types it can produce.
-
-Use `--full` to recursively expand a structural command.
+`--full` recursively bundles child command schemas and closes every projected command object. The
+result validates the complete canonical invocation tree: canonical subcommand names are nested
+object properties, while each option or positional value is represented at the command scope that
+owns it. Inherited globals are hoisted only into the selected schema root.
 
 See the [schema example](crates/argx/examples/schema.rs) for a complete command tree.
 

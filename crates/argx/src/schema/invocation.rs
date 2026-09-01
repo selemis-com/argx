@@ -23,10 +23,31 @@ pub(crate) fn invocation_schema_for_path(path: &[&Command<'_>]) -> schemars::Sch
     let Some(&command) = path.last() else {
         return schemars::Schema::from(Map::new());
     };
+    invocation_schema(command, visible_flags(path), path)
+}
+
+/// Projects only values semantically owned by one command.
+///
+/// Recursive command schemas use this form so inherited globals remain represented once at the
+/// selected document root instead of being duplicated at every descendant command object.
+pub(crate) fn local_invocation_schema(command: &Command<'_>) -> schemars::Schema {
+    let flags =
+        command.flags.iter().copied().map(|flag| (flag, flag.diagnostic.to_owned())).collect();
+    invocation_schema(command, flags, &[command])
+}
+
+/// Builds one invocation object from the supplied visible flag projection.
+fn invocation_schema(
+    command: &Command<'_>,
+    flags: Vec<(&Flag<'_>, String)>,
+    constraint_scopes: &[&Command<'_>],
+) -> schemars::Schema {
     let mut properties = Map::new();
     let mut required = Vec::new();
+    let mut visible = Vec::new();
 
-    for (flag, name) in visible_flags(path) {
+    for (flag, name) in flags {
+        visible.push((flag.key, name.clone()));
         let item = if flag.takes_value {
             lexical_value_schema(flag.accepted_values, flag.value_schema.format())
         } else {
@@ -41,6 +62,7 @@ pub(crate) fn invocation_schema_for_path(path: &[&Command<'_>]) -> schemars::Sch
     }
 
     for arg in command.args {
+        visible.push((arg.key, arg.name.to_owned()));
         let item = lexical_value_schema(arg.accepted_values, arg.value_schema.format());
         let mut schema = if arg.variadic { repeated_schema(item) } else { item };
         set_description(&mut schema, arg.help);
@@ -52,11 +74,7 @@ pub(crate) fn invocation_schema_for_path(path: &[&Command<'_>]) -> schemars::Sch
 
     let mut root = Map::new();
     root.insert("$schema".to_owned(), Value::String(DRAFT_2020_12.to_owned()));
-    root.insert("title".to_owned(), Value::String(command.name.to_owned()));
-    if let Some(description) = command.about.or(command.description).and_then(doc_summary) {
-        root.insert("description".to_owned(), Value::String(description.to_owned()));
-    }
-    root.insert("type".to_owned(), Value::String("object".to_owned()));
+    add_command_header(&mut root, command);
     if !properties.is_empty() {
         root.insert("properties".to_owned(), Value::Object(properties));
     }
@@ -64,14 +82,23 @@ pub(crate) fn invocation_schema_for_path(path: &[&Command<'_>]) -> schemars::Sch
         root.insert("required".to_owned(), Value::Array(required));
     }
     root.insert("additionalProperties".to_owned(), Value::Bool(false));
-    add_command_metadata(&mut root, command);
-    add_constraints(&mut root, command);
+    add_constraints(&mut root, constraint_scopes, &visible);
 
     schemars::Schema::from(root)
 }
 
+/// Adds the common object identity and annotations for one command schema.
+pub(super) fn add_command_header(root: &mut Map<String, Value>, command: &Command<'_>) {
+    root.insert("title".to_owned(), Value::String(command.name.to_owned()));
+    if let Some(description) = command.about.or(command.description).and_then(doc_summary) {
+        root.insert("description".to_owned(), Value::String(description.to_owned()));
+    }
+    root.insert("type".to_owned(), Value::String("object".to_owned()));
+    add_command_metadata(root, command);
+}
+
 /// Adds application-defined command metadata using a JSON Schema extension keyword.
-pub(super) fn add_command_metadata(root: &mut Map<String, Value>, command: &Command<'_>) {
+fn add_command_metadata(root: &mut Map<String, Value>, command: &Command<'_>) {
     if command.metadata.is_empty() {
         return;
     }
@@ -204,30 +231,48 @@ fn set_description(schema: &mut Value, description: Option<&str>) {
     schema.insert("description".to_owned(), Value::String(description.to_owned()));
 }
 
-/// Projects normalized Argx relationships into native JSON Schema object constraints.
-fn add_constraints(root: &mut Map<String, Value>, command: &Command<'_>) {
+/// Projects normalized Argx relationships whose participants are visible in this schema root.
+///
+/// Selected-path schemas hoist inherited globals into a new semantic root. Constraints declared by
+/// ancestor commands therefore remain applicable when every participating property is visible in
+/// that projection. Recursive child schemas pass only their owning command here, preserving the
+/// one-scope ownership used by full command documents.
+fn add_constraints(
+    root: &mut Map<String, Value>,
+    scopes: &[&Command<'_>],
+    visible: &[(Key, String)],
+) {
     let mut dependent_required = Map::new();
     let mut conflicts = Vec::new();
 
-    for constraint in command.constraints {
-        let Some(source) = argument_name(command, constraint.source) else {
-            continue;
-        };
-        let Some(target) = argument_name(command, constraint.target) else {
-            continue;
-        };
+    for command in scopes {
+        for constraint in command.constraints {
+            let Some(source) = visible_name(visible, constraint.source) else {
+                continue;
+            };
+            let Some(target) = visible_name(visible, constraint.target) else {
+                continue;
+            };
 
-        match constraint.kind {
-            ConstraintKind::Requires if requires_explicit_value(command, constraint.target) => {
-                let targets = dependent_required
-                    .entry(source.to_owned())
-                    .or_insert_with(|| Value::Array(Vec::new()));
-                if let Value::Array(targets) = targets {
-                    targets.push(Value::String(target.to_owned()));
+            match constraint.kind {
+                ConstraintKind::Requires if requires_explicit_value(scopes, constraint.target) => {
+                    let targets = dependent_required
+                        .entry(source.to_owned())
+                        .or_insert_with(|| Value::Array(Vec::new()));
+                    if let Value::Array(targets) = targets
+                        && !targets.iter().any(|value| value.as_str() == Some(target))
+                    {
+                        targets.push(Value::String(target.to_owned()));
+                    }
+                }
+                ConstraintKind::Requires => {}
+                ConstraintKind::Conflicts => {
+                    let conflict = conflict_schema(source, target);
+                    if !conflicts.contains(&conflict) {
+                        conflicts.push(conflict);
+                    }
                 }
             }
-            ConstraintKind::Requires => {}
-            ConstraintKind::Conflicts => conflicts.push(conflict_schema(source, target)),
         }
     }
 
@@ -239,19 +284,18 @@ fn add_constraints(root: &mut Map<String, Value>, command: &Command<'_>) {
     }
 }
 
-/// Resolves one normalized semantic key to the corresponding invocation property name.
-fn argument_name<'a>(command: &'a Command<'_>, key: Key) -> Option<&'a str> {
-    command
-        .flags
-        .iter()
-        .find(|flag| flag.key == key)
-        .map(|flag| flag.diagnostic)
-        .or_else(|| command.args.iter().find(|arg| arg.key == key).map(|arg| arg.name))
+/// Resolves one normalized semantic key to its visible invocation property spelling.
+fn visible_name(visible: &[(Key, String)], key: Key) -> Option<&str> {
+    visible.iter().find(|(candidate, _)| *candidate == key).map(|(_, name)| name.as_str())
 }
 
 /// Returns whether satisfying one required target necessarily needs an explicit invocation value.
-fn requires_explicit_value(command: &Command<'_>, key: Key) -> bool {
-    command.flags.iter().find(|flag| flag.key == key).is_none_or(|flag| !flag.has_default)
+fn requires_explicit_value(scopes: &[&Command<'_>], key: Key) -> bool {
+    scopes
+        .iter()
+        .flat_map(|command| command.flags.iter())
+        .find(|flag| flag.key == key)
+        .is_none_or(|flag| !flag.has_default)
 }
 
 /// Builds a schema fragment that rejects simultaneous presence of two invocation properties.
@@ -395,6 +439,41 @@ mod tests {
             schema["allOf"][0]["not"]["required"],
             serde_json::json!(["--force", "--dry-run"]),
         );
+    }
+
+    #[test]
+    fn duplicate_projected_constraints_are_deduplicated() {
+        let source = Flag {
+            key: 30,
+            name: "source",
+            diagnostic: "--source",
+            longs: &["source"],
+            global: true,
+            ..Flag::BOOL
+        };
+        let target = Flag {
+            key: 31,
+            name: "target",
+            diagnostic: "--target",
+            longs: &["target"],
+            global: true,
+            ..Flag::VALUE
+        };
+        let flags = [&source, &target];
+        let constraints = [
+            Constraint { kind: ConstraintKind::Requires, source: 30, target: 31 },
+            Constraint { kind: ConstraintKind::Conflicts, source: 30, target: 31 },
+        ];
+        let root = Command { flags: &flags, constraints: &constraints, ..Command::EMPTY };
+        let child = Command { flags: &flags, constraints: &constraints, ..Command::EMPTY };
+        let scopes = [&root, &child];
+        let visible = [(30, "--source".to_owned()), (31, "--target".to_owned())];
+        let mut schema = Map::new();
+
+        add_constraints(&mut schema, &scopes, &visible);
+
+        assert_eq!(schema["dependentRequired"]["--source"], serde_json::json!(["--target"]));
+        assert_eq!(schema["allOf"].as_array().map(Vec::len), Some(1));
     }
 
     #[test]

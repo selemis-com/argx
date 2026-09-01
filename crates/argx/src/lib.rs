@@ -339,10 +339,11 @@
 //! Draft 2020-12 JSON Schema through `-S` / `--schema` in the selected command scope and through
 //! the root `schema [COMMAND]...` pseudo-command.
 //!
-//! Structural commands expose their immediate children by default, allowing tools to walk the
-//! command tree incrementally. Leaf commands expose their invocation schema and, when associated
-//! with a handler, typed result and error schemas. Use `--full` to recursively expand a structural
-//! command.
+//! Structural commands expose canonical child names as referenced object properties, allowing
+//! tools to walk the command tree incrementally using ordinary JSON Schema relationships. Default
+//! projections leave the immediate child boundary open; `--full` recursively bundles descendants
+//! and validates the complete canonical invocation tree. Leaf commands expose their invocation
+//! schema and, when associated with a handler, typed result and error schemas.
 //!
 //! Structural [`Args`] and `Subcommand` declarations use the same `#[argx(schema)]` marker.
 //! Associate executable leaves with typed results and errors using `#[argx(handler = CommandType)]`

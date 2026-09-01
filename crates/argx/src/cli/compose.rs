@@ -3,10 +3,11 @@
 //! A parent derive cannot inspect the fields of an independently expanded flattened `Args` type.
 //! Generated code therefore composes child tables through this const API and immediately validates
 //! invariants that span declaration boundaries: semantic key uniqueness, flag spelling collisions,
-//! positional layout, built-in action collisions, and relationship target resolution. Invalid
+//! positional layout, schema property collisions, built-in action collisions, and relationship
+//! target resolution. Invalid
 //! composition becomes a compile-time const-evaluation failure rather than a runtime parser state.
 
-use super::command::{Action, Arg, Constraint, ConstraintKind, Flag, HelpGroup, Key};
+use super::command::{Action, Arg, Command, Constraint, ConstraintKind, Flag, HelpGroup, Key};
 
 /// Returns the total number of entries across several static table slices.
 pub const fn table_len<T>(groups: &[&[T]]) -> usize {
@@ -214,6 +215,28 @@ pub const fn action_flag_spellings_disjoint(actions: &[&Action<'_>], flags: &[&F
     true
 }
 
+/// Reports whether positional property names and canonical subcommand names are disjoint.
+///
+/// Schema-enabled command trees represent both as object properties in the same command scope, so
+/// a collision would make the canonical invocation representation ambiguous.
+pub const fn schema_property_names_disjoint(
+    args: &[&Arg<'_>],
+    subcommands: &[&Command<'_>],
+) -> bool {
+    let mut arg = 0;
+    while arg < args.len() {
+        let mut subcommand = 0;
+        while subcommand < subcommands.len() {
+            if str_eq(args[arg].name, subcommands[subcommand].name) {
+                return false;
+            }
+            subcommand += 1;
+        }
+        arg += 1;
+    }
+    true
+}
+
 /// Reports whether a composed positional table has deterministic left-to-right binding.
 pub const fn positional_layout_valid(args: &[&Arg<'_>]) -> bool {
     let mut optional_seen = false;
@@ -336,6 +359,15 @@ mod tests {
         assert!(!command_keys_unique(&[&ALPHA, &FLAG_DUPLICATE], &[]));
         assert!(!command_keys_unique(&[&ALPHA], &[&ARG_DUPLICATE]));
         assert!(!command_keys_unique(&[], &[&INPUT, &OTHER_ARG_DUPLICATE]));
+    }
+
+    #[test]
+    fn schema_property_names_reject_positional_subcommand_collisions() {
+        static COMMAND: Command<'static> = Command { name: "input", ..Command::EMPTY };
+        static OTHER: Command<'static> = Command { name: "other", ..Command::EMPTY };
+
+        assert!(schema_property_names_disjoint(&[&INPUT], &[&OTHER]));
+        assert!(!schema_property_names_disjoint(&[&INPUT], &[&COMMAND]));
     }
 
     #[test]
