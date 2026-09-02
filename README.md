@@ -15,6 +15,16 @@
   <a href="#license"><picture><source media="(prefers-color-scheme: dark)" srcset="https://img.shields.io/crates/l/argx?colorA=21262d&colorB=21262d&style=flat"><img src="https://img.shields.io/crates/l/argx?colorA=f6f8fa&colorB=f6f8fa&style=flat" alt="MIT OR Apache-2.0"></picture></a>
 </p>
 
+<p align="center">
+  <a href="#installation">Installation</a> ·
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#configuration">Configuration</a> ·
+  <a href="#schema-discovery">Schema discovery</a> ·
+  <a href="#examples">Examples</a> ·
+  <a href="#support">Support</a> ·
+  <a href="#contributing">Contributing</a>
+</p>
+
 Argx is a derive-first command-line parser and configuration library for Rust. Define your CLI and configuration with Rust types, and Argx derives parsing, help, diagnostics, completions, schema discovery, and layered configuration from those definitions.
 
 See [docs.rs/argx](https://docs.rs/argx/latest/argx/) for the complete API and behavioral reference.
