@@ -25,6 +25,8 @@
   <a href="#contributing">Contributing</a>
 </p>
 
+<br/>
+
 Argx is a derive-first command-line parser and configuration library for Rust. Define your CLI and configuration with Rust types, and Argx derives parsing, help, diagnostics, completions, schema discovery, and layered configuration from those definitions.
 
 See [docs.rs/argx](https://docs.rs/argx/latest/argx/) for the complete API and behavioral reference.
