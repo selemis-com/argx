@@ -7,7 +7,6 @@ description = "Procedural macros for Argx."
 license.workspace = true
 readme.workspace = true
 repository.workspace = true
-homepage.workspace = true
 documentation = "https://docs.rs/argx"
 keywords = ["cli", "schema", "derive"]
 categories = ["command-line-interface", "development-tools"]

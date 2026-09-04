@@ -7,7 +7,6 @@ description = "Expressive command-line parsing and configuration for Rust."
 license.workspace = true
 readme.workspace = true
 repository.workspace = true
-homepage.workspace = true
 documentation = "https://docs.rs/argx"
 keywords = ["cli", "configuration", "schema"]
 categories = ["command-line-interface", "development-tools"]
