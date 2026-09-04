@@ -13,7 +13,6 @@ rust-version = "1.95"
 license = "MIT OR Apache-2.0"
 readme = "README.md"
 repository = "https://github.com/selemis-com/argx"
-homepage = "https://github.com/selemis-com/argx"
 
 [workspace.lints.rust]
 closure_returning_async_block = "warn"
