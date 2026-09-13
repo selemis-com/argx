@@ -26,6 +26,10 @@ const PROTOCOL_COMMAND: &str = "__argx_complete__";
 const PROTOCOL_LINE_ENV: &str = "ARGX_COMPLETE_LINE";
 /// Environment variable carrying Nushell's already-tokenized completion spans as JSON.
 const PROTOCOL_WORDS_ENV: &str = "ARGX_COMPLETE_WORDS";
+/// Bash's current Readline word.
+const PROTOCOL_BASH_WORD_ENV: &str = "ARGX_COMPLETE_BASH_WORD";
+/// Bash's configured Readline word-breaking characters.
+const PROTOCOL_BASH_WORDBREAKS_ENV: &str = "ARGX_COMPLETE_BASH_WORDBREAKS";
 
 /// Shells for which Argx can generate dynamic completion adapters.
 ///

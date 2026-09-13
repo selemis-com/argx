@@ -3,7 +3,8 @@
 use std::{collections::HashSet, env, ffi::OsStr};
 
 use super::{
-    PROTOCOL_COMMAND, PROTOCOL_ENV, PROTOCOL_LINE_ENV, PROTOCOL_VERSION, PROTOCOL_WORDS_ENV,
+    PROTOCOL_BASH_WORD_ENV, PROTOCOL_BASH_WORDBREAKS_ENV, PROTOCOL_COMMAND, PROTOCOL_ENV,
+    PROTOCOL_LINE_ENV, PROTOCOL_VERSION, PROTOCOL_WORDS_ENV,
 };
 use crate::{
     cli::{
@@ -41,6 +42,9 @@ where
         return Some(String::new());
     }
 
+    let bash_word = env::var(PROTOCOL_BASH_WORD_ENV).ok();
+    let bash_wordbreaks = env::var(PROTOCOL_BASH_WORDBREAKS_ENV).ok();
+    let mut bash_marked_prefix = None;
     let candidates = match env::var(PROTOCOL_WORDS_ENV) {
         Ok(encoded) => {
             let Ok(spans) = serde_json::from_str::<Vec<String>>(&encoded) else {
@@ -50,17 +54,66 @@ where
         }
         Err(env::VarError::NotUnicode(_)) => return Some(String::new()),
         Err(env::VarError::NotPresent) => {
-            let Some(line) = env::var_os(PROTOCOL_LINE_ENV) else {
+            let Ok(line) = env::var(PROTOCOL_LINE_ENV) else {
                 return Some(String::new());
             };
-            let Some(line) = line.to_str() else {
-                return Some(String::new());
-            };
-            complete_line_with_schema(T::COMMAND, line, T::SCHEMA_ENABLED)
+            if bash_word.is_some() {
+                bash_marked_prefix = Some(split_line(&mark_bash_nonbreaking_colons(&line)).prefix);
+            }
+            complete_line_with_schema(T::COMMAND, &line, T::SCHEMA_ENABLED)
         }
     };
 
-    Some(render_candidates(&candidates))
+    let mut output = render_candidates(&candidates);
+    if bash_wordbreaks.as_deref().is_some_and(|wordbreaks| wordbreaks.contains(':'))
+        && let Some(word) = bash_word.as_deref()
+        && let Some(marked_prefix) = bash_marked_prefix.as_deref()
+    {
+        let prefix = marked_prefix.match_indices(':').rev().find_map(|(colon, _)| {
+            let fragment = marked_prefix[colon + 1..].replace(BASH_NONBREAKING_COLON, ":");
+            ((fragment.is_empty() && word == ":")
+                || (!fragment.is_empty() && word.starts_with(&fragment)))
+            .then(|| marked_prefix[..=colon].replace(BASH_NONBREAKING_COLON, ":"))
+        });
+        if let Some(prefix) = prefix.filter(|prefix| !prefix.chars().any(char::is_control)) {
+            output.push_str("\u{1}prefix\t");
+            output.push_str(&prefix);
+            output.push('\n');
+        }
+    }
+
+    Some(output)
+}
+
+/// Marker used to preserve colons Bash Readline keeps inside its current word.
+const BASH_NONBREAKING_COLON: char = '\u{1}';
+
+/// Marks colons that Bash Readline keeps inside its current word.
+fn mark_bash_nonbreaking_colons(line: &str) -> String {
+    let mut marked = String::with_capacity(line.len());
+    let mut chars = line.chars();
+    let mut quote = None;
+    while let Some(c) = chars.next() {
+        match quote {
+            Some(q) if c == q => {
+                quote = None;
+                marked.push(c);
+            }
+            Some(_) if c == ':' => marked.push(BASH_NONBREAKING_COLON),
+            None if c == '\'' || c == '"' => {
+                quote = Some(c);
+                marked.push(c);
+            }
+            Some('"') | None if c == '\\' => {
+                marked.push(c);
+                if let Some(next) = chars.next() {
+                    marked.push(if next == ':' { BASH_NONBREAKING_COLON } else { next });
+                }
+            }
+            Some(_) | None => marked.push(c),
+        }
+    }
+    marked
 }
 
 /// One shell-independent completion candidate.
@@ -788,6 +841,22 @@ mod tests {
             .into_iter()
             .map(|candidate| candidate.value)
             .collect()
+    }
+
+    #[test]
+    fn bash_marking_preserves_nonbreaking_colons() {
+        assert_eq!(
+            split_line(&mark_bash_nonbreaking_colons(r"tool update:deps\:no")).prefix,
+            format!("update:deps{BASH_NONBREAKING_COLON}no"),
+        );
+        assert_eq!(
+            split_line(&mark_bash_nonbreaking_colons(r"tool update:\:")).prefix,
+            format!("update:{BASH_NONBREAKING_COLON}"),
+        );
+        assert_eq!(
+            split_line(&mark_bash_nonbreaking_colons(r#"tool "update:deps:no""#)).prefix,
+            format!("update{BASH_NONBREAKING_COLON}deps{BASH_NONBREAKING_COLON}no"),
+        );
     }
 
     #[test]
