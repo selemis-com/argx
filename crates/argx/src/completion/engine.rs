@@ -65,9 +65,7 @@ where
     };
 
     let mut output = render_candidates(&candidates);
-    if bash_wordbreaks
-        .as_deref()
-        .is_some_and(|wordbreaks| wordbreaks.contains(':'))
+    if bash_wordbreaks.as_deref().is_some_and(|wordbreaks| wordbreaks.contains(':'))
         && let Some(word) = bash_word.as_deref()
         && let Some(marked_prefix) = bash_marked_prefix.as_deref()
     {
@@ -102,32 +100,17 @@ fn mark_bash_nonbreaking_colons(line: &str) -> String {
                 marked.push(c);
             }
             Some(_) if c == ':' => marked.push(BASH_NONBREAKING_COLON),
-            Some('"') if c == '\\' => {
-                marked.push(c);
-                if let Some(next) = chars.next() {
-                    marked.push(if next == ':' {
-                        BASH_NONBREAKING_COLON
-                    } else {
-                        next
-                    });
-                }
-            }
-            Some(_) => marked.push(c),
             None if c == '\'' || c == '"' => {
                 quote = Some(c);
                 marked.push(c);
             }
-            None if c == '\\' => {
+            Some('"') | None if c == '\\' => {
                 marked.push(c);
                 if let Some(next) = chars.next() {
-                    marked.push(if next == ':' {
-                        BASH_NONBREAKING_COLON
-                    } else {
-                        next
-                    });
+                    marked.push(if next == ':' { BASH_NONBREAKING_COLON } else { next });
                 }
             }
-            None => marked.push(c),
+            Some(_) | None => marked.push(c),
         }
     }
     marked
@@ -872,9 +855,7 @@ mod tests {
         );
         assert_eq!(
             split_line(&mark_bash_nonbreaking_colons(r#"tool "update:deps:no""#)).prefix,
-            format!(
-                "update{BASH_NONBREAKING_COLON}deps{BASH_NONBREAKING_COLON}no"
-            ),
+            format!("update{BASH_NONBREAKING_COLON}deps{BASH_NONBREAKING_COLON}no"),
         );
     }
 
