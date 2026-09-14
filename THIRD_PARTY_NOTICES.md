@@ -1354,7 +1354,7 @@ Apache License 2.0
 - [serde_derive_internals]( https://github.com/serde-rs/serde ) 0.30.0
 - [serde_json]( https://github.com/serde-rs/json ) 1.0.151
 - [syn]( https://github.com/dtolnay/syn ) 2.0.118
-- [syn]( https://github.com/dtolnay/syn ) 3.0.4
+- [syn]( https://github.com/dtolnay/syn ) 3.0.5
 - [thiserror-impl]( https://github.com/dtolnay/thiserror ) 2.0.20
 - [thiserror]( https://github.com/dtolnay/thiserror ) 2.0.20
 - [unicode-ident]( https://github.com/dtolnay/unicode-ident ) 1.0.24
