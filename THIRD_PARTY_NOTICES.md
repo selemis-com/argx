@@ -6,7 +6,7 @@ This page lists the licenses of the projects used in `argx`.
 
 - [Apache License 2.0](#Apache-2.0) (59)
 - [Unicode License v3](#Unicode-3.0) (19)
-- [MIT License](#MIT) (8)
+- [MIT License](#MIT) (7)
 
 ## Additional notices
 
@@ -912,7 +912,7 @@ Apache License 2.0
 - [snapbox-macros]( https://github.com/assert-rs/snapbox/ ) 1.1.0
 - [snapbox]( https://github.com/assert-rs/snapbox/ ) 1.2.2
 - [toml_datetime]( https://github.com/toml-rs/toml ) 1.1.1+spec-1.1.0
-- [toml_edit]( https://github.com/toml-rs/toml ) 0.25.13+spec-1.1.0
+- [toml_edit]( https://github.com/toml-rs/toml ) 0.25.15+spec-1.1.0
 - [toml_parser]( https://github.com/toml-rs/toml ) 1.1.3+spec-1.1.0
 - [toml_writer]( https://github.com/toml-rs/toml ) 1.1.2+spec-1.1.0
 
@@ -1910,70 +1910,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ~~~~
 
-
-```
-### MIT
-MIT License
-
-#### Used by
-- [schemars]( https://github.com/GREsau/schemars ) 1.2.2
-
-#### License
-```
-#![allow(clippy::all)]
-use crate::_alloc_prelude::*;
-// Copied from regex_syntax crate to avoid pulling in the whole crate just for a utility function
-// https://github.com/rust-lang/regex/blob/431c4e4867e1eb33eb39b23ed47c9934b2672f8f/regex-syntax/src/lib.rs
-//
-// Copyright (c) 2014 The Rust Project Developers
-//
-// Permission is hereby granted, free of charge, to any
-// person obtaining a copy of this software and associated
-// documentation files (the "Software"), to deal in the
-// Software without restriction, including without
-// limitation the rights to use, copy, modify, merge,
-// publish, distribute, sublicense, and/or sell copies of
-// the Software, and to permit persons to whom the Software
-// is furnished to do so, subject to the following
-// conditions:
-//
-// The above copyright notice and this permission notice
-// shall be included in all copies or substantial portions
-// of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-// DEALINGS IN THE SOFTWARE.
-
-pub fn escape(text: &str) -> String {
-    let mut quoted = String::new();
-    escape_into(text, &mut quoted);
-    quoted
-}
-
-fn escape_into(text: &str, buf: &mut String) {
-    buf.reserve(text.len());
-    for c in text.chars() {
-        if is_meta_character(c) {
-            buf.push('\\');
-        }
-        buf.push(c);
-    }
-}
-
-fn is_meta_character(c: char) -> bool {
-    match c {
-        '\\' | '.' | '+' | '*' | '?' | '(' | ')' | '|' | '[' | ']' | '{' | '}' | '^' | '$'
-        | '#' | '&' | '-' | '~' => true,
-        _ => false,
-    }
-}
 
 ```
 ### MIT
