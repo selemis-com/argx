@@ -126,8 +126,25 @@ doc: ## Build the documentation.
 ##@ Other
 
 .PHONY: lock
-lock: ## Update the Cargo.lock file with the current dependencies.
+lock: ## Update Cargo lockfiles with the current dependencies.
 	cargo fetch
+	@tmp=$$(mktemp -d); \
+	mkdir -p "$$tmp/src"; \
+	printf '%s\n' \
+		'[package]' \
+		'name = "argx-ui"' \
+		'version = "0.0.0"' \
+		'edition = "2024"' \
+		'publish = false' \
+		'' \
+		'[dependencies]' \
+		'argx = { path = "$(CURDIR)/crates/argx" }' \
+		> "$$tmp/Cargo.toml"; \
+	touch "$$tmp/src/main.rs"; \
+	cp Cargo.lock "$$tmp/Cargo.lock"; \
+	cargo fetch --manifest-path "$$tmp/Cargo.toml"; \
+	cp "$$tmp/Cargo.lock" crates/argx/tests/fixtures/ui/template/Cargo.lock; \
+	rm -rf "$$tmp"
 
 .PHONY: clean
 clean: ## Clean the project.

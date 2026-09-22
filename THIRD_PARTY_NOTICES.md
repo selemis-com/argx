@@ -912,7 +912,7 @@ Apache License 2.0
 - [snapbox-macros]( https://github.com/assert-rs/snapbox/ ) 1.1.0
 - [snapbox]( https://github.com/assert-rs/snapbox/ ) 1.2.2
 - [toml_datetime]( https://github.com/toml-rs/toml ) 1.1.1+spec-1.1.0
-- [toml_edit]( https://github.com/toml-rs/toml ) 0.25.13+spec-1.1.0
+- [toml_edit]( https://github.com/toml-rs/toml ) 0.25.15+spec-1.1.0
 - [toml_parser]( https://github.com/toml-rs/toml ) 1.1.3+spec-1.1.0
 - [toml_writer]( https://github.com/toml-rs/toml ) 1.1.2+spec-1.1.0
 
