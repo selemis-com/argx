@@ -162,6 +162,7 @@ pub(crate) fn render_schema(root: &Command<'_>) -> String {
         &mut output,
         &[("[COMMAND]...".to_owned(), "Command path to inspect".to_owned())],
         HelpStyle::Short,
+        terminal_width(),
     );
     output.push_str("\nOptions:\n");
     write_rows(
@@ -174,6 +175,7 @@ pub(crate) fn render_schema(root: &Command<'_>) -> String {
             ),
         ],
         HelpStyle::Short,
+        terminal_width(),
     );
 
     if styling_enabled() { style_headings(&output) } else { output }
@@ -185,7 +187,7 @@ pub(crate) fn render_schema(root: &Command<'_>) -> String {
 /// selected command contributes positional rows and child-command listings.
 #[cfg(test)]
 pub(crate) fn render(path: &[&Command<'_>]) -> String {
-    render_with_schema(path, false, HelpStyle::Short)
+    render_with_schema_width(path, false, HelpStyle::Short, 80)
 }
 
 /// Renders help with the virtual schema action when discovery is enabled for the root parser.
@@ -193,6 +195,16 @@ pub(crate) fn render_with_schema(
     path: &[&Command<'_>],
     schema_enabled: bool,
     style: HelpStyle,
+) -> String {
+    render_with_schema_width(path, schema_enabled, style, terminal_width())
+}
+
+/// Renders help with an explicit width, keeping renderer tests independent of process environment.
+fn render_with_schema_width(
+    path: &[&Command<'_>],
+    schema_enabled: bool,
+    style: HelpStyle,
+    terminal_width: usize,
 ) -> String {
     let Some(&command) = path.last() else {
         return String::new();
@@ -221,7 +233,7 @@ pub(crate) fn render_with_schema(
     if !ungrouped_args.is_empty() {
         output.push_str("\nArguments:\n");
         let rows = ungrouped_args.iter().map(|arg| style.arg_row(arg)).collect::<Vec<_>>();
-        write_rows(&mut output, &rows, style);
+        write_rows(&mut output, &rows, style, terminal_width);
     }
 
     if !command.subcommands.is_empty() {
@@ -238,7 +250,7 @@ pub(crate) fn render_with_schema(
         }
         // clap keeps command summaries compact even in expanded `--help`; only argument and
         // option rows switch to the long, vertically expanded layout.
-        write_rows(&mut output, &rows, HelpStyle::Short);
+        write_rows(&mut output, &rows, HelpStyle::Short, terminal_width);
     }
 
     output.push_str("\nOptions:\n");
@@ -256,13 +268,13 @@ pub(crate) fn render_with_schema(
             style.action_help(&SCHEMA_ACTION),
         ));
     }
-    write_rows(&mut output, &rows, style);
+    write_rows(&mut output, &rows, style, terminal_width);
 
     for (heading, rows) in grouped_rows {
         output.push('\n');
         output.push_str(heading);
         output.push_str(":\n");
-        write_rows(&mut output, &rows, style);
+        write_rows(&mut output, &rows, style, terminal_width);
     }
 
     for section in command.help_sections {
@@ -440,17 +452,28 @@ fn group_contains_arg(group: &HelpGroup<'_>, arg: &Arg<'_>) -> bool {
     group.args.iter().any(|candidate| std::ptr::eq(*candidate, arg))
 }
 
-/// Writes aligned help rows without terminal-width-dependent wrapping.
+/// Writes aligned help rows, wrapping descriptions to the selected terminal width.
 ///
 /// Long-only options reserve the same short-option column as rows such as `-h, --help`, matching
 /// the conventional layout while commands and positional arguments retain two-space indent.
-fn write_rows(output: &mut String, rows: &[(String, String)], style: HelpStyle) {
+fn write_rows(
+    output: &mut String,
+    rows: &[(String, String)],
+    style: HelpStyle,
+    terminal_width: usize,
+) {
     if style == HelpStyle::Long {
         for (index, (label, help)) in rows.iter().enumerate() {
             let label = aligned_label(label);
             let _ = writeln!(output, "  {label}");
             if !help.is_empty() {
-                write_indented(output, help, 10);
+                let indent = 10.min(terminal_width.saturating_sub(1));
+                write_indented_wrapped(
+                    output,
+                    help,
+                    indent,
+                    terminal_width.saturating_sub(indent).max(1),
+                );
             }
             if index + 1 != rows.len() {
                 output.push('\n');
@@ -461,11 +484,92 @@ fn write_rows(output: &mut String, rows: &[(String, String)], style: HelpStyle) 
 
     let labels = rows.iter().map(|(label, _)| aligned_label(label)).collect::<Vec<_>>();
     let width = labels.iter().map(|label| label.chars().count()).max().unwrap_or(0);
+    let stacked = width.saturating_add(6) >= terminal_width;
     for ((_, help), label) in rows.iter().zip(labels) {
-        if help.is_empty() {
+        let label = if stacked { label.trim_start() } else { &label };
+        if help.is_empty() || stacked {
             let _ = writeln!(output, "  {label}");
+            if stacked && !help.is_empty() {
+                let indent = 6.min(terminal_width.saturating_sub(1));
+                write_indented_wrapped(
+                    output,
+                    help,
+                    indent,
+                    terminal_width.saturating_sub(indent).max(1),
+                );
+            }
         } else {
-            let _ = writeln!(output, "  {label:<width$}  {help}");
+            let indent = width + 4;
+            let available = terminal_width.saturating_sub(indent).max(1);
+            let mut lines = help.lines();
+            if let Some(first) = lines.next() {
+                let first_width = terminal_width.saturating_sub(width + 4).max(1);
+                let wrapped = wrap_text(first, first_width);
+                if let Some((head, tail)) = wrapped.split_first() {
+                    let padding = " ".repeat(width.saturating_sub(label.chars().count()));
+                    let _ = writeln!(output, "  {label}{padding}  {head}");
+                    for line in tail {
+                        let _ = writeln!(output, "{:indent$}{line}", "");
+                    }
+                }
+                for paragraph in lines {
+                    if paragraph.is_empty() {
+                        output.push('\n');
+                    } else {
+                        for line in wrap_text(paragraph, available) {
+                            let _ = writeln!(output, "{:indent$}{line}", "");
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Returns the configured width or the traditional 80-column fallback.
+fn terminal_width() -> usize {
+    let configured = std::env::var("COLUMNS")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|width| *width > 0);
+    select_width(configured)
+}
+
+/// Selects a valid explicit override, ignoring zero-width values.
+fn select_width(configured: Option<usize>) -> usize {
+    configured.filter(|width| *width > 0).unwrap_or(80)
+}
+
+/// Wraps prose at word boundaries without splitting long words.
+fn wrap_text(text: &str, width: usize) -> Vec<String> {
+    let mut lines = Vec::new();
+    let mut line = String::new();
+    for word in text.split_whitespace() {
+        let separator = usize::from(!line.is_empty());
+        if !line.is_empty() && line.chars().count() + separator + word.chars().count() > width {
+            lines.push(std::mem::take(&mut line));
+        }
+        if !line.is_empty() {
+            line.push(' ');
+        }
+        line.push_str(word);
+    }
+    if !line.is_empty() {
+        lines.push(line);
+    }
+    lines
+}
+
+/// Writes multiline prose with wrapping and a stable continuation indent.
+fn write_indented_wrapped(output: &mut String, text: &str, indent: usize, width: usize) {
+    let padding = " ".repeat(indent);
+    for paragraph in text.lines() {
+        if paragraph.is_empty() {
+            output.push('\n');
+        } else {
+            for line in wrap_text(paragraph, width) {
+                let _ = writeln!(output, "{padding}{line}");
+            }
         }
     }
 }
@@ -473,18 +577,6 @@ fn write_rows(output: &mut String, rows: &[(String, String)], style: HelpStyle) 
 /// Reserves the short-option column for long-only option rows.
 fn aligned_label(label: &str) -> String {
     if label.starts_with("--") { format!("    {label}") } else { label.to_owned() }
-}
-
-/// Writes multiline help with a fixed continuation indent.
-fn write_indented(output: &mut String, text: &str, indent: usize) {
-    let padding = " ".repeat(indent);
-    for line in text.lines() {
-        if line.is_empty() {
-            output.push('\n');
-        } else {
-            let _ = writeln!(output, "{padding}{line}");
-        }
-    }
 }
 
 /// Combines prose with metadata according to compact or expanded help style.
@@ -809,6 +901,51 @@ Options:
         assert!(styled.contains("  \x1b[1m-v,\x1b[0m \x1b[1m--verbose\x1b[0m  Verbose"));
         assert!(styled.contains("      \x1b[1m--level\x1b[0m <LEVEL>  Log level"));
         assert!(styled.contains("          -v      Errors"));
+    }
+
+    #[test]
+    fn wraps_help_descriptions_to_the_available_width() {
+        let rows =
+            vec![("--verbose".to_owned(), "Enable verbose output for every operation".to_owned())];
+        let mut output = String::new();
+
+        write_rows(&mut output, &rows, HelpStyle::Short, 24);
+
+        assert_eq!(
+            output,
+            "      --verbose  Enable\n                 verbose\n                 output\n                 for\n                 every\n                 operation\n"
+        );
+    }
+
+    #[test]
+    fn stacked_and_expanded_help_keep_prose_within_narrow_widths() {
+        let rows = vec![("--log-level".to_owned(), "Set verbose mode on".to_owned())];
+        let mut compact = String::new();
+        write_rows(&mut compact, &rows, HelpStyle::Short, 16);
+        assert_eq!(compact, "  --log-level\n      Set\n      verbose\n      mode on\n");
+
+        let mut expanded = String::new();
+        let expanded_rows = vec![("--log-level".to_owned(), "Long help says yes".to_owned())];
+        write_rows(&mut expanded, &expanded_rows, HelpStyle::Long, 16);
+        assert_eq!(
+            expanded,
+            "      --log-level\n          Long\n          help\n          says\n          yes\n"
+        );
+
+        assert!(compact.lines().skip(1).all(|line| line.chars().count() <= 16));
+        assert!(expanded.lines().skip(1).all(|line| line.chars().count() <= 16));
+    }
+
+    #[test]
+    fn wraps_unicode_text_at_word_boundaries() {
+        assert_eq!(wrap_text("你好 世界", 4), ["你好", "世界"]);
+    }
+
+    #[test]
+    fn width_selection_prefers_valid_columns_then_eighty() {
+        assert_eq!(select_width(Some(48)), 48);
+        assert_eq!(select_width(Some(0)), 80);
+        assert_eq!(select_width(None), 80);
     }
 
     #[test]

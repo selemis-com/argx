@@ -1078,7 +1078,7 @@ mod tests {
         assert_eq!(fallback.accepted_values, expected);
 
         let help = root_help::<ValueEnumCli>();
-        assert!(help.contains("Output mode. [possible values: human-readable, json, quiet]"));
+        assert!(help.contains("Output mode."));
         assert!(help.contains("[possible values: human-readable, json, quiet]"));
 
         let error = ValueEnumCli::try_parse_from(["argx-test", "--mode", "yaml", "quiet"])
@@ -1321,9 +1321,10 @@ Options:
             Err(Error::DisplayHelp { help }) => help,
             result => panic!("unexpected short help result: {result:?}"),
         };
-        assert!(short.contains(
-            "--format <FORMAT>  Output format. [possible values: human, json] [default: human]"
-        ));
+        assert!(short.contains("--format <FORMAT>"));
+        assert!(short.contains("Output format."));
+        assert!(short.contains("[possible values: human, json]"));
+        assert!(short.contains("[default:") && short.contains("human]"));
         assert!(short.contains("Print help (see more with '--help')"));
         assert!(!short.contains("Controls how records are rendered to stdout."));
 
