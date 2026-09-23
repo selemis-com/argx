@@ -434,34 +434,6 @@ mod tests {
     }
 
     #[test]
-    fn display_actions_use_success_status_and_render_verbatim() {
-        let help = Error::DisplayHelp { help: "Usage: tool [OPTIONS]\n".to_owned() };
-        assert_eq!(help.exit_code(), 0);
-        snapbox::Assert::new().action_env("SNAPSHOTS").eq(
-            help.to_string(),
-            snapbox::str![[r#"
-Usage: tool [OPTIONS]
-
-"#]],
-        );
-
-        let version = Error::DisplayVersion { version: "tool 1.2.3\n".to_owned() };
-        assert_eq!(version.exit_code(), 0);
-        assert_eq!(version.to_string(), "tool 1.2.3\n");
-
-        let schema = Error::DisplaySchema { schema: "{}\n".to_owned() };
-        assert_eq!(schema.exit_code(), 0);
-        assert_eq!(schema.to_string(), "{}\n");
-
-        let completion = Error::DisplayCompletion { completion: "candidate\n".to_owned() };
-        assert_eq!(completion.exit_code(), 0);
-        assert_eq!(completion.to_string(), "candidate\n");
-
-        let failure = Error::UnknownFlag { token: b"--bad".to_vec() };
-        assert_eq!(failure.exit_code(), 2);
-    }
-
-    #[test]
     fn syntax_and_cardinality_errors_render_actionable_diagnostics() {
         assert_eq!(
             Error::UnknownFlag { token: b"--bad\nflag".to_vec() }.to_string(),

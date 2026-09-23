@@ -422,31 +422,24 @@ mod tests {
     }
 
     #[test]
-    fn bare_placeholders_are_rejected() {
-        let process = Environment::from_pairs(&[("WORKERS", "8")]);
-        let error = expand_toml("workers = ${WORKERS}\n", &process)
-            .expect_err("placeholders outside TOML strings must be rejected");
+    fn interpolation_rejects_structurally_unsafe_toml_positions() {
+        let process =
+            Environment::from_pairs(&[("WORKERS", "8"), ("KEY", "name"), ("VALUE", "value")]);
 
+        let error = expand_toml("workers = ${WORKERS}\n", &process)
+            .expect_err("bare placeholders must be rejected");
         assert!(matches!(error, TomlInterpolationError::Structural { .. }));
         assert!(error.to_string().contains("top-level basic string value"));
-    }
 
-    #[test]
-    fn placeholders_in_keys_tables_and_collection_fragments_are_rejected() {
-        let process = Environment::from_pairs(&[("KEY", "name"), ("VALUE", "value")]);
-
-        assert!(matches!(
-            expand_toml("\"${KEY}\" = 1\n", &process),
-            Err(TomlInterpolationError::Structural { .. })
-        ));
-        assert!(matches!(
-            expand_toml("[${KEY}]\nvalue = 1\n", &process),
-            Err(TomlInterpolationError::Structural { .. })
-        ));
-        assert!(matches!(
-            expand_toml("values = [\"${VALUE}\"]\n", &process),
-            Err(TomlInterpolationError::Structural { .. })
-        ));
+        for input in ["\"${KEY}\" = 1\n", "[${KEY}]\nvalue = 1\n", "values = [\"${VALUE}\"]\n"] {
+            assert!(
+                matches!(
+                    expand_toml(input, &process),
+                    Err(TomlInterpolationError::Structural { .. })
+                ),
+                "{input:?}",
+            );
+        }
     }
 
     #[test]

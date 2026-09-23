@@ -860,7 +860,7 @@ mod tests {
     }
 
     #[test]
-    fn split_reconstructs_quoted_completed_words_and_current_prefix() {
+    fn split_reconstructs_shell_words_and_current_prefix() {
         assert_eq!(
             split_line(r#"tool get --output "two words" --j"#),
             Split {
@@ -881,10 +881,6 @@ mod tests {
                 current_index: 3,
             },
         );
-    }
-
-    #[test]
-    fn split_handles_single_quotes_escaped_double_quotes_and_empty_words() {
         assert_eq!(
             split_line(r#"tool get 'two words' --j"#),
             Split {
@@ -975,15 +971,12 @@ mod tests {
     }
 
     #[test]
-    fn conflicting_options_are_suppressed() {
+    fn conflicting_options_are_suppressed_symmetrically() {
         let candidates = values("tool get --raw --");
         assert!(!candidates.contains(&"--json".into()));
         assert!(!candidates.contains(&"--raw".into()));
         assert!(candidates.contains(&"--field".into()));
-    }
 
-    #[test]
-    fn conflict_suppression_is_symmetric() {
         let candidates = values("tool get --json --");
         assert!(!candidates.contains(&"--raw".into()));
     }
