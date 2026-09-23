@@ -246,7 +246,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn cfg_attr_presence_detection_handles_direct_nested_and_unrelated_attributes() {
+    fn presence_detection_distinguishes_cfg_from_unrelated_metadata() {
         let direct: Attribute = parse_quote!(#[cfg_attr(feature = "extra", cfg(unix))]);
         assert!(cfg_attr_controls_presence(&direct).expect("direct cfg should be detected"));
 
@@ -254,30 +254,23 @@ mod tests {
             parse_quote!(#[cfg_attr(feature = "extra", cfg_attr(unix, cfg(target_os = "linux")))]);
         assert!(cfg_attr_controls_presence(&nested).expect("nested cfg should be detected"));
 
-        let unrelated: Attribute = parse_quote!(#[cfg_attr(feature = "extra", allow(dead_code))]);
-        assert!(
-            !cfg_attr_controls_presence(&unrelated).expect("unrelated metadata should be safe")
-        );
+        for attribute in [
+            parse_quote!(#[cfg_attr(feature = "extra", allow(dead_code))]),
+            parse_quote!(#[cfg_attr(feature = "extra")]),
+        ] {
+            assert!(
+                !cfg_attr_controls_presence(&attribute)
+                    .expect("unrelated cfg_attr metadata should be safe")
+            );
+        }
 
-        let no_attributes: Attribute = parse_quote!(#[cfg_attr(feature = "extra")]);
-        assert!(
-            !cfg_attr_controls_presence(&no_attributes).expect("empty cfg_attr should be safe")
-        );
-    }
-
-    #[test]
-    fn recursive_presence_detection_ignores_non_cfg_metadata() {
-        let path: Meta = parse_quote!(allow);
-        assert!(!meta_controls_presence(&path).expect("plain metadata should be safe"));
-
-        let unrelated_list: Meta = parse_quote!(allow(dead_code));
-        assert!(!meta_controls_presence(&unrelated_list).expect("unrelated lists should be safe"));
-
-        let nested_safe: Meta = parse_quote!(cfg_attr(unix, allow(dead_code)));
-        assert!(
-            !meta_controls_presence(&nested_safe)
-                .expect("nested unrelated metadata should be safe")
-        );
+        for metadata in [
+            parse_quote!(allow),
+            parse_quote!(allow(dead_code)),
+            parse_quote!(cfg_attr(unix, allow(dead_code))),
+        ] {
+            assert!(!meta_controls_presence(&metadata).expect("non-cfg metadata should be safe"));
+        }
     }
 
     #[test]

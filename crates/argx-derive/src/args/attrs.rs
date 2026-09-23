@@ -702,8 +702,8 @@ mod tests {
     }
 
     #[test]
-    fn doc_summary_stops_before_a_stripped_text_fence() {
-        let input: DeriveInput = parse_quote! {
+    fn doc_help_strips_text_fences_without_expanding_the_summary() {
+        let tilde: DeriveInput = parse_quote! {
             /// Some description.
             ///
             /// ~~~text
@@ -712,18 +712,7 @@ mod tests {
             /// ~~~
             struct Example;
         };
-
-        let help = doc_help(&input.attrs);
-        assert_eq!(help.summary.as_deref(), Some("Some description."));
-        assert_eq!(
-            help.description.as_deref(),
-            Some("Some description.\n    __ __ __\n   / //_//_/")
-        );
-    }
-
-    #[test]
-    fn doc_help_strips_backtick_text_fences() {
-        let input: DeriveInput = parse_quote! {
+        let backtick: DeriveInput = parse_quote! {
             /// Some description.
             ///
             /// ```text
@@ -733,12 +722,14 @@ mod tests {
             struct Example;
         };
 
-        let help = doc_help(&input.attrs);
-        assert_eq!(help.summary.as_deref(), Some("Some description."));
-        assert_eq!(
-            help.description.as_deref(),
-            Some("Some description.\n    __ __ __\n   / //_//_/")
-        );
+        for input in [tilde, backtick] {
+            let help = doc_help(&input.attrs);
+            assert_eq!(help.summary.as_deref(), Some("Some description."));
+            assert_eq!(
+                help.description.as_deref(),
+                Some("Some description.\n    __ __ __\n   / //_//_/")
+            );
+        }
     }
 
     #[test]

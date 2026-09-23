@@ -727,94 +727,81 @@ mod tests {
         assert_eq!(schema["properties"]["--profile"]["type"], "string");
         assert_eq!(schema["properties"]["--region"]["type"], "string");
     }
-    #[cfg(feature = "chrono")]
+    #[cfg(any(feature = "chrono", feature = "uuid", feature = "url"))]
     #[test]
-    fn chrono_datetime_values_expose_the_date_time_format() {
-        let at = Flag {
-            key: 29,
-            name: "at",
-            diagnostic: "--at",
-            longs: &["at"],
-            value_schema: ValueSchema::DateTime,
-            ..Flag::VALUE
-        };
-        let flags = [&at];
-        let command = Command { name: "show", flags: &flags, ..Command::EMPTY };
+    fn projected_value_formats_follow_json_schema_conventions() {
+        #[cfg(feature = "chrono")]
+        {
+            let at = Flag {
+                key: 29,
+                name: "at",
+                diagnostic: "--at",
+                longs: &["at"],
+                value_schema: ValueSchema::DateTime,
+                ..Flag::VALUE
+            };
+            let date = Flag {
+                key: 30,
+                name: "date",
+                diagnostic: "--date",
+                longs: &["date"],
+                value_schema: ValueSchema::Date,
+                ..Flag::VALUE
+            };
+            let local_time = Flag {
+                key: 31,
+                name: "local-time",
+                diagnostic: "--local-time",
+                longs: &["local-time"],
+                value_schema: ValueSchema::Lexical,
+                ..Flag::VALUE
+            };
+            let local_datetime = Flag {
+                key: 32,
+                name: "local-datetime",
+                diagnostic: "--local-datetime",
+                longs: &["local-datetime"],
+                value_schema: ValueSchema::Lexical,
+                ..Flag::VALUE
+            };
+            let flags = [&at, &date, &local_time, &local_datetime];
+            let command = Command { name: "show", flags: &flags, ..Command::EMPTY };
+            let schema = serde_json::to_value(invocation_schema_for_path(&[&command]))
+                .expect("schema should serialize");
 
-        let schema = serde_json::to_value(invocation_schema_for_path(&[&command]))
-            .expect("schema should serialize");
+            assert_eq!(schema["properties"]["--at"]["format"], "date-time");
+            assert_eq!(schema["properties"]["--date"]["format"], "date");
+            assert!(schema["properties"]["--local-time"].get("format").is_none());
+            assert!(schema["properties"]["--local-datetime"].get("format").is_none());
+        }
 
-        assert_eq!(schema["properties"]["--at"]["format"], "date-time");
-    }
+        #[cfg(feature = "uuid")]
+        {
+            let id = Arg { key: 40, name: "id", value_schema: ValueSchema::Uuid, ..Arg::REQUIRED };
+            let args = [&id];
+            let command = Command { name: "show", args: &args, ..Command::EMPTY };
+            let schema = serde_json::to_value(invocation_schema_for_path(&[&command]))
+                .expect("schema should serialize");
 
-    #[cfg(feature = "chrono")]
-    #[test]
-    fn chrono_date_values_expose_only_standard_formats() {
-        let date = Flag {
-            key: 30,
-            name: "date",
-            diagnostic: "--date",
-            longs: &["date"],
-            value_schema: ValueSchema::Date,
-            ..Flag::VALUE
-        };
-        let local_time = Flag {
-            key: 31,
-            name: "local-time",
-            diagnostic: "--local-time",
-            longs: &["local-time"],
-            value_schema: ValueSchema::Lexical,
-            ..Flag::VALUE
-        };
-        let local_datetime = Flag {
-            key: 32,
-            name: "local-datetime",
-            diagnostic: "--local-datetime",
-            longs: &["local-datetime"],
-            value_schema: ValueSchema::Lexical,
-            ..Flag::VALUE
-        };
-        let flags = [&date, &local_time, &local_datetime];
-        let command = Command { name: "show", flags: &flags, ..Command::EMPTY };
+            assert_eq!(schema["properties"]["id"]["format"], "uuid");
+        }
 
-        let schema = serde_json::to_value(invocation_schema_for_path(&[&command]))
-            .expect("schema should serialize");
+        #[cfg(feature = "url")]
+        {
+            let endpoint = Flag {
+                key: 41,
+                name: "endpoint",
+                diagnostic: "--endpoint",
+                longs: &["endpoint"],
+                value_schema: ValueSchema::Url,
+                ..Flag::VALUE
+            };
+            let flags = [&endpoint];
+            let command = Command { name: "call", flags: &flags, ..Command::EMPTY };
+            let schema = serde_json::to_value(invocation_schema_for_path(&[&command]))
+                .expect("schema should serialize");
 
-        assert_eq!(schema["properties"]["--date"]["format"], "date");
-        assert!(schema["properties"]["--local-time"].get("format").is_none());
-        assert!(schema["properties"]["--local-datetime"].get("format").is_none());
-    }
-
-    #[cfg(feature = "uuid")]
-    #[test]
-    fn uuid_values_expose_the_uuid_format() {
-        let id = Arg { key: 30, name: "id", value_schema: ValueSchema::Uuid, ..Arg::REQUIRED };
-        let args = [&id];
-        let command = Command { name: "show", args: &args, ..Command::EMPTY };
-
-        let schema = serde_json::to_value(invocation_schema_for_path(&[&command]))
-            .expect("schema should serialize");
-
-        assert_eq!(schema["properties"]["id"]["format"], "uuid");
-    }
-
-    #[cfg(feature = "url")]
-    #[test]
-    fn url_values_expose_the_uri_format() {
-        let endpoint = Flag {
-            key: 31,
-            name: "endpoint",
-            diagnostic: "--endpoint",
-            longs: &["endpoint"],
-            value_schema: ValueSchema::Url,
-            ..Flag::VALUE
-        };
-        let flags = [&endpoint];
-        let command = Command { name: "call", flags: &flags, ..Command::EMPTY };
-
-        let schema = serde_json::to_value(invocation_schema_for_path(&[&command]))
-            .expect("schema should serialize");
-
-        assert_eq!(schema["properties"]["--endpoint"]["format"], "uri");
+            assert_eq!(schema["properties"]["--endpoint"]["format"], "uri");
+        }
     }
 }
