@@ -288,8 +288,7 @@ Runnable examples cover the main Argx features. Start with `basic` for the small
 
 ## Support
 
-Argx supports Linux and macOS natively. Windows is supported through the
-Windows Subsystem for Linux (WSL). Native Windows targets are not supported.
+Argx supports Linux, macOS, and Windows natively.
 
 ## MSRV
 

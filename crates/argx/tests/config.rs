@@ -30,12 +30,10 @@ struct BooleanConfig {
 }
 
 fn temp_file(name: &str, extension: &str, contents: &str) -> PathBuf {
-    let path = std::env::temp_dir().join(format!(
-        "argx-config-{name}-{}-{}.{}",
-        std::process::id(),
-        std::thread::current().name().unwrap_or("test"),
-        extension,
-    ));
+    // Thread names contain `::`, which is invalid in Windows file names.
+    let thread = std::thread::current().name().unwrap_or("test").replace("::", "__");
+    let path = std::env::temp_dir()
+        .join(format!("argx-config-{name}-{}-{thread}.{extension}", std::process::id(),));
     fs::write(&path, contents).expect("write temporary configuration");
     path
 }

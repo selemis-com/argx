@@ -3,6 +3,8 @@
 //! Generated downstream code names these functions through `argx::__private`, so the conversion
 //! implementation lives at that boundary instead of forwarding through a second runtime layer.
 
+#[cfg(unix)]
+use std::os::unix::ffi::OsStringExt as _;
 use std::{ffi::OsString, fmt, str::FromStr};
 
 use crate::{Error, ValueEnum, ValueEnumError};
@@ -122,19 +124,32 @@ where
 }
 
 /// Converts one raw value to an operating-system-backed destination type.
-pub fn os_value<T>(value: Vec<u8>) -> T
+///
+/// Unix preserves arbitrary bytes. Other platforms require UTF-8, so Windows arguments
+/// containing unpaired surrogates are rejected rather than reconstructed unchecked.
+///
+/// # Errors
+///
+/// Returns [`Error::InvalidUtf8`] when a non-Unix value is not valid UTF-8.
+pub fn os_value<T>(value: Vec<u8>, name: &'static str) -> Result<T, Error>
 where
     T: From<OsString>,
 {
-    T::from(os_string(value))
+    os_string(value).map(T::from).map_err(|value| Error::InvalidUtf8 { name, value })
 }
 
 /// Converts repeated raw values to operating-system-backed destination types.
-pub fn os_values<T>(values: Vec<Vec<u8>>) -> Vec<T>
+///
+/// The platform restrictions described by [`os_value`] apply to every value.
+///
+/// # Errors
+///
+/// Returns the first [`Error::InvalidUtf8`] when a non-Unix value is not valid UTF-8.
+pub fn os_values<T>(values: Vec<Vec<u8>>, name: &'static str) -> Result<Vec<T>, Error>
 where
     T: From<OsString>,
 {
-    values.into_iter().map(|value| T::from(os_string(value))).collect()
+    values.into_iter().map(|value| os_value(value, name)).collect()
 }
 
 /// Converts encoded bytes into UTF-8 text.
@@ -142,9 +157,22 @@ fn text_bytes(value: Vec<u8>, name: &'static str) -> Result<String, Error> {
     String::from_utf8(value).map_err(|bad| Error::InvalidUtf8 { name, value: bad.into_bytes() })
 }
 
-/// Reconstructs an operating-system string from raw argv bytes.
-fn os_string(value: Vec<u8>) -> OsString {
-    use std::os::unix::ffi::OsStringExt as _;
-
-    OsString::from_vec(value)
+/// Reconstructs an operating-system string without assuming byte provenance.
+///
+/// The public generated-code helpers accept arbitrary byte vectors, so their contents cannot
+/// safely be passed to `from_encoded_bytes_unchecked`. Unix accepts all byte sequences;
+/// elsewhere, validated UTF-8 provides a safe conversion at the cost of rejecting unpaired
+/// Windows surrogates. On failure the original bytes are retained for diagnostics.
+fn os_string(value: Vec<u8>) -> Result<OsString, Vec<u8>> {
+    #[cfg(unix)]
+    {
+        Ok(OsString::from_vec(value))
+    }
+    #[cfg(not(unix))]
+    {
+        match String::from_utf8(value) {
+            Ok(text) => Ok(OsString::from(text)),
+            Err(bad) => Err(bad.into_bytes()),
+        }
+    }
 }

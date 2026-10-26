@@ -377,10 +377,10 @@ impl<'t, 'a, 'v> ArgvParser<'t, 'a, 'v> {
 }
 
 /// Views an operating-system argument as native bytes.
+///
+/// On Windows this yields WTF-8, a strict superset of UTF-8, so UTF-8 handling above stays valid.
 fn bytes(value: &OsStr) -> &[u8] {
-    use std::os::unix::ffi::OsStrExt as _;
-
-    value.as_bytes()
+    value.as_encoded_bytes()
 }
 
 /// Reports whether a token is syntactically flag-like.

@@ -202,7 +202,7 @@
 //!
 //! - a field marked `#[argx(value_enum)]` parses through its finite [`trait@ValueEnum`] vocabulary.
 //! - `String` consumes UTF-8 text.
-//! - `OsString` and `PathBuf` preserve operating-system strings.
+//! - `OsString` and `PathBuf` preserve arbitrary bytes on Unix and require Unicode on Windows.
 //! - other value types are converted through [`std::str::FromStr`].
 //!
 //! ## Finite values
@@ -267,8 +267,9 @@
 //!
 //! Detached values that look like options are rejected by default. Use `allow_hyphen_values` for
 //! arbitrary flag-like values or `allow_negative_numbers` when only negative numbers should be
-//! accepted. `OsString` and `PathBuf` preserve native argument strings; text and `FromStr` values
-//! require UTF-8.
+//! accepted. `OsString` and `PathBuf` preserve native argument bytes on Unix; on Windows, values
+//! containing unpaired UTF-16 surrogates return [`Error::InvalidUtf8`]. Text and `FromStr` values
+//! require UTF-8 on every platform.
 //!
 //! # Parser entry points
 //!

@@ -8,7 +8,11 @@
 #[cfg(test)]
 #[cfg(feature = "derive")]
 mod tests {
-    use std::{ffi::OsString, path::PathBuf, process::Command};
+    #[cfg(any(unix, windows))]
+    use std::ffi::OsString;
+    #[cfg(windows)]
+    use std::os::windows::ffi::OsStringExt as _;
+    use std::{path::PathBuf, process::Command};
 
     use argx::{Error, Parser as _};
 
@@ -52,16 +56,22 @@ mod tests {
     }
 
     #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    // Raw argv bytes are constructed with unix extensions; the consumers below are unix-only.
+    #[cfg(unix)]
     struct PathCli {
         path: PathBuf,
     }
 
     #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    // Raw argv bytes are constructed with unix extensions; the consumers below are unix-only.
+    #[cfg(unix)]
     struct OsStringCli {
         value: OsString,
     }
 
     #[derive(Debug, PartialEq, Eq, argx::Parser)]
+    // Raw argv bytes are constructed with unix extensions; the consumers below are unix-only.
+    #[cfg(unix)]
     struct TextCli {
         value: String,
     }
@@ -1240,6 +1250,70 @@ mod tests {
         assert_eq!(
             TextCli::try_parse_from([OsString::from("argx-test"), raw]),
             Err(Error::InvalidUtf8 { name: "<VALUE>", value: vec![b'x', 0xff] })
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn os_backed_fields_reject_unpaired_surrogates_without_lossy_conversion() {
+        #[derive(Debug, PartialEq, Eq, argx::Parser)]
+        struct Native {
+            #[argx(short = 'p', long)]
+            path: Option<PathBuf>,
+            #[argx(long)]
+            raw: Option<OsString>,
+            #[argx(long, delimited)]
+            paths: Vec<PathBuf>,
+            positional: Option<PathBuf>,
+        }
+
+        assert_eq!(
+            Native::try_parse_from(["test", "--path=é.txt", "--raw=🦀", "--paths=α,,β", "🦀.txt"]),
+            Ok(Native {
+                path: Some(PathBuf::from("é.txt")),
+                raw: Some(OsString::from("🦀")),
+                paths: vec![PathBuf::from("α"), PathBuf::new(), PathBuf::from("β")],
+                positional: Some(PathBuf::from("🦀.txt")),
+            })
+        );
+
+        for surrogate in [0xd800, 0xdc00] {
+            let raw = OsString::from_wide(&[surrogate]);
+            let bytes = raw.as_encoded_bytes().to_vec();
+            for (prefix, name) in [
+                ("", "<POSITIONAL>"),
+                ("--path=", "--path"),
+                ("-p", "--path"),
+                ("-p=", "--path"),
+                ("--raw=", "--raw"),
+                ("--paths=valid,", "--paths"),
+            ] {
+                let mut token = OsString::from(prefix);
+                token.push(&raw);
+                assert_eq!(
+                    Native::try_parse_from([OsString::from("test"), token]),
+                    Err(Error::InvalidUtf8 { name, value: bytes.clone() })
+                );
+            }
+            assert_eq!(
+                Native::try_parse_from([OsString::from("test"), OsString::from("--path"), raw]),
+                Err(Error::InvalidUtf8 { name: "--path", value: bytes })
+            );
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn safe_os_conversion_helpers_reject_arbitrary_invalid_bytes() {
+        let bytes = vec![0xff];
+        let expected = Error::InvalidUtf8 { name: "--path", value: bytes.clone() };
+        assert_eq!(
+            argx::__private::os_value::<OsString>(bytes.clone(), "--path"),
+            Err(expected.clone())
+        );
+        assert_eq!(
+            argx::__private::os_values::<PathBuf>(vec![b"valid".to_vec(), bytes], "--path"),
+            Err(expected)
         );
     }
 

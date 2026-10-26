@@ -238,7 +238,9 @@ pub(super) fn finish_field(
         }
         match binding.conversion {
             model::ValueConversion::Text => quote!(#facade::__private::text_value(#value, #name)?),
-            model::ValueConversion::Os => quote!(#facade::__private::os_value::<#ty>(#value)),
+            model::ValueConversion::Os => {
+                quote!(#facade::__private::os_value::<#ty>(#value, #name)?)
+            }
             model::ValueConversion::FromStr => {
                 quote!(#facade::__private::parsed_value::<#ty>(#value, #name)?)
             }
@@ -250,7 +252,9 @@ pub(super) fn finish_field(
         }
         match binding.conversion {
             model::ValueConversion::Text => quote!(#facade::__private::text_values(#value, #name)?),
-            model::ValueConversion::Os => quote!(#facade::__private::os_values::<#ty>(#value)),
+            model::ValueConversion::Os => {
+                quote!(#facade::__private::os_values::<#ty>(#value, #name)?)
+            }
             model::ValueConversion::FromStr => {
                 quote!(#facade::__private::parsed_values::<#ty>(#value, #name)?)
             }

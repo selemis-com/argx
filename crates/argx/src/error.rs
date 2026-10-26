@@ -131,7 +131,7 @@ pub enum Error {
         /// Comma-separated canonical labels of the participating arguments.
         arguments: String,
     },
-    /// A text value was not valid UTF-8.
+    /// A value requiring UTF-8 could not be decoded.
     #[error("value `{}` for `{name}` is not valid UTF-8", display_bytes(.value))]
     InvalidUtf8 {
         /// Canonical user-facing argument label.
