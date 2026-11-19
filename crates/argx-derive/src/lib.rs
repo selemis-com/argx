@@ -95,6 +95,7 @@ impl Parse for StandaloneAttribute {
 /// Applies one standalone Argx item attribute.
 ///
 /// `#[argx(schema)]` marks a Rust type for JSON Schema generation through Schemars.
+/// Both `schema` and `handler` attributes require the `schema` feature of `argx`.
 /// `#[argx(handler = CommandType)]` associates a free function with one invocable command type,
 /// while `#[argx(handler = method)]` associates an inherent impl with its execution method.
 #[proc_macro_attribute]

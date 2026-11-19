@@ -41,17 +41,30 @@ cargo add argx
 
 ### Features
 
-The `derive` feature is enabled by default. Enable `toml` when using TOML configuration layers:
+Only `derive` is enabled by default. Additional functionality is opt-in:
+
+| Feature | Enables |
+| --- | --- |
+| `derive` (default) | `Parser`, `Args`, `Subcommand`, `Config`, and `ValueEnum` derive macros, plus the `argx` attribute macro |
+| `toml` | The `Toml` configuration layer; also enables `derive` |
+| `json` | Nushell completion via the JSON completion protocol |
+| `schema` | JSON Schema discovery and handler result/error schemas; also enables `json` |
+| `chrono` | Chrono schema formats; also enables `schema` |
+| `url` | URL schema formats; also enables `schema` |
+| `uuid` | UUID schema formats; also enables `schema` |
+
+Bash, Fish, and Zsh completion work without `json`. Enable `toml` for TOML configuration
+layers, `json` for Nushell completion, or `schema` for machine-readable discovery:
 
 ```sh
-cargo add argx --features toml
+cargo add argx --features toml,schema
 ```
 
-Enable `chrono`, `url`, or `uuid` when command values and schema-enabled types use those crates.
-Argx preserves recognized formats in invocation schemas and enables the matching Schemars
-integrations. Chrono `DateTime` and `NaiveDate` values receive standard `date-time` and `date`
-formats. `NaiveTime` and `NaiveDateTime` remain lexical strings because JSON Schema has no standard
-format that faithfully represents their timezone-free values:
+Enable `chrono`, `url`, or `uuid` when schema-enabled command values use those crates.
+These features activate the matching Schemars integrations. Chrono `DateTime` and
+`NaiveDate` values receive standard `date-time` and `date` formats. `NaiveTime` and
+`NaiveDateTime` remain lexical strings because JSON Schema has no standard format that
+faithfully represents their timezone-free values:
 
 ```sh
 cargo add argx --features chrono,url,uuid
@@ -123,7 +136,7 @@ Options:
   -h, --help         Print help
 ```
 
-The same derived command model also powers shell completion and schema discovery.
+The same derived command model also powers shell completion and, with `schema`, schema discovery.
 
 ## Configuration
 
@@ -151,14 +164,14 @@ let config = Config::loader()
 
 Layers are applied in declaration order, with later layers overriding only values they provide.
 Defaults are explicit through `Defaults`. `Environment` reads mapped environment variables and
-`Argv` reads fields with CLI metadata. `Dotenv` and optional `Toml` layers read only the paths you
-provide. Argx performs no configuration-file discovery.
+`Argv` reads fields with CLI metadata. `Dotenv` and the `Toml` layer (enabled by the
+`toml` feature) read only the paths you provide. Argx performs no configuration-file discovery.
 
 See the [configuration example](crates/argx/examples/configuration.rs) for environment naming, flattening, interpolation, and collection values.
 
 ## Schema discovery
 
-Mark each command that participates in schema discovery with `#[argx(schema)]`.
+Enable the `schema` feature, then mark each participating command with `#[argx(schema)]`.
 
 Argx-owned schema keys use lower camel case consistently. Commands can also expose application-defined semantic metadata without teaching Argx what the keys mean. Metadata keys are preserved exactly as authored. For example, `#[argx(metadata({ "readOnly": true, "requiredScopes": ["objects:read"] }))]` produces:
 
@@ -282,9 +295,12 @@ Runnable examples cover the main Argx features. Start with `basic` for the small
 | [`arguments`](crates/argx/examples/arguments.rs) | Options, defaults, constraints, and finite values | `cargo run --example arguments -- input.txt --format json` |
 | [`commands`](crates/argx/examples/commands.rs) | Subcommands, flattening, aliases, and versions | `cargo run --example commands -- --verbose add hello --force` |
 | [`configuration`](crates/argx/examples/configuration.rs) | Ordered configuration layers | `cargo run --example configuration -- --workers 8` |
-| [`schema`](crates/argx/examples/schema.rs) | Schema discovery and handler contracts | `cargo run --example schema -- schema objects get` |
+| [`schema`](crates/argx/examples/schema.rs) | Schema discovery and handler contracts | `cargo run --features schema --example schema -- schema objects get` |
 | [`completions`](crates/argx/examples/completions.rs) | Dynamic shell completion | `cargo run --example completions -- zsh` |
-| [`complete`](crates/argx/examples/complete.rs) | Integrated reference application | `cargo run --example complete -- get object-7` |
+| [`complete`](crates/argx/examples/complete.rs) | Integrated reference application | `cargo run --features schema --example complete -- get object-7` |
+
+For Nushell, enable `json` (or `schema`):
+`cargo run --features json --example completions -- nushell`.
 
 ## Support
 
