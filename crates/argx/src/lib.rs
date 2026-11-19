@@ -319,8 +319,8 @@
 //!
 //! # Shell completions
 //!
-//! Argx generates dynamic completion adapters for Bash, Fish, Nushell, and Zsh through the
-//! [`completion`] module.
+//! Argx generates dynamic completion adapters for Bash, Fish, and Zsh through the
+//! [`completion`] module. The `json` feature also enables Nushell.
 //!
 //! ```
 //! use argx::{Parser as _, completion::Shell};
