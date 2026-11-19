@@ -13,6 +13,9 @@
 //!
 //! - `derive` enables the derive macros and is enabled by default.
 //! - `toml` enables TOML configuration layers and implies `derive`.
+//! - `json` enables the JSON protocol used by Nushell completion.
+//! - `schema` enables JSON Schema discovery and handler schemas and implies `json`. It is disabled
+//!   by default. The `chrono`, `url`, and `uuid` schema integrations imply `schema`.
 //! - `chrono` enables schema integration for Chrono values. `DateTime` and `NaiveDate` receive the
 //!   standard `date-time` and `date` formats. `NaiveTime` and `NaiveDateTime` remain lexical
 //!   strings because JSON Schema has no standard format that faithfully represents their
@@ -25,6 +28,9 @@
 //! ```text
 //! cargo add argx --features chrono,toml,url,uuid
 //! ```
+//!
+//! Generated paths use `::argx`. Applications that rename the dependency, for example to
+//! `cli_args`, must provide `extern crate cli_args as argx;` at their crate root.
 //!
 //! # Quick start
 //!
@@ -339,7 +345,8 @@
 //!
 //! # Schema discovery
 //!
-//! Mark commands that participate in schema discovery with `#[argx(schema)]`. Argx exposes
+//! Enable the `schema` feature, then mark commands that participate in schema discovery with
+//! `#[argx(schema)]`. Argx exposes
 //! Draft 2020-12 JSON Schema through `-S` / `--schema` in the selected command scope and through
 //! the root `schema [COMMAND]...` pseudo-command.
 //!
@@ -354,7 +361,7 @@
 //! on a free function or `#[argx(handler = method)]` on an inherent impl.
 //!
 //! `#[argx(schema)]` on result and error data types delegates their JSON Schema generation to
-//! Schemars and makes the type available through [`Schema`]. See the `schema` example for a
+//! Schemars and makes the type available through `Schema`. See the `schema` example for a
 //! complete structural and leaf discovery flow.
 //!
 //! # `#[argx(...)]` attribute reference
@@ -456,6 +463,7 @@ mod cli;
 pub mod completion;
 pub mod config;
 mod error;
+#[cfg(feature = "schema")]
 mod schema;
 
 use std::ffi::{OsStr, OsString};
@@ -467,11 +475,13 @@ pub use error::Error;
 ///
 /// Types marked with `#[argx(schema)]` implement this trait automatically. Types that implement
 /// Schemars' schema contract directly are supported as well.
+#[cfg(feature = "schema")]
 pub trait Schema {
     /// Generates a standalone JSON Schema document for this type.
     fn schema() -> serde_json::Value;
 }
 
+#[cfg(feature = "schema")]
 impl<T> Schema for T
 where
     T: schemars::JsonSchema,
@@ -607,15 +617,16 @@ where
 {
     let owned: Vec<OsString> = argv.into_iter().map(Into::into).collect();
     let refs: Vec<&OsStr> = owned.iter().map(OsString::as_os_str).collect();
-    if !<P as __private::CommandArgs>::SCHEMA_ENABLED {
-        return cli::binding::parse_refs::<P>(&refs);
+    #[cfg(feature = "schema")]
+    if <P as __private::CommandArgs>::SCHEMA_ENABLED {
+        let registry = <P as __private::CommandArgs>::schema_registry()
+            .expect("schema-enabled parser must generate a schema registry");
+        if let Some(error) = schema::pseudo_command(P::COMMAND, &refs, &registry) {
+            return Err(error);
+        }
+        return cli::binding::parse_refs_with_schema::<P>(&refs, &registry);
     }
-    let registry = <P as __private::CommandArgs>::schema_registry()
-        .expect("schema-enabled parser must generate a schema registry");
-    if let Some(error) = schema::pseudo_command(P::COMMAND, &refs, &registry) {
-        return Err(error);
-    }
-    cli::binding::parse_refs_with_schema::<P>(&refs, &registry)
+    cli::binding::parse_refs::<P>(&refs)
 }
 
 /// Implementation details shared with generated code.

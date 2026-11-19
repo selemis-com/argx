@@ -6,9 +6,12 @@
 
 /// Schemars re-export used by `#[argx(schema)]` expansions.
 #[doc(hidden)]
+#[cfg(feature = "schema")]
 pub use schemars;
 
 pub(crate) use crate::cli::command::{Named, long as resolve_long, short as resolve_short};
+#[cfg(feature = "schema")]
+pub use crate::cli::protocol::{HandlerResult, HandlerSchemaSource, HandlerSchemas};
 pub use crate::cli::{
     argv::{ArgvParser, Error, Event},
     command::{
@@ -21,10 +24,7 @@ pub use crate::cli::{
         concat_args, concat_constraints, concat_flags, concat_help_groups, concat_one_of,
         flag_spellings_unique, positional_layout_valid, schema_property_names_disjoint, table_len,
     },
-    protocol::{
-        Args, CommandArgs, HandlerResult, HandlerSchemaSource, HandlerSchemas,
-        InvocableCommandHandler, Subcommands,
-    },
+    protocol::{Args, CommandArgs, InvocableCommandHandler, Subcommands},
     value::{
         comma_values, os_value, os_values, parsed_value, parsed_values, text_value, text_values,
         value_enum_value, value_enum_values,
@@ -38,6 +38,7 @@ pub use crate::config::__private::{
 };
 /// Schema-discovery support named by generated code.
 #[doc(hidden)]
+#[cfg(feature = "schema")]
 pub use crate::schema::{
     Registry as SchemaRegistry, SchemaCommand, SchemaSubcommands,
     register_handler as register_schema_handler,

@@ -10,12 +10,12 @@
 //! structural command.
 //!
 //! ```text
-//! cargo run --example schema -- schema
-//! cargo run --example schema -- schema objects
-//! cargo run --example schema -- schema objects get
-//! cargo run --example schema -- schema objects --full
-//! cargo run --example schema -- objects get object-7 --schema
-//! cargo run --example schema -- objects get object-7
+//! cargo run --features schema --example schema -- schema
+//! cargo run --features schema --example schema -- schema objects
+//! cargo run --features schema --example schema -- schema objects get
+//! cargo run --features schema --example schema -- schema objects --full
+//! cargo run --features schema --example schema -- objects get object-7 --schema
+//! cargo run --features schema --example schema -- objects get object-7
 //! ```
 use argx::{Parser as _, argx};
 

@@ -24,6 +24,7 @@ pub trait Config: Sized {
 
     /// The generated sparse TOML input representation.
     #[doc(hidden)]
+    #[cfg(feature = "toml")]
     type __Toml: serde::de::DeserializeOwned;
 
     /// Generated sparse command-line adapter.
@@ -51,6 +52,7 @@ pub trait Config: Sized {
 
     /// Converts generated sparse TOML input into configuration state.
     #[doc(hidden)]
+    #[cfg(feature = "toml")]
     fn __toml_overrides(input: Self::__Toml) -> Self::Overrides;
 
     /// Decodes one TOML scope into typed values for this configuration.

@@ -5,7 +5,7 @@ edition = "2024"
 publish = false
 
 [dependencies]
-argx = { path = "../../../.." }
+argx = { path = "../../../..", features = ["schema"] }
 
 # Keep this fixture independent from the repository workspace. Its lockfile models the
 # standalone downstream projects created by the compiler-UI test harness.

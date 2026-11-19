@@ -2,11 +2,11 @@
 //! completion features.
 //!
 //! ```text
-//! cargo run --example complete -- get object-7
-//! cargo run --example complete -- put object-7 value --endpoint https://example.invalid --token secret
-//! cargo run --example complete -- completions zsh
-//! cargo run --example complete -- schema get
-//! cargo run --example complete -- --version
+//! cargo run --features schema --example complete -- get object-7
+//! cargo run --features schema --example complete -- put object-7 value --endpoint https://example.invalid --token secret
+//! cargo run --features schema --example complete -- completions zsh
+//! cargo run --features schema --example complete -- schema get
+//! cargo run --features schema --example complete -- --version
 //! ```
 //!
 //! Configuration uses defaults and the process environment by default. Set

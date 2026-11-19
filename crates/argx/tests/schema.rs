@@ -1,7 +1,7 @@
 //! Machine-readable schema and handler-association integration tests.
 
 #[cfg(test)]
-#[cfg(feature = "derive")]
+#[cfg(all(feature = "derive", feature = "schema"))]
 mod tests {
     #![expect(dead_code, reason = "schema fixtures are exercised through generated metadata")]
 

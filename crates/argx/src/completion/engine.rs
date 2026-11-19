@@ -47,10 +47,18 @@ where
     let mut bash_marked_prefix = None;
     let candidates = match env::var(PROTOCOL_WORDS_ENV) {
         Ok(encoded) => {
-            let Ok(spans) = serde_json::from_str::<Vec<String>>(&encoded) else {
+            #[cfg(feature = "json")]
+            {
+                let Ok(spans) = serde_json::from_str::<Vec<String>>(&encoded) else {
+                    return Some(String::new());
+                };
+                complete_spans_with_schema(T::COMMAND, &spans, T::SCHEMA_ENABLED)
+            }
+            #[cfg(not(feature = "json"))]
+            {
+                let _ = encoded;
                 return Some(String::new());
-            };
-            complete_spans_with_schema(T::COMMAND, &spans, T::SCHEMA_ENABLED)
+            }
         }
         Err(env::VarError::NotUnicode(_)) => return Some(String::new()),
         Err(env::VarError::NotPresent) => {
@@ -306,6 +314,7 @@ fn complete_spans<'t>(root: &'t Command<'t>, spans: &[String]) -> Vec<Candidate<
 }
 
 /// Completes Nushell spans with optional schema-discovery candidates.
+#[cfg(any(feature = "json", test))]
 fn complete_spans_with_schema<'t>(
     root: &'t Command<'t>,
     spans: &[String],

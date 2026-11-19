@@ -366,6 +366,7 @@ impl<'t, 'a, 'v> ArgvParser<'t, 'a, 'v> {
     }
 
     /// Returns the unconsumed argv tokens after a terminal action.
+    #[cfg(feature = "schema")]
     pub(crate) fn remaining_args(&self) -> &[&'v OsStr] {
         &self.argv[self.position..]
     }

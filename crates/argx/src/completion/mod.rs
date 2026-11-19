@@ -1,4 +1,4 @@
-//! Dynamic shell completion for Bash, Fish, Nushell, and Zsh.
+//! Dynamic shell completion for Bash, Fish, and Zsh, plus Nushell with the `json` feature.
 //!
 //! Generate an adapter with [`crate::Parser::render_completion`]. The generated
 //! adapter asks the running application for candidates, so completions stay in sync with the
@@ -33,7 +33,7 @@ const PROTOCOL_BASH_WORDBREAKS_ENV: &str = "ARGX_COMPLETE_BASH_WORDBREAKS";
 
 /// Shells for which Argx can generate dynamic completion adapters.
 ///
-/// [`FromStr`] accepts the canonical lower-case spellings `bash`, `fish`, `nushell`, and `zsh`.
+/// [`FromStr`] accepts `bash`, `fish`, and `zsh`, plus `nushell` with the `json` feature.
 /// The type also implements [`crate::ValueEnum`], so a CLI field can opt into that vocabulary
 /// with `#[argx(value_enum)]`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -43,7 +43,8 @@ pub enum Shell {
     Bash,
     /// Fish shell.
     Fish,
-    /// Nushell.
+    /// Nushell, enabled by the `json` feature.
+    #[cfg(feature = "json")]
     Nushell,
     /// Z shell.
     Zsh,
@@ -56,6 +57,7 @@ impl Shell {
         match self {
             Self::Bash => "bash",
             Self::Fish => "fish",
+            #[cfg(feature = "json")]
             Self::Nushell => "nushell",
             Self::Zsh => "zsh",
         }
@@ -69,12 +71,19 @@ impl fmt::Display for Shell {
 }
 
 impl crate::ValueEnum for Shell {
-    const VALUES: &'static [&'static str] = &["bash", "fish", "nushell", "zsh"];
+    const VALUES: &'static [&'static str] = &[
+        "bash",
+        "fish",
+        #[cfg(feature = "json")]
+        "nushell",
+        "zsh",
+    ];
 
     fn from_value(value: &str) -> Option<Self> {
         match value {
             "bash" => Some(Self::Bash),
             "fish" => Some(Self::Fish),
+            #[cfg(feature = "json")]
             "nushell" => Some(Self::Nushell),
             "zsh" => Some(Self::Zsh),
             _ => None,
@@ -118,8 +127,11 @@ mod tests {
     fn shell_names_parse_and_render() {
         assert_eq!("bash".parse(), Ok(Shell::Bash));
         assert_eq!(Shell::Fish.to_string(), "fish");
+        #[cfg(feature = "json")]
         assert_eq!("nushell".parse(), Ok(Shell::Nushell));
+        #[cfg(feature = "json")]
         assert_eq!(Shell::Nushell.to_string(), "nushell");
+        #[cfg(feature = "json")]
         assert_eq!(<Shell as crate::ValueEnum>::VALUES, &["bash", "fish", "nushell", "zsh"],);
         assert!("nu".parse::<Shell>().is_err());
     }

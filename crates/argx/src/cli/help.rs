@@ -8,10 +8,12 @@
 
 use std::{fmt::Write as _, io::IsTerminal as _};
 
+#[cfg(any(feature = "schema", test))]
+use crate::cli::command::HELP_ACTION;
 use crate::{
     __private::{
-        Action, Arg, Command, Flag, HELP_ACTION, HelpGroup, Key, Named, SCHEMA_ACTION,
-        resolve_long, resolve_short,
+        Action, Arg, Command, Flag, HelpGroup, Key, Named, SCHEMA_ACTION, resolve_long,
+        resolve_short,
     },
     error::display_bytes,
 };
@@ -151,6 +153,7 @@ impl HelpStyle {
 }
 
 /// Renders help for the virtual root `schema` pseudo-command.
+#[cfg(feature = "schema")]
 pub(crate) fn render_schema(root: &Command<'_>) -> String {
     let mut output = String::new();
     output.push_str("Print machine-readable schema\n\n");

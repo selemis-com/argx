@@ -203,16 +203,20 @@ fn metadata_entries(input: syn::parse::ParseStream<'_>) -> syn::Result<Vec<Metad
 }
 
 /// Parses one JSON-like metadata object.
-fn metadata_object(input: syn::parse::ParseStream<'_>) -> syn::Result<serde_json::Value> {
+fn metadata_object(
+    input: syn::parse::ParseStream<'_>,
+) -> syn::Result<super::metadata::MetadataValue> {
     let entries = metadata_entries(input)?;
-    Ok(serde_json::Value::Object(
+    Ok(super::metadata::MetadataValue::Object(
         entries.into_iter().map(|entry| (entry.key, entry.value)).collect(),
     ))
 }
 
 /// Parses one JSON-like metadata value.
-fn metadata_value(input: syn::parse::ParseStream<'_>) -> syn::Result<serde_json::Value> {
-    use serde_json::{Number, Value};
+fn metadata_value(
+    input: syn::parse::ParseStream<'_>,
+) -> syn::Result<super::metadata::MetadataValue> {
+    use super::metadata::MetadataValue as Value;
     if input.peek(syn::token::Brace) {
         let object;
         braced!(object in input);
@@ -238,16 +242,16 @@ fn metadata_value(input: syn::parse::ParseStream<'_>) -> syn::Result<serde_json:
             Lit::Bool(value) => Ok(Value::Bool(value.value)),
             Lit::Int(value) => value
                 .base10_parse::<i64>()
-                .map(|value| Value::Number(value.into()))
+                .map(Value::Integer)
                 .map_err(|_| syn::Error::new_spanned(value, "metadata integer must fit in i64")),
             Lit::Float(value) => {
                 let parsed = value
                     .base10_parse::<f64>()
                     .map_err(|_| syn::Error::new_spanned(&value, "invalid metadata float"))?;
-                let number = Number::from_f64(parsed).ok_or_else(|| {
-                    syn::Error::new_spanned(value, "metadata float must be finite")
-                })?;
-                Ok(Value::Number(number))
+                if !parsed.is_finite() {
+                    return Err(syn::Error::new_spanned(value, "metadata float must be finite"));
+                }
+                Ok(Value::Float(parsed))
             }
             Lit::Str(value) => Ok(Value::String(value.value())),
             other => Err(syn::Error::new_spanned(
@@ -262,7 +266,7 @@ fn metadata_value(input: syn::parse::ParseStream<'_>) -> syn::Result<serde_json:
                     .base10_parse::<i64>()
                     .ok()
                     .and_then(i64::checked_neg)
-                    .map(|value| Value::Number(value.into()))
+                    .map(Value::Integer)
                     .ok_or_else(|| {
                         syn::Error::new_spanned(value, "metadata integer must fit in i64")
                     }),
@@ -270,10 +274,13 @@ fn metadata_value(input: syn::parse::ParseStream<'_>) -> syn::Result<serde_json:
                     let parsed = value
                         .base10_parse::<f64>()
                         .map_err(|_| syn::Error::new_spanned(&value, "invalid metadata float"))?;
-                    let number = Number::from_f64(-parsed).ok_or_else(|| {
-                        syn::Error::new_spanned(value, "metadata float must be finite")
-                    })?;
-                    Ok(Value::Number(number))
+                    if !parsed.is_finite() {
+                        return Err(syn::Error::new_spanned(
+                            value,
+                            "metadata float must be finite",
+                        ));
+                    }
+                    Ok(Value::Float(-parsed))
                 }
                 other => Err(syn::Error::new_spanned(
                     other,
@@ -649,7 +656,10 @@ mod tests {
         assert_eq!(attributes.metadata[0].key, "readOnly");
         assert_eq!(attributes.metadata[1].key, "requiredScopes");
         assert_eq!(attributes.metadata[2].key, "policy");
-        assert!(attributes.metadata[2].value.is_object());
+        assert!(matches!(
+            attributes.metadata[2].value,
+            super::super::metadata::MetadataValue::Object(_)
+        ));
     }
 
     #[test]

@@ -28,10 +28,15 @@ use crate::{
 /// Panics only when an implementation of the hidden generated-code contract exposes parse metadata
 /// that it then refuses to bind. Derived implementations cannot violate this invariant.
 pub(crate) fn parse_refs<T: CommandArgs>(argv: &[&std::ffi::OsStr]) -> Result<T, Error> {
-    parse_refs_inner::<T>(argv, None)
+    parse_refs_inner::<T>(
+        argv,
+        #[cfg(feature = "schema")]
+        None,
+    )
 }
 
 /// Parses arguments with schema discovery enabled.
+#[cfg(feature = "schema")]
 pub(crate) fn parse_refs_with_schema<T: CommandArgs>(
     argv: &[&std::ffi::OsStr],
     registry: &crate::__private::SchemaRegistry,
@@ -42,12 +47,16 @@ pub(crate) fn parse_refs_with_schema<T: CommandArgs>(
 /// Shared typed-binding pipeline with an optional schema-discovery registry.
 fn parse_refs_inner<T: CommandArgs>(
     argv: &[&std::ffi::OsStr],
-    registry: Option<&crate::__private::SchemaRegistry>,
+    #[cfg(feature = "schema")] registry: Option<&crate::__private::SchemaRegistry>,
 ) -> Result<T, Error> {
+    #[cfg(feature = "schema")]
+    let schema_enabled = registry.is_some();
+    #[cfg(not(feature = "schema"))]
+    let schema_enabled = false;
     let mut partial = T::start();
     let mut supplied = Vec::new();
     let mut parser: crate::cli::argv::ArgvParser<'static, '_, '_> =
-        crate::cli::argv::ArgvParser::new_with_schema(T::COMMAND, argv, registry.is_some());
+        crate::cli::argv::ArgvParser::new_with_schema(T::COMMAND, argv, schema_enabled);
 
     while let Some(event) = parser.next_event() {
         let event = match event {
@@ -58,7 +67,7 @@ fn parse_refs_inner<T: CommandArgs>(
                         Err(Error::DisplayHelp {
                             help: help::render_with_schema(
                                 &command_path,
-                                registry.is_some(),
+                                schema_enabled,
                                 if used_long {
                                     help::HelpStyle::Long
                                 } else {
@@ -67,6 +76,7 @@ fn parse_refs_inner<T: CommandArgs>(
                             ),
                         })
                     }
+                    #[cfg(feature = "schema")]
                     ActionKind::Schema => {
                         let command_path = parser.command_path().collect::<Vec<_>>();
                         let full = matches!(
@@ -79,6 +89,8 @@ fn parse_refs_inner<T: CommandArgs>(
                             full,
                         ))
                     }
+                    #[cfg(not(feature = "schema"))]
+                    ActionKind::Schema => unreachable!("schema actions are disabled"),
                     ActionKind::Version { short, long } => {
                         let version = if used_long { long } else { short };
                         let command = parser
@@ -112,7 +124,7 @@ fn parse_refs_inner<T: CommandArgs>(
             Error::MissingSubcommand { .. } => Err(Error::DisplayHelp {
                 help: help::render_with_schema(
                     &command_path,
-                    registry.is_some(),
+                    schema_enabled,
                     help::HelpStyle::Short,
                 ),
             }),

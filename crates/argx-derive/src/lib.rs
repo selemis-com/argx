@@ -111,8 +111,14 @@ fn standalone_attribute(
     input: proc_macro2::TokenStream,
 ) -> syn::Result<proc_macro2::TokenStream> {
     match syn::parse2::<StandaloneAttribute>(attribute)? {
-        StandaloneAttribute::Schema => args::schema::schema(input),
-        StandaloneAttribute::Handler(handler) => args::handler::handler(handler, input),
+        StandaloneAttribute::Schema => {
+            require_schema()?;
+            args::schema::schema(input)
+        }
+        StandaloneAttribute::Handler(handler) => {
+            require_schema()?;
+            args::handler::handler(handler, input)
+        }
     }
 }
 
@@ -129,11 +135,29 @@ pub fn derive_subcommand(input: TokenStream) -> TokenStream {
 /// Builds the semantic model and emits one command declaration.
 fn expand_command(input: &DeriveInput, root: bool) -> syn::Result<proc_macro2::TokenStream> {
     let command = args::model::Command::from_input(input, root)?;
+    if command.semantics.schema {
+        require_schema()?;
+    }
     Ok(args::generate::command(&command))
 }
 
 /// Builds the semantic model and emits one subcommand enum.
 fn expand_subcommand(input: &DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
     let subcommand = args::model::Subcommand::from_input(input)?;
+    if subcommand.binding.schema {
+        require_schema()?;
+    }
     Ok(args::generate::subcommands(&subcommand))
+}
+
+/// Rejects schema declarations when the facade has not enabled schema support.
+fn require_schema() -> syn::Result<()> {
+    if cfg!(feature = "schema") {
+        Ok(())
+    } else {
+        Err(syn::Error::new(
+            proc_macro2::Span::call_site(),
+            "schema discovery requires the `schema` feature of argx",
+        ))
+    }
 }
