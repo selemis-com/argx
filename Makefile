@@ -126,9 +126,7 @@ doc: ## Build the documentation.
 ##@ Other
 
 .PHONY: lock
-lock: ## Update Cargo lockfiles with the current dependencies.
-	cargo generate-lockfile --offline
-	cd crates/argx/tests/fixtures/ui/template/
+lock: ## Recreate the Cargo.lock file with the current dependencies.
 	cargo generate-lockfile --offline
 
 .PHONY: clean
