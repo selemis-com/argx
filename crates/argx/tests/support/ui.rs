@@ -85,7 +85,6 @@ impl UiProject {
             "--quiet",
             "--color",
             "never",
-            "--locked",
             "--offline",
         ])
     }
@@ -97,7 +96,6 @@ impl UiProject {
             "check",
             "--color",
             "never",
-            "--locked",
             "--offline",
             "--message-format=json",
         ])

@@ -265,7 +265,8 @@ SOFTWARE.
 Apache License 2.0
 
 #### Used by
-- [utf8_iter]( https://github.com/hsivonen/utf8_iter ) 1.0.4
+- [utf8_iter]( https://github.com/hsivonen/utf8_iter ) 1.1.0
+- [utf_types]( https://github.com/hsivonen/utf_types ) 1.0.0
 
 #### License
 ```
@@ -1340,20 +1341,20 @@ Apache License 2.0
 #### Used by
 - [autocfg]( https://github.com/cuviper/autocfg ) 1.5.1
 - [displaydoc]( https://github.com/yaahc/displaydoc ) 0.2.7
-- [equivalent]( https://github.com/indexmap-rs/equivalent ) 1.0.2
+- [equivalent]( https://github.com/indexmap-rs/equivalent ) 1.0.3
 - [form_urlencoded]( https://github.com/servo/rust-url ) 1.2.2
 - [hashbrown]( https://github.com/rust-lang/hashbrown ) 0.17.1
 - [idna]( https://github.com/servo/rust-url/ ) 1.1.0
 - [idna_adapter]( https://github.com/hsivonen/idna_adapter ) 1.2.2
-- [indexmap]( https://github.com/indexmap-rs/indexmap ) 2.14.0
-- [log]( https://github.com/rust-lang/log ) 0.4.33
+- [indexmap]( https://github.com/indexmap-rs/indexmap ) 2.14.2
+- [log]( https://github.com/rust-lang/log ) 0.4.35
 - [num-traits]( https://github.com/rust-num/num-traits ) 0.2.19
 - [percent-encoding]( https://github.com/servo/rust-url/ ) 2.3.2
-- [similar]( https://github.com/mitsuhiko/similar ) 3.1.2
-- [smallvec]( https://github.com/servo/rust-smallvec ) 1.15.2
+- [similar]( https://github.com/mitsuhiko/similar ) 3.2.1
+- [smallvec]( https://github.com/servo/rust-smallvec ) 1.16.5
 - [stable_deref_trait]( https://github.com/storyyeller/stable_deref_trait ) 1.2.1
 - [url]( https://github.com/servo/rust-url ) 2.5.8
-- [uuid]( https://github.com/uuid-rs/uuid ) 1.26.0
+- [uuid]( https://github.com/uuid-rs/uuid ) 1.29.2
 - [wait-timeout]( https://github.com/alexcrichton/wait-timeout ) 0.2.1
 
 #### License
@@ -1568,22 +1569,21 @@ Apache License 2.0
 - [argx]( https://github.com/selemis-com/argx ) 0.4.0
 - [argx-derive]( https://github.com/selemis-com/argx ) 0.4.0
 - [dyn-clone]( https://github.com/dtolnay/dyn-clone ) 1.0.20
-- [itoa]( https://github.com/dtolnay/itoa ) 1.0.18
-- [libc]( https://github.com/rust-lang/libc ) 0.2.189
+- [itoa]( https://github.com/dtolnay/itoa ) 1.0.19
+- [libc]( https://github.com/rust-lang/libc ) 0.2.191
 - [proc-macro2]( https://github.com/dtolnay/proc-macro2 ) 1.0.107
 - [quote]( https://github.com/dtolnay/quote ) 1.0.47
-- [ref-cast-impl]( https://github.com/dtolnay/ref-cast ) 1.0.25
-- [ref-cast]( https://github.com/dtolnay/ref-cast ) 1.0.25
+- [ref-cast-impl]( https://github.com/dtolnay/ref-cast ) 1.0.27
+- [ref-cast]( https://github.com/dtolnay/ref-cast ) 1.0.27
 - [serde]( https://github.com/serde-rs/serde ) 1.0.229
 - [serde_core]( https://github.com/serde-rs/serde ) 1.0.229
 - [serde_derive]( https://github.com/serde-rs/serde ) 1.0.229
 - [serde_derive_internals]( https://github.com/serde-rs/serde ) 0.30.0
 - [serde_json]( https://github.com/serde-rs/json ) 1.0.154
-- [syn]( https://github.com/dtolnay/syn ) 2.0.118
 - [syn]( https://github.com/dtolnay/syn ) 3.0.10
 - [thiserror-impl]( https://github.com/dtolnay/thiserror ) 2.0.21
 - [thiserror]( https://github.com/dtolnay/thiserror ) 2.0.21
-- [unicode-ident]( https://github.com/dtolnay/unicode-ident ) 1.0.24
+- [unicode-ident]( https://github.com/dtolnay/unicode-ident ) 1.0.27
 - [utf8parse]( https://github.com/alacritty/vte ) 0.2.2
 
 #### License
@@ -1981,7 +1981,7 @@ fn is_meta_character(c: char) -> bool {
 MIT License
 
 #### Used by
-- [synstructure]( https://github.com/mystor/synstructure ) 0.13.2
+- [synstructure]( https://github.com/mystor/synstructure ) 0.14.0
 
 #### License
 ```
@@ -2063,7 +2063,7 @@ DEALINGS IN THE SOFTWARE.
 MIT License
 
 #### Used by
-- [winnow]( https://github.com/winnow-rs/winnow ) 1.0.4
+- [winnow]( https://github.com/winnow-rs/winnow ) 1.0.5
 
 #### License
 ```
@@ -2151,7 +2151,7 @@ THE SOFTWARE.
 Unicode License v3
 
 #### Used by
-- [unicode-ident]( https://github.com/dtolnay/unicode-ident ) 1.0.24
+- [unicode-ident]( https://github.com/dtolnay/unicode-ident ) 1.0.27
 
 #### License
 ```
@@ -2200,24 +2200,24 @@ authorization of the copyright holder.
 Unicode License v3
 
 #### Used by
-- [icu_collections]( https://github.com/unicode-org/icu4x ) 2.3.0
-- [icu_locale_core]( https://github.com/unicode-org/icu4x ) 2.3.0
-- [icu_normalizer]( https://github.com/unicode-org/icu4x ) 2.3.0
-- [icu_normalizer_data]( https://github.com/unicode-org/icu4x ) 2.3.0
-- [icu_properties]( https://github.com/unicode-org/icu4x ) 2.3.0
-- [icu_properties_data]( https://github.com/unicode-org/icu4x ) 2.3.0
-- [icu_provider]( https://github.com/unicode-org/icu4x ) 2.3.1
+- [icu_collections]( https://github.com/unicode-org/icu4x ) 2.4.0
+- [icu_locale_core]( https://github.com/unicode-org/icu4x ) 2.4.0
+- [icu_normalizer]( https://github.com/unicode-org/icu4x ) 2.4.0
+- [icu_normalizer_data]( https://github.com/unicode-org/icu4x ) 2.4.0
+- [icu_properties]( https://github.com/unicode-org/icu4x ) 2.4.0
+- [icu_properties_data]( https://github.com/unicode-org/icu4x ) 2.4.0
+- [icu_provider]( https://github.com/unicode-org/icu4x ) 2.4.0
 - [litemap]( https://github.com/unicode-org/icu4x ) 0.8.3
 - [potential_utf]( https://github.com/unicode-org/icu4x ) 0.1.6
-- [tinystr]( https://github.com/unicode-org/icu4x ) 0.8.4
+- [tinystr]( https://github.com/unicode-org/icu4x ) 0.8.5
 - [writeable]( https://github.com/unicode-org/icu4x ) 0.6.4
-- [yoke-derive]( https://github.com/unicode-org/icu4x ) 0.8.2
-- [yoke]( https://github.com/unicode-org/icu4x ) 0.8.3
-- [zerofrom-derive]( https://github.com/unicode-org/icu4x ) 0.1.7
+- [yoke-derive]( https://github.com/unicode-org/icu4x ) 0.8.4
+- [yoke]( https://github.com/unicode-org/icu4x ) 0.8.4
+- [zerofrom-derive]( https://github.com/unicode-org/icu4x ) 0.1.8
 - [zerofrom]( https://github.com/unicode-org/icu4x ) 0.1.8
 - [zerotrie]( https://github.com/unicode-org/icu4x ) 0.2.5
-- [zerovec-derive]( https://github.com/unicode-org/icu4x ) 0.11.6
-- [zerovec]( https://github.com/unicode-org/icu4x ) 0.11.8
+- [zerovec-derive]( https://github.com/unicode-org/icu4x ) 0.11.7
+- [zerovec]( https://github.com/unicode-org/icu4x ) 0.11.9
 
 #### License
 ```
