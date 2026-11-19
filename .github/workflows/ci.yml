@@ -58,18 +58,11 @@ jobs:
       - name: Check MSRV
         run: cargo +1.95 check --workspace --all-targets --all-features --locked
 
-      - name: Check optional format features
-        shell: bash
-        run: |
-          for features in toml json toml,json schema; do
-            cargo +1.95 check --package argx --features "$features" --locked
-          done
+      - name: Check feature configurations
+        run: cargo hack check --package argx --feature-powerset --rust-version --locked
 
       - name: Check default features
         run: cargo +1.95 check --workspace --all-targets --locked
-
-      - name: Check facade without derive feature
-        run: cargo +1.95 check --package argx --no-default-features --locked
 
   test:
     strategy:
