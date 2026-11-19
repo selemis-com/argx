@@ -275,6 +275,7 @@ pub enum ValueSchema {
     Url,
 }
 
+#[cfg(feature = "schema")]
 impl ValueSchema {
     /// Returns the JSON value type used by the semantic invocation schema.
     #[must_use]

@@ -1,7 +1,6 @@
 //! Small compile-time helpers shared across derive frontends and code generation.
 
-use proc_macro_crate::{FoundCrate, crate_name};
-use proc_macro2::{Ident, Span, TokenStream};
+use proc_macro2::{Ident, TokenStream};
 use quote::quote;
 use syn::{Expr, Lit};
 
@@ -59,25 +58,9 @@ pub(crate) fn default_help(expression: &Expr, value_enum: bool) -> Option<String
     }
 }
 
-/// Returns the resolved Rust crate name for the Argx facade.
-pub(crate) fn facade_name() -> String {
-    match crate_name("argx") {
-        Ok(FoundCrate::Name(name)) => name,
-        Ok(FoundCrate::Itself) | Err(_) => String::from("argx"),
-    }
-}
-
-/// Returns an absolute path to the Argx facade from generated code.
+/// Returns the canonical absolute Argx path. Renamed dependencies provide a crate-root alias.
 pub(crate) fn facade_path() -> TokenStream {
-    match crate_name("argx") {
-        Ok(FoundCrate::Name(name)) => {
-            let facade = Ident::new(&name, Span::call_site());
-            quote!(::#facade)
-        }
-        // `Itself` is reached while testing/using the derive from the facade crate. Falling back
-        // to `::argx` also keeps expansion deterministic if dependency discovery is unavailable.
-        Ok(FoundCrate::Itself) | Err(_) => quote!(::argx),
-    }
+    quote!(::argx)
 }
 
 #[cfg(test)]

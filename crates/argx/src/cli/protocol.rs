@@ -6,6 +6,7 @@ use crate::cli::{
 };
 
 /// JSON Schemas produced from one handler's concrete `Result<Success, Error>` type.
+#[cfg(feature = "schema")]
 #[derive(Debug, Clone)]
 pub struct HandlerSchemas {
     /// Schema returned when command execution succeeds.
@@ -15,11 +16,13 @@ pub struct HandlerSchemas {
 }
 
 /// Resolves a concrete handler result into result and error subschemas.
+#[cfg(feature = "schema")]
 pub trait HandlerResult {
     /// Generates both schemas with one shared Schemars generator.
     fn schemas(generator: &mut schemars::SchemaGenerator) -> HandlerSchemas;
 }
 
+#[cfg(feature = "schema")]
 impl<T, E> HandlerResult for Result<T, E>
 where
     T: schemars::JsonSchema,
@@ -43,6 +46,7 @@ where
 }
 
 /// Schema source attached to an invocable command by `#[argx(handler = CommandType)]`.
+#[cfg(feature = "schema")]
 pub trait HandlerSchemaSource: InvocableCommandHandler {
     /// Generates the handler-specific result and error schemas into one shared schema document.
     #[doc(hidden)]
@@ -65,6 +69,7 @@ pub trait CommandArgs: Sized {
 
     /// Builds schema-discovery associations for a schema-enabled parser root.
     #[doc(hidden)]
+    #[cfg(feature = "schema")]
     fn schema_registry() -> Option<crate::__private::SchemaRegistry> {
         None
     }

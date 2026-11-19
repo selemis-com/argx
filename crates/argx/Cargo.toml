@@ -25,16 +25,18 @@ workspace = true
 [features]
 default = ["derive"]
 derive = ["dep:argx-derive"]
-chrono = ["schemars/chrono04"]
-url = ["schemars/url2"]
-uuid = ["schemars/uuid1"]
-toml = ["derive", "dep:toml_edit"]
+json = ["dep:serde_json"]
+schema = ["json", "dep:schemars", "argx-derive?/schema"]
+chrono = ["schema", "schemars/chrono04"]
+url = ["schema", "schemars/url2"]
+uuid = ["schema", "schemars/uuid1"]
+toml = ["derive", "dep:toml_edit", "argx-derive/toml"]
 
 [dependencies]
 # Vendor
-schemars.workspace = true
+schemars = { workspace = true, optional = true }
 serde.workspace = true
-serde_json.workspace = true
+serde_json = { workspace = true, optional = true }
 thiserror.workspace = true
 toml_edit = { workspace = true, optional = true }
 
@@ -43,4 +45,13 @@ argx-derive = { workspace = true, optional = true }
 
 [dev-dependencies]
 # Vendor
+serde_json.workspace = true
 snapbox.workspace = true
+
+[[example]]
+name = "schema"
+required-features = ["derive", "schema"]
+
+[[example]]
+name = "complete"
+required-features = ["derive", "schema"]

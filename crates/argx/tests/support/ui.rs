@@ -47,9 +47,11 @@ impl UiProject {
         let facade = facade_root().to_string_lossy().replace('\\', "/");
         let package = format!("argx-ui-{group}-{fixture}");
         let dependency = if dependency == "argx" {
-            format!("argx = {{ path = \"{facade}\" }}")
+            format!("argx = {{ path = \"{facade}\", features = [\"schema\"] }}")
         } else {
-            format!("{dependency} = {{ package = \"argx\", path = \"{facade}\" }}")
+            format!(
+                "{dependency} = {{ package = \"argx\", path = \"{facade}\", features = [\"schema\"] }}"
+            )
         };
         let manifest = format!(
             "[package]\nname = \"{package}\"\nversion = \"0.0.0\"\nedition = \"2024\"\npublish = false\n\n[dependencies]\n{dependency}\n"
@@ -83,7 +85,6 @@ impl UiProject {
             "--quiet",
             "--color",
             "never",
-            "--locked",
             "--offline",
         ])
     }
@@ -95,7 +96,6 @@ impl UiProject {
             "check",
             "--color",
             "never",
-            "--locked",
             "--offline",
             "--message-format=json",
         ])

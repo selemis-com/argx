@@ -7,7 +7,7 @@ members = [
 default-members = ["crates/argx"]
 
 [workspace.package]
-version = "0.3.0"
+version = "0.4.0"
 edition = "2024"
 rust-version = "1.95"
 license = "MIT OR Apache-2.0"
@@ -72,7 +72,7 @@ iter_on_single_items = "warn"
 iter_with_drain = "warn"
 iter_without_into_iter = "warn"
 large_futures = "warn"
-large_stack_frames = "warn"
+large_unopt_stack_frames = "warn"
 manual_assert = "warn"
 manual_is_power_of_two = "warn"
 manual_is_variant_and = "warn"
@@ -161,7 +161,6 @@ zero_sized_map_values = "warn"
 
 [workspace.dependencies]
 # Vendor
-proc-macro-crate = "3.5.0"
 proc-macro2 = "1.0.107"
 quote = "1.0.47"
 schemars = { version = "1.2.2", features = ["preserve_order"] }
@@ -173,4 +172,4 @@ thiserror = "2.0.20"
 toml_edit = { version = "0.25.13", default-features = false, features = ["display", "parse", "serde"] }
 
 # Crates
-argx-derive = { version = "0.3.0", path = "crates/argx-derive" }
+argx-derive = { version = "0.4.0", path = "crates/argx-derive" }

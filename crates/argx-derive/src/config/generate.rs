@@ -272,6 +272,36 @@ pub(crate) fn generate_config(
         }
     });
 
+    let toml_declaration = cfg!(feature = "toml").then(|| {
+        quote! {
+            #[doc(hidden)]
+            #[derive(#argx::__private::serde::Deserialize)]
+            #[serde(crate = #serde, deny_unknown_fields)]
+            #visibility struct #toml_ident {
+                #(
+                    #[serde(default)]
+                    #toml_fields,
+                )*
+            }
+
+            impl ::core::fmt::Debug for #toml_ident {
+                fn fmt(&self, formatter: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    formatter.write_str(::core::stringify!(#toml_ident))
+                }
+            }
+        }
+    });
+    let toml_type = cfg!(feature = "toml").then(|| quote!(type __Toml = #toml_ident;));
+    let toml_method = cfg!(feature = "toml").then(|| {
+        quote! {
+            fn __toml_overrides(input: Self::__Toml) -> Self::Overrides {
+                #overrides_ident {
+                    #(#toml_into_overrides,)*
+                }
+            }
+        }
+    });
+
     quote! {
         impl #ident {
             /// Creates an empty ordered configuration loader.
@@ -306,25 +336,11 @@ pub(crate) fn generate_config(
             values: #cli_ident,
         }
 
-        #[doc(hidden)]
-        #[derive(#argx::__private::serde::Deserialize)]
-        #[serde(crate = #serde, deny_unknown_fields)]
-        #visibility struct #toml_ident {
-            #(
-                #[serde(default)]
-                #toml_fields,
-            )*
-        }
-
-        impl ::core::fmt::Debug for #toml_ident {
-            fn fmt(&self, formatter: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-                formatter.write_str(::core::stringify!(#toml_ident))
-            }
-        }
+        #toml_declaration
 
         impl #argx::__private::Config for #ident {
             type Overrides = #overrides_ident;
-            type __Toml = #toml_ident;
+            #toml_type
             type __CliArgs = #cli_ident;
 
             fn __parse_cli<I, T>(argv: I) -> ::core::result::Result<Self::Overrides, #argx::Error>
@@ -348,11 +364,7 @@ pub(crate) fn generate_config(
                 #(#merges)*
             }
 
-            fn __toml_overrides(input: Self::__Toml) -> Self::Overrides {
-                #overrides_ident {
-                    #(#toml_into_overrides,)*
-                }
-            }
+            #toml_method
 
             fn __defaults() -> Self::Overrides {
                 #overrides_ident {

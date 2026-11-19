@@ -1,3 +1,5 @@
+extern crate cli_args as argx;
+
 use cli_args::argx;
 
 #[derive(cli_args::ValueEnum)]
